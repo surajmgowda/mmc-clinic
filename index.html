@@ -1,0 +1,1054 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MMC — Male Madeshwara Clinic</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#FAF8F4;
+    --surface:#FFFFFF;
+    --ink:#22201C;
+    --ink-soft:#5B564D;
+    --ink-faint:#8A8478;
+    --primary:#1E4D43;
+    --primary-dark:#143630;
+    --primary-tint:#E7EFEC;
+    --accent:#B8791A;
+    --accent-tint:#F6EBD8;
+    --line:#E1DDD3;
+    --danger:#9A3B2E;
+    --danger-tint:#F5E7E4;
+    --radius:6px;
+    --sidebar-w:216px;
+  }
+  *,*::before,*::after{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Public Sans',-apple-system,BlinkMacSystemFont,sans-serif;
+    font-size:14.5px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+  }
+  h1,h2,h3{font-family:'Source Serif 4',Georgia,serif;font-weight:600;margin:0 0 4px 0;color:var(--primary-dark);}
+  h1{font-size:24px;letter-spacing:-0.01em;}
+  h2{font-size:18px;}
+  h3{font-size:15px;}
+  p{margin:0 0 10px 0;}
+  a{color:var(--primary);}
+  button{font-family:inherit;cursor:pointer;}
+  input,select,textarea{font-family:inherit;font-size:14px;}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
+
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:12.5px;font-weight:600;color:var(--ink-soft);margin-bottom:4px;}
+  .field input,.field select,.field textarea{
+    width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius);
+    background:var(--surface);color:var(--ink);
+  }
+  .field textarea{resize:vertical;min-height:60px;}
+  .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--primary);}
+  .row{display:flex;gap:12px;flex-wrap:wrap;}
+  .row > .field{flex:1;min-width:130px;}
+
+  .btn{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:8px 14px;border-radius:var(--radius);border:1px solid var(--line);
+    background:var(--surface);color:var(--ink);font-size:13.5px;font-weight:600;
+  }
+  .btn:hover{border-color:var(--ink-faint);}
+  .btn-primary{background:var(--primary);border-color:var(--primary);color:#fff;}
+  .btn-primary:hover{background:var(--primary-dark);}
+  .btn-accent{background:var(--accent);border-color:var(--accent);color:#fff;}
+  .btn-danger{background:var(--surface);border-color:var(--danger);color:var(--danger);}
+  .btn-danger:hover{background:var(--danger-tint);}
+  .btn-ghost{background:transparent;border-color:transparent;color:var(--ink-soft);}
+  .btn-sm{padding:5px 10px;font-size:12.5px;}
+  .btn[disabled]{opacity:0.45;cursor:not-allowed;}
+  .btn-block{width:100%;justify-content:center;}
+
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:18px;}
+  .stack{display:flex;flex-direction:column;gap:14px;}
+  .muted{color:var(--ink-soft);}
+  .faint{color:var(--ink-faint);font-size:12.5px;}
+  .error-text{color:var(--danger);font-size:13px;margin:6px 0;}
+  .banner{padding:10px 14px;border-radius:var(--radius);font-size:13px;margin-bottom:14px;}
+  .banner-error{background:var(--danger-tint);color:var(--danger);}
+  .banner-info{background:var(--primary-tint);color:var(--primary-dark);}
+
+  table{width:100%;border-collapse:collapse;font-size:13.5px;}
+  th{text-align:left;color:var(--ink-soft);font-weight:600;font-size:12px;text-transform:none;padding:8px 10px;border-bottom:1px solid var(--line);}
+  td{padding:9px 10px;border-bottom:1px solid var(--line);}
+  tr:last-child td{border-bottom:none;}
+  tr.clickable:hover{background:var(--primary-tint);cursor:pointer;}
+
+  .pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11.5px;font-weight:600;background:var(--primary-tint);color:var(--primary-dark);}
+
+  /* ---- Shell layout ---- */
+  .shell{display:flex;min-height:100vh;}
+  .sidebar{
+    width:var(--sidebar-w);flex-shrink:0;background:var(--primary-dark);color:#EFEAE0;
+    padding:20px 14px;display:flex;flex-direction:column;
+  }
+  .brand{display:flex;align-items:center;gap:10px;margin-bottom:26px;padding:0 6px;}
+  .brand-mark{
+    width:34px;height:34px;border-radius:8px;background:var(--accent);
+    display:flex;align-items:center;justify-content:center;font-family:'Source Serif 4',serif;
+    font-weight:700;color:#fff;font-size:15px;flex-shrink:0;
+  }
+  .brand-text{line-height:1.25;}
+  .brand-text .full{font-family:'Source Serif 4',serif;font-size:14px;color:#fff;font-weight:600;}
+  .brand-text .sub{font-size:11px;color:#B9C4BE;}
+  .nav{display:flex;flex-direction:column;gap:2px;}
+  .nav-item{
+    display:block;padding:9px 10px;border-radius:6px;color:#D7DED9;font-size:13.5px;font-weight:500;
+    text-decoration:none;border:none;background:transparent;text-align:left;width:100%;
+  }
+  .nav-item:hover{background:rgba(255,255,255,0.07);color:#fff;}
+  .nav-item.active{background:rgba(255,255,255,0.12);color:#fff;}
+  .sidebar-foot{margin-top:auto;padding-top:14px;border-top:1px solid rgba(255,255,255,0.12);}
+  .staff-chip{font-size:12.5px;color:#B9C4BE;margin-bottom:8px;padding:0 6px;}
+  .staff-chip strong{color:#fff;display:block;font-size:13.5px;}
+
+  .main{flex:1;min-width:0;padding:26px 32px;max-width:980px;}
+  .page-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;gap:12px;flex-wrap:wrap;}
+
+  .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:22px;}
+  .stat-card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px 18px;}
+  .stat-num{font-family:'Source Serif 4',serif;font-size:30px;color:var(--primary-dark);font-weight:600;line-height:1;}
+  .stat-label{font-size:12.5px;color:var(--ink-soft);margin-top:6px;}
+
+  .search-wrap{position:relative;max-width:340px;}
+
+  .rx-row,.inv-row{border:1px solid var(--line);border-radius:var(--radius);padding:10px;margin-bottom:8px;background:#FCFBF9;}
+  .rx-row-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+  .rx-row-head .idx{font-size:11.5px;font-weight:700;color:var(--accent);}
+
+  .center-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;}
+  .auth-card{width:100%;max-width:360px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:28px;}
+  .auth-brand{text-align:center;margin-bottom:20px;}
+  .auth-brand .brand-mark{margin:0 auto 10px auto;width:44px;height:44px;font-size:18px;}
+
+  /* ---- Print sheets ---- */
+  .print-sheet{display:none;}
+  .print-preview{border:1px dashed var(--line);border-radius:8px;padding:22px;background:#fff;margin-bottom:16px;max-width:560px;}
+  .letterhead{text-align:center;border-bottom:2px solid var(--primary-dark);padding-bottom:10px;margin-bottom:14px;}
+  .letterhead .clinic-name{font-family:'Source Serif 4',serif;font-size:20px;font-weight:700;color:var(--primary-dark);}
+  .letterhead .clinic-meta{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
+  .sheet-title{font-size:11px;font-weight:700;letter-spacing:0.04em;color:var(--accent);margin-bottom:8px;}
+  .patient-strip{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:12px;border-bottom:1px solid var(--line);padding-bottom:8px;flex-wrap:wrap;gap:6px;}
+  .sheet-section{margin-bottom:10px;font-size:13px;}
+  .sheet-section .lbl{font-weight:700;color:var(--ink-soft);font-size:11px;text-transform:none;}
+  .rx-line{display:flex;gap:8px;padding:5px 0;border-bottom:1px dotted var(--line);font-size:13px;}
+  .rx-line .n{font-weight:700;color:var(--primary-dark);width:16px;flex-shrink:0;}
+
+  @media print{
+    body *{visibility:hidden;}
+    .print-sheet.print-active,.print-sheet.print-active *{visibility:visible;}
+    .print-sheet.print-active{
+      display:block;position:absolute;top:0;left:0;width:100%;padding:18px 26px;
+    }
+  }
+
+  @media (max-width:820px){
+    .shell{flex-direction:column;}
+    .sidebar{width:100%;flex-direction:row;align-items:center;padding:12px 14px;overflow-x:auto;}
+    .brand{margin-bottom:0;}
+    .nav{flex-direction:row;margin-left:10px;}
+    .nav-item{white-space:nowrap;}
+    .sidebar-foot{margin-top:0;margin-left:auto;padding-top:0;border-top:none;display:flex;align-items:center;gap:10px;}
+    .staff-chip{margin-bottom:0;}
+    .main{padding:20px 16px;}
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script>
+/* ============================= STATE ============================= */
+let state = {
+  loading: true,
+  loadError: null, // set when the initial fetch of clinic data fails
+  saveError: null,
+  data: null,
+  session: { staffName: null },
+  route: 'dashboard',
+  routeParams: {},
+  search: '',
+  loginError: '',
+  loginMode: 'login', // 'login' | 'addFromLogin'
+  draftVisit: null,
+  ui: { editingPatient: false, resetConfirmText: '' }
+};
+
+function defaultData(){
+  return {
+    clinicInfo: { name: 'Male Madeshwara Clinic', shortName: 'MMC', address: '', phone: '' },
+    nextPatientSeq: 1,
+    patients: [],
+    staff: []
+  };
+}
+
+function esc(str){
+  if(str===undefined||str===null) return '';
+  return String(str)
+    .replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')
+    .replaceAll('"','&quot;').replaceAll("'",'&#39;');
+}
+function todayStr(){ return new Date().toISOString().slice(0,10); }
+function nowTimeStr(){
+  const d = new Date();
+  return d.toTimeString().slice(0,5);
+}
+function fmtDate(d){
+  if(!d) return '';
+  const dt = new Date(d+'T00:00:00');
+  if(isNaN(dt)) return d;
+  return dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+}
+function newPatientId(){
+  const seq = state.data.nextPatientSeq;
+  state.data.nextPatientSeq = seq + 1;
+  return 'MMC' + String(seq).padStart(4,'0');
+}
+function newVisitId(){ return 'V' + Date.now().toString(36).toUpperCase(); }
+
+/* ============================= STORAGE (server API) ============================= */
+let dataVersion = 0;
+
+async function loadData(){
+  try{
+    const res = await fetch('/api/data');
+    if(!res.ok) throw new Error('bad response');
+    const json = await res.json();
+    state.data = json.data;
+    dataVersion = json.version;
+    state.loadError = null;
+  } catch(e){
+    state.loadError = 'Could not reach the clinic server. Check your connection and reload the page.';
+  }
+  state.loading = false;
+  render();
+}
+
+// Saves state.data to the server. Returns true on success, false if the
+// save failed or was superseded by another device's more recent save
+// (in which case state.data is refreshed with the server's latest copy).
+async function saveData(){
+  try{
+    const res = await fetch('/api/data', {
+      method:'PUT',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({version: dataVersion, data: state.data})
+    });
+    if(res.status === 409){
+      const server = await res.json();
+      state.data = server.data;
+      dataVersion = server.version;
+      state.saveError = 'Records were just updated from another device — showing the latest version. Please redo your last change.';
+      return false;
+    }
+    if(!res.ok){
+      state.saveError = 'Could not save. Please try again.';
+      return false;
+    }
+    const json = await res.json();
+    dataVersion = json.version;
+    state.saveError = null;
+    return true;
+  } catch(e){
+    state.saveError = 'Could not save — check your connection and try again.';
+    return false;
+  }
+}
+
+/* ============================= NAV ============================= */
+function go(route, params){
+  state.route = route;
+  state.routeParams = params || {};
+  state.search = '';
+  state.ui.editingPatient = false;
+  if(route === 'newVisit'){ initDraftVisit(state.routeParams.patientId || null); }
+  render();
+}
+
+/* ============================= AUTH ============================= */
+async function doSetup(){
+  const name = document.getElementById('setup-name').value.trim();
+  const role = document.getElementById('setup-role').value;
+  const pin = document.getElementById('setup-pin').value.trim();
+  const err = document.getElementById('setup-error');
+  if(!name || !/^\d{4}$/.test(pin)){
+    err.textContent = 'Enter your name and a 4-digit PIN.'; return;
+  }
+  state.data.staff.push({name, role, pin});
+  const ok = await saveData();
+  if(!ok){ err.textContent = state.saveError; render(); return; }
+  state.session.staffName = name;
+  go('dashboard');
+}
+
+function doLogin(){
+  const name = document.getElementById('login-select').value;
+  const pin = document.getElementById('login-pin').value.trim();
+  const staff = state.data.staff.find(s => s.name === name);
+  if(staff && staff.pin === pin){
+    state.session.staffName = name;
+    state.loginError = '';
+    go('dashboard');
+  } else {
+    state.loginError = 'Incorrect PIN. Try again.';
+    render();
+  }
+}
+
+function toggleAddFromLogin(){
+  state.loginMode = state.loginMode === 'login' ? 'addFromLogin' : 'login';
+  state.loginError = '';
+  render();
+}
+
+async function addStaffFromLogin(){
+  const name = document.getElementById('als-name').value.trim();
+  const role = document.getElementById('als-role').value;
+  const pin = document.getElementById('als-pin').value.trim();
+  const err = document.getElementById('als-error');
+  if(!name || !/^\d{4}$/.test(pin)){
+    err.textContent = 'Enter a name and a 4-digit PIN.'; return;
+  }
+  if(state.data.staff.some(s=>s.name===name)){
+    err.textContent = 'That name is already registered.'; return;
+  }
+  state.data.staff.push({name, role, pin});
+  const ok = await saveData();
+  if(!ok){ err.textContent = state.saveError; render(); return; }
+  state.loginMode = 'login';
+  render();
+}
+
+function logout(){
+  state.session.staffName = null;
+  state.loginMode = 'login';
+  go('dashboard');
+}
+
+/* ============================= PATIENTS ============================= */
+function onPatientSearchInput(v){
+  state.search = v;
+  const el = document.getElementById('patients-table-container');
+  if(el) el.innerHTML = patientsTableHTML();
+}
+
+function filteredPatients(){
+  const q = state.search.trim().toLowerCase();
+  let list = state.data.patients.slice().sort((a,b)=> (b.registeredDate||'').localeCompare(a.registeredDate||''));
+  if(q){
+    list = list.filter(p =>
+      p.name.toLowerCase().includes(q) ||
+      p.id.toLowerCase().includes(q) ||
+      (p.phone||'').includes(q)
+    );
+  }
+  return list;
+}
+
+function lastVisitDate(p){
+  if(!p.visits || p.visits.length===0) return null;
+  return p.visits.slice().sort((a,b)=> (b.date+b.id).localeCompare(a.date+a.id))[0].date;
+}
+
+async function saveNewPatient(){
+  const name = document.getElementById('reg-name').value.trim();
+  const age = document.getElementById('reg-age').value.trim();
+  const sex = document.getElementById('reg-sex').value;
+  const phone = document.getElementById('reg-phone').value.trim();
+  const address = document.getElementById('reg-address').value.trim();
+  const err = document.getElementById('reg-error');
+  if(!name || !age || !sex){
+    err.textContent = 'Name, age and sex are required.'; return;
+  }
+  const patient = {
+    id: newPatientId(), name, age, sex, phone, address,
+    registeredDate: todayStr(), visits: []
+  };
+  state.data.patients.push(patient);
+  const ok = await saveData();
+  if(!ok){ err.textContent = state.saveError; render(); return; }
+  go('patient', {patientId: patient.id});
+}
+
+function startEditPatient(){ state.ui.editingPatient = true; render(); }
+function cancelEditPatient(){ state.ui.editingPatient = false; render(); }
+async function saveEditPatient(patientId){
+  const p = state.data.patients.find(p=>p.id===patientId);
+  p.name = document.getElementById('ep-name').value.trim() || p.name;
+  p.age = document.getElementById('ep-age').value.trim();
+  p.sex = document.getElementById('ep-sex').value;
+  p.phone = document.getElementById('ep-phone').value.trim();
+  p.address = document.getElementById('ep-address').value.trim();
+  state.ui.editingPatient = false;
+  await saveData();
+  render();
+}
+
+/* ============================= NEW VISIT (draft) ============================= */
+function initDraftVisit(patientId){
+  state.draftVisit = {
+    patientId: patientId || null,
+    newPatient: null,
+    doctorName: state.session.staffName || '',
+    vitals: {bp:'',pulse:'',temp:'',weight:''},
+    complaints:'', examination:'', diagnosis:'', notes:'',
+    prescriptions: [{medicine:'',dosage:'',frequency:'',duration:'',instructions:''}],
+    investigations: [{test:'',notes:''}]
+  };
+  state.visitError = '';
+}
+
+function toggleNewPatientInVisit(){
+  state.draftVisit.newPatient = state.draftVisit.newPatient ? null : {name:'',age:'',sex:'',phone:'',address:''};
+  state.draftVisit.patientId = null;
+  render();
+}
+
+function onVisitPatientSearch(v){
+  state.search = v;
+  const el = document.getElementById('visit-patient-results');
+  if(el) el.innerHTML = visitPatientResultsHTML();
+}
+
+function selectPatientForVisit(id){
+  state.draftVisit.patientId = id;
+  state.draftVisit.newPatient = null;
+  state.search = '';
+  render();
+}
+
+function addRxRow(){
+  state.draftVisit.prescriptions.push({medicine:'',dosage:'',frequency:'',duration:'',instructions:''});
+  document.getElementById('rx-rows').innerHTML = rxRowsHTML();
+}
+function removeRxRow(i){
+  state.draftVisit.prescriptions.splice(i,1);
+  if(state.draftVisit.prescriptions.length===0) state.draftVisit.prescriptions.push({medicine:'',dosage:'',frequency:'',duration:'',instructions:''});
+  document.getElementById('rx-rows').innerHTML = rxRowsHTML();
+}
+function addInvRow(){
+  state.draftVisit.investigations.push({test:'',notes:''});
+  document.getElementById('inv-rows').innerHTML = invRowsHTML();
+}
+function removeInvRow(i){
+  state.draftVisit.investigations.splice(i,1);
+  if(state.draftVisit.investigations.length===0) state.draftVisit.investigations.push({test:'',notes:''});
+  document.getElementById('inv-rows').innerHTML = invRowsHTML();
+}
+
+async function saveVisit(){
+  const dv = state.draftVisit;
+  dv.doctorName = document.getElementById('v-doctor').value.trim();
+  dv.complaints = document.getElementById('v-complaints').value.trim();
+  dv.examination = document.getElementById('v-exam').value.trim();
+  dv.diagnosis = document.getElementById('v-diagnosis').value.trim();
+  dv.notes = document.getElementById('v-notes').value.trim();
+  dv.vitals.bp = document.getElementById('v-bp').value.trim();
+  dv.vitals.pulse = document.getElementById('v-pulse').value.trim();
+  dv.vitals.temp = document.getElementById('v-temp').value.trim();
+  dv.vitals.weight = document.getElementById('v-weight').value.trim();
+
+  document.querySelectorAll('[data-rx-idx]').forEach(row=>{
+    const i = Number(row.getAttribute('data-rx-idx'));
+    dv.prescriptions[i] = {
+      medicine: row.querySelector('[data-f="medicine"]').value.trim(),
+      dosage: row.querySelector('[data-f="dosage"]').value.trim(),
+      frequency: row.querySelector('[data-f="frequency"]').value.trim(),
+      duration: row.querySelector('[data-f="duration"]').value.trim(),
+      instructions: row.querySelector('[data-f="instructions"]').value.trim()
+    };
+  });
+  document.querySelectorAll('[data-inv-idx]').forEach(row=>{
+    const i = Number(row.getAttribute('data-inv-idx'));
+    dv.investigations[i] = {
+      test: row.querySelector('[data-f="test"]').value.trim(),
+      notes: row.querySelector('[data-f="notes"]').value.trim()
+    };
+  });
+
+  const errEl = document.getElementById('visit-error');
+  if(!dv.patientId && !dv.newPatient){
+    errEl.textContent = 'Select an existing patient or register a new one.'; return;
+  }
+  if(dv.newPatient){
+    dv.newPatient.name = document.getElementById('np-name').value.trim();
+    dv.newPatient.age = document.getElementById('np-age').value.trim();
+    dv.newPatient.sex = document.getElementById('np-sex').value;
+    dv.newPatient.phone = document.getElementById('np-phone').value.trim();
+    dv.newPatient.address = document.getElementById('np-address').value.trim();
+    if(!dv.newPatient.name || !dv.newPatient.age || !dv.newPatient.sex){
+      errEl.textContent = 'New patient needs a name, age and sex.'; return;
+    }
+  }
+  if(!dv.diagnosis){
+    errEl.textContent = 'Add a diagnosis / assessment before saving.'; return;
+  }
+  errEl.textContent = '';
+
+  let patient;
+  if(dv.newPatient){
+    patient = {
+      id: newPatientId(), name: dv.newPatient.name, age: dv.newPatient.age, sex: dv.newPatient.sex,
+      phone: dv.newPatient.phone, address: dv.newPatient.address, registeredDate: todayStr(), visits: []
+    };
+    state.data.patients.push(patient);
+  } else {
+    patient = state.data.patients.find(p=>p.id===dv.patientId);
+  }
+
+  const visit = {
+    id: newVisitId(), date: todayStr(), time: nowTimeStr(),
+    doctorName: dv.doctorName, vitals: dv.vitals,
+    complaints: dv.complaints, examination: dv.examination, diagnosis: dv.diagnosis, notes: dv.notes,
+    prescriptions: dv.prescriptions.filter(r=>r.medicine),
+    investigations: dv.investigations.filter(r=>r.test)
+  };
+  patient.visits.unshift(visit);
+  const ok = await saveData();
+  if(!ok){ errEl.textContent = state.saveError; render(); return; }
+  go('visitPrint', {patientId: patient.id, visitId: visit.id});
+}
+
+/* ============================= PRINT ============================= */
+function printSection(id){
+  document.querySelectorAll('.print-sheet').forEach(el=>el.classList.remove('print-active'));
+  const el = document.getElementById(id);
+  if(el){ el.classList.add('print-active'); window.print(); }
+}
+
+/* ============================= SETTINGS ============================= */
+async function saveClinicInfo(){
+  state.data.clinicInfo.name = document.getElementById('ci-name').value.trim() || state.data.clinicInfo.name;
+  state.data.clinicInfo.address = document.getElementById('ci-address').value.trim();
+  state.data.clinicInfo.phone = document.getElementById('ci-phone').value.trim();
+  await saveData();
+  render();
+}
+async function addStaff(){
+  const name = document.getElementById('st-name').value.trim();
+  const role = document.getElementById('st-role').value;
+  const pin = document.getElementById('st-pin').value.trim();
+  const err = document.getElementById('st-error');
+  if(!name || !/^\d{4}$/.test(pin)){ err.textContent = 'Enter a name and a 4-digit PIN.'; return; }
+  if(state.data.staff.some(s=>s.name===name)){ err.textContent = 'That name is already registered.'; return; }
+  state.data.staff.push({name, role, pin});
+  await saveData();
+  render();
+}
+async function removeStaff(name){
+  if(name === state.session.staffName){ return; }
+  state.data.staff = state.data.staff.filter(s=>s.name!==name);
+  await saveData();
+  render();
+}
+function onResetConfirmInput(v){
+  state.ui.resetConfirmText = v;
+  document.getElementById('reset-btn').disabled = (v !== 'RESET');
+}
+async function doReset(){
+  if(state.ui.resetConfirmText !== 'RESET') return;
+  state.data = defaultData();
+  state.session.staffName = null;
+  await saveData();
+  state.ui.resetConfirmText = '';
+  go('dashboard');
+}
+
+/* ============================= VIEWS ============================= */
+function loadingView(){
+  return `<div class="center-screen"><p class="muted">Loading clinic records…</p></div>`;
+}
+
+function setupView(){
+  return `
+  <div class="center-screen">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <div class="brand-mark">MMC</div>
+        <h1 style="font-size:19px;">Set up ${esc(state.data.clinicInfo.name)}</h1>
+        <p class="muted" style="font-size:13px;">Create the first staff account to start using the clinic system.</p>
+      </div>
+      <div class="field"><label>Your name</label><input id="setup-name" type="text" placeholder="e.g. Dr. Ravi"></div>
+      <div class="field"><label>Role</label>
+        <select id="setup-role"><option>Doctor</option><option>Receptionist</option><option>Staff</option></select>
+      </div>
+      <div class="field"><label>Choose a 4-digit PIN</label><input id="setup-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••"></div>
+      <div id="setup-error" class="error-text"></div>
+      <button class="btn btn-primary btn-block" onclick="doSetup()">Create account &amp; start</button>
+    </div>
+  </div>`;
+}
+
+function loginView(){
+  const staffOptions = state.data.staff.map(s=>`<option value="${esc(s.name)}">${esc(s.name)} — ${esc(s.role)}</option>`).join('');
+  if(state.loginMode === 'addFromLogin'){
+    return `
+    <div class="center-screen">
+      <div class="auth-card">
+        <div class="auth-brand"><div class="brand-mark">MMC</div><h1 style="font-size:19px;">New staff account</h1></div>
+        <div class="field"><label>Name</label><input id="als-name" type="text"></div>
+        <div class="field"><label>Role</label><select id="als-role"><option>Doctor</option><option>Receptionist</option><option>Staff</option></select></div>
+        <div class="field"><label>4-digit PIN</label><input id="als-pin" type="password" inputmode="numeric" maxlength="4"></div>
+        <div id="als-error" class="error-text"></div>
+        <button class="btn btn-primary btn-block" onclick="addStaffFromLogin()">Add account</button>
+        <button class="btn btn-ghost btn-block" style="margin-top:6px;" onclick="toggleAddFromLogin()">Back to log in</button>
+      </div>
+    </div>`;
+  }
+  return `
+  <div class="center-screen">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <div class="brand-mark">MMC</div>
+        <h1 style="font-size:19px;">${esc(state.data.clinicInfo.name)}</h1>
+        <p class="muted" style="font-size:13px;">Log in to continue</p>
+      </div>
+      <div class="field"><label>Staff</label><select id="login-select">${staffOptions}</select></div>
+      <div class="field"><label>PIN</label><input id="login-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••"></div>
+      ${state.loginError ? `<div class="error-text">${esc(state.loginError)}</div>` : ''}
+      <button class="btn btn-primary btn-block" onclick="doLogin()">Log in</button>
+      <button class="btn btn-ghost btn-block" style="margin-top:6px;" onclick="toggleAddFromLogin()">+ Add a staff account</button>
+    </div>
+  </div>`;
+}
+
+function shellView(){
+  const items = [
+    ['dashboard','Dashboard'],
+    ['patients','Patients'],
+    ['newVisit','New OPD Visit'],
+    ['settings','Settings']
+  ];
+  const nav = items.map(([r,label])=>
+    `<button class="nav-item ${state.route===r?'active':''}" onclick="go('${r}')">${label}</button>`
+  ).join('');
+  const staff = state.data.staff.find(s=>s.name===state.session.staffName);
+  return `
+  <div class="shell">
+    <div class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">MMC</div>
+        <div class="brand-text"><div class="full">Male Madeshwara Clinic</div><div class="sub">Clinic system</div></div>
+      </div>
+      <div class="nav">${nav}</div>
+      <div class="sidebar-foot">
+        <div class="staff-chip"><strong>${esc(state.session.staffName)}</strong>${staff?esc(staff.role):''}</div>
+        <button class="nav-item" onclick="logout()">Log out</button>
+      </div>
+    </div>
+    <div class="main">
+      ${state.saveError ? `<div class="banner banner-error">${esc(state.saveError)}</div>` : ''}
+      ${routeContent()}
+    </div>
+  </div>`;
+}
+
+function routeContent(){
+  switch(state.route){
+    case 'patients': return patientsView();
+    case 'newPatient': return newPatientView();
+    case 'patient': return patientView(state.routeParams.patientId);
+    case 'newVisit': return newVisitView();
+    case 'visitPrint': return visitPrintView(state.routeParams.patientId, state.routeParams.visitId);
+    case 'settings': return settingsView();
+    default: return dashboardView();
+  }
+}
+
+function dashboardView(){
+  const today = todayStr();
+  const todaysVisits = [];
+  state.data.patients.forEach(p=>{
+    (p.visits||[]).forEach(v=>{
+      if(v.date===today) todaysVisits.push({patient:p, visit:v});
+    });
+  });
+  todaysVisits.sort((a,b)=> (b.visit.time||'').localeCompare(a.visit.time||''));
+
+  const rows = todaysVisits.map(({patient,visit})=>`
+    <tr class="clickable" onclick="go('visitPrint',{patientId:'${patient.id}',visitId:'${visit.id}'})">
+      <td>${visit.time||''}</td>
+      <td>${esc(patient.name)} <span class="faint">${patient.id}</span></td>
+      <td>${esc(visit.diagnosis)||'<span class="faint">—</span>'}</td>
+      <td>${esc(visit.doctorName)}</td>
+    </tr>`).join('');
+
+  return `
+    <div class="page-head">
+      <div><h1>Dashboard</h1><p class="muted">${fmtDate(today)}</p></div>
+      <button class="btn btn-accent" onclick="go('newVisit')">+ New OPD Visit</button>
+    </div>
+    <div class="stat-grid">
+      <div class="stat-card"><div class="stat-num">${state.data.patients.length}</div><div class="stat-label">Total patients</div></div>
+      <div class="stat-card"><div class="stat-num">${todaysVisits.length}</div><div class="stat-label">Visits today</div></div>
+      <div class="stat-card"><div class="stat-num">${state.data.staff.length}</div><div class="stat-label">Staff accounts</div></div>
+    </div>
+    <div class="card">
+      <h2 style="margin-bottom:10px;">Today's visits</h2>
+      ${todaysVisits.length ? `<table><thead><tr><th>Time</th><th>Patient</th><th>Diagnosis</th><th>Doctor</th></tr></thead><tbody>${rows}</tbody></table>`
+        : `<p class="muted">No visits recorded yet today.</p>`}
+    </div>`;
+}
+
+function patientsTableHTML(){
+  const list = filteredPatients();
+  if(list.length===0) return `<p class="muted" style="padding:8px 0;">No patients match your search.</p>`;
+  const rows = list.map(p=>{
+    const lv = lastVisitDate(p);
+    return `<tr class="clickable" onclick="go('patient',{patientId:'${p.id}'})">
+      <td><span class="pill">${p.id}</span></td>
+      <td>${esc(p.name)}</td>
+      <td>${esc(p.age)} / ${esc(p.sex)}</td>
+      <td>${esc(p.phone)||'<span class="faint">—</span>'}</td>
+      <td>${lv?fmtDate(lv):'<span class="faint">No visits</span>'}</td>
+    </tr>`;
+  }).join('');
+  return `<table><thead><tr><th>ID</th><th>Name</th><th>Age/Sex</th><th>Phone</th><th>Last visit</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function patientsView(){
+  return `
+    <div class="page-head">
+      <div><h1>Patients</h1><p class="muted">${state.data.patients.length} registered</p></div>
+      <button class="btn btn-accent" onclick="go('newPatient')">+ New Patient</button>
+    </div>
+    <div class="card">
+      <div class="search-wrap" style="margin-bottom:14px;">
+        <input type="text" placeholder="Search by name, ID or phone" value="${esc(state.search)}" oninput="onPatientSearchInput(this.value)">
+      </div>
+      <div id="patients-table-container">${patientsTableHTML()}</div>
+    </div>`;
+}
+
+function newPatientView(){
+  return `
+    <div class="page-head"><h1>Register new patient</h1></div>
+    <div class="card" style="max-width:520px;">
+      <div class="row"><div class="field"><label>Full name *</label><input id="reg-name" type="text"></div></div>
+      <div class="row">
+        <div class="field"><label>Age *</label><input id="reg-age" type="text" placeholder="e.g. 45"></div>
+        <div class="field"><label>Sex *</label><select id="reg-sex"><option value="">Select</option><option>Male</option><option>Female</option><option>Other</option></select></div>
+      </div>
+      <div class="field"><label>Phone</label><input id="reg-phone" type="text"></div>
+      <div class="field"><label>Address</label><textarea id="reg-address"></textarea></div>
+      <div id="reg-error" class="error-text"></div>
+      <div class="row" style="margin-top:6px;">
+        <button class="btn btn-primary" onclick="saveNewPatient()">Save patient</button>
+        <button class="btn btn-ghost" onclick="go('patients')">Cancel</button>
+      </div>
+    </div>`;
+}
+
+function patientView(patientId){
+  const p = state.data.patients.find(p=>p.id===patientId);
+  if(!p) return `<p class="error-text">Patient not found.</p><button class="btn" onclick="go('patients')">Back to patients</button>`;
+
+  const infoBlock = state.ui.editingPatient ? `
+    <div class="row">
+      <div class="field"><label>Name</label><input id="ep-name" value="${esc(p.name)}"></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>Age</label><input id="ep-age" value="${esc(p.age)}"></div>
+      <div class="field"><label>Sex</label><select id="ep-sex">
+        ${['Male','Female','Other'].map(s=>`<option ${p.sex===s?'selected':''}>${s}</option>`).join('')}
+      </select></div>
+    </div>
+    <div class="row">
+      <div class="field"><label>Phone</label><input id="ep-phone" value="${esc(p.phone)}"></div>
+    </div>
+    <div class="field"><label>Address</label><textarea id="ep-address">${esc(p.address)}</textarea></div>
+    <div class="row"><button class="btn btn-primary" onclick="saveEditPatient('${p.id}')">Save</button><button class="btn btn-ghost" onclick="cancelEditPatient()">Cancel</button></div>
+  ` : `
+    <div class="row" style="margin-bottom:4px;">
+      <div><span class="faint">Age / Sex</span><div>${esc(p.age)} / ${esc(p.sex)}</div></div>
+      <div><span class="faint">Phone</span><div>${esc(p.phone)||'—'}</div></div>
+      <div><span class="faint">Registered</span><div>${fmtDate(p.registeredDate)}</div></div>
+    </div>
+    <div><span class="faint">Address</span><div>${esc(p.address)||'—'}</div></div>
+    <button class="btn btn-sm" style="margin-top:12px;" onclick="startEditPatient()">Edit details</button>
+  `;
+
+  const visits = (p.visits||[]).slice().sort((a,b)=> (b.date+b.id).localeCompare(a.date+a.id));
+  const visitRows = visits.map(v=>`
+    <tr class="clickable" onclick="go('visitPrint',{patientId:'${p.id}',visitId:'${v.id}'})">
+      <td>${fmtDate(v.date)}</td>
+      <td>${esc(v.diagnosis)||'<span class="faint">—</span>'}</td>
+      <td>${esc(v.doctorName)||'<span class="faint">—</span>'}</td>
+      <td>${v.prescriptions.length ? v.prescriptions.length+' item(s)' : '<span class="faint">—</span>'}</td>
+    </tr>`).join('');
+
+  return `
+    <div class="page-head">
+      <div><h1>${esc(p.name)} <span class="pill">${p.id}</span></h1></div>
+      <button class="btn btn-accent" onclick="go('newVisit',{patientId:'${p.id}'})">+ New OPD Visit</button>
+    </div>
+    <div class="card" style="margin-bottom:18px;">${infoBlock}</div>
+    <div class="card">
+      <h2 style="margin-bottom:10px;">Visit history</h2>
+      ${visits.length ? `<table><thead><tr><th>Date</th><th>Diagnosis</th><th>Doctor</th><th>Prescription</th></tr></thead><tbody>${visitRows}</tbody></table>`
+        : `<p class="muted">No visits recorded yet.</p>`}
+    </div>`;
+}
+
+function visitPatientResultsHTML(){
+  const q = state.search.trim().toLowerCase();
+  if(!q) return `<p class="faint">Type a name, ID or phone to search.</p>`;
+  const list = state.data.patients.filter(p =>
+    p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || (p.phone||'').includes(q)
+  ).slice(0,8);
+  if(list.length===0) return `<p class="faint">No matching patients.</p>`;
+  return list.map(p=>`
+    <div class="rx-row" style="cursor:pointer;" onclick="selectPatientForVisit('${p.id}')">
+      <strong>${esc(p.name)}</strong> <span class="pill">${p.id}</span>
+      <div class="faint">${esc(p.age)} / ${esc(p.sex)} ${p.phone?'· '+esc(p.phone):''}</div>
+    </div>`).join('');
+}
+
+function rxRowsHTML(){
+  return state.draftVisit.prescriptions.map((r,i)=>`
+    <div class="rx-row" data-rx-idx="${i}">
+      <div class="rx-row-head"><span class="idx">MEDICINE ${i+1}</span>
+        <button class="btn btn-ghost btn-sm" onclick="removeRxRow(${i})">Remove</button></div>
+      <div class="row">
+        <div class="field" style="flex:2;"><label>Medicine</label><input data-f="medicine" value="${esc(r.medicine)}"></div>
+        <div class="field"><label>Dosage</label><input data-f="dosage" placeholder="e.g. 500mg" value="${esc(r.dosage)}"></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Frequency</label><input data-f="frequency" placeholder="e.g. 1-0-1" value="${esc(r.frequency)}"></div>
+        <div class="field"><label>Duration</label><input data-f="duration" placeholder="e.g. 5 days" value="${esc(r.duration)}"></div>
+        <div class="field" style="flex:2;"><label>Instructions</label><input data-f="instructions" placeholder="e.g. after food" value="${esc(r.instructions)}"></div>
+      </div>
+    </div>`).join('');
+}
+function invRowsHTML(){
+  return state.draftVisit.investigations.map((r,i)=>`
+    <div class="inv-row" data-inv-idx="${i}">
+      <div class="rx-row-head"><span class="idx">TEST ${i+1}</span>
+        <button class="btn btn-ghost btn-sm" onclick="removeInvRow(${i})">Remove</button></div>
+      <div class="row">
+        <div class="field" style="flex:2;"><label>Test / Investigation</label><input data-f="test" value="${esc(r.test)}"></div>
+        <div class="field" style="flex:2;"><label>Clinical notes</label><input data-f="notes" value="${esc(r.notes)}"></div>
+      </div>
+    </div>`).join('');
+}
+
+function newVisitView(){
+  const dv = state.draftVisit;
+  let patientBlock;
+  if(dv.patientId){
+    const p = state.data.patients.find(p=>p.id===dv.patientId);
+    patientBlock = `<div class="banner banner-info">Patient: <strong>${esc(p.name)}</strong> (${p.id}) — ${esc(p.age)}/${esc(p.sex)}
+      ${!state.routeParams.patientId ? `<button class="btn btn-ghost btn-sm" style="margin-left:8px;" onclick="state.draftVisit.patientId=null;render()">Change</button>`:''}</div>`;
+  } else if(dv.newPatient){
+    patientBlock = `
+      <div class="card" style="margin-bottom:16px;">
+        <div class="rx-row-head"><h3>Register new patient</h3><button class="btn btn-ghost btn-sm" onclick="toggleNewPatientInVisit()">Cancel</button></div>
+        <div class="row"><div class="field"><label>Full name *</label><input id="np-name"></div></div>
+        <div class="row">
+          <div class="field"><label>Age *</label><input id="np-age"></div>
+          <div class="field"><label>Sex *</label><select id="np-sex"><option value="">Select</option><option>Male</option><option>Female</option><option>Other</option></select></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>Phone</label><input id="np-phone"></div>
+          <div class="field"><label>Address</label><input id="np-address"></div>
+        </div>
+      </div>`;
+  } else {
+    patientBlock = `
+      <div class="card" style="margin-bottom:16px;">
+        <div class="field"><label>Find patient</label><input type="text" placeholder="Search by name, ID or phone" oninput="onVisitPatientSearch(this.value)"></div>
+        <div id="visit-patient-results">${visitPatientResultsHTML()}</div>
+        <button class="btn btn-ghost btn-sm" style="margin-top:8px;" onclick="toggleNewPatientInVisit()">+ Register a new patient instead</button>
+      </div>`;
+  }
+
+  return `
+    <div class="page-head"><h1>New OPD Visit</h1></div>
+    ${patientBlock}
+    <div class="card stack">
+      <div class="field"><label>Attending doctor</label><input id="v-doctor" value="${esc(dv.doctorName)}"></div>
+      <div>
+        <h3>Vitals</h3>
+        <div class="row">
+          <div class="field"><label>BP</label><input id="v-bp" placeholder="120/80" value="${esc(dv.vitals.bp)}"></div>
+          <div class="field"><label>Pulse</label><input id="v-pulse" placeholder="bpm" value="${esc(dv.vitals.pulse)}"></div>
+          <div class="field"><label>Temp</label><input id="v-temp" placeholder="°F" value="${esc(dv.vitals.temp)}"></div>
+          <div class="field"><label>Weight</label><input id="v-weight" placeholder="kg" value="${esc(dv.vitals.weight)}"></div>
+        </div>
+      </div>
+      <div class="field"><label>Chief complaints</label><textarea id="v-complaints">${esc(dv.complaints)}</textarea></div>
+      <div class="field"><label>Examination findings</label><textarea id="v-exam">${esc(dv.examination)}</textarea></div>
+      <div class="field"><label>Diagnosis *</label><input id="v-diagnosis" value="${esc(dv.diagnosis)}"></div>
+      <div class="field"><label>Doctor's notes</label><textarea id="v-notes">${esc(dv.notes)}</textarea></div>
+
+      <div>
+        <div class="rx-row-head"><h3>Prescription</h3><button class="btn btn-sm" onclick="addRxRow()">+ Add medicine</button></div>
+        <div id="rx-rows">${rxRowsHTML()}</div>
+      </div>
+
+      <div>
+        <div class="rx-row-head"><h3>Investigations</h3><button class="btn btn-sm" onclick="addInvRow()">+ Add test</button></div>
+        <div id="inv-rows">${invRowsHTML()}</div>
+      </div>
+
+      <div id="visit-error" class="error-text"></div>
+      <div class="row">
+        <button class="btn btn-primary" onclick="saveVisit()">Save visit</button>
+        <button class="btn btn-ghost" onclick="go(state.routeParams.patientId?'patient':'patients', state.routeParams.patientId?{patientId:state.routeParams.patientId}:{})">Cancel</button>
+      </div>
+    </div>`;
+}
+
+function visitPrintView(patientId, visitId){
+  const p = state.data.patients.find(p=>p.id===patientId);
+  if(!p) return `<p class="error-text">Patient not found.</p>`;
+  const v = (p.visits||[]).find(v=>v.id===visitId);
+  if(!v) return `<p class="error-text">Visit not found.</p>`;
+  const ci = state.data.clinicInfo;
+
+  const opdSheet = `
+    <div class="print-sheet" id="sheet-opd">
+      <div class="letterhead"><div class="clinic-name">${esc(ci.name)}</div>
+        <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${ci.phone}</div></div>
+      <div class="sheet-title">OPD CARD</div>
+      <div class="patient-strip">
+        <span><strong>${esc(p.name)}</strong> (${p.id}) — ${esc(p.age)}/${esc(p.sex)}</span>
+        <span>${fmtDate(v.date)} ${v.time||''}</span>
+      </div>
+      <div class="sheet-section"><span class="lbl">Vitals</span><div>BP ${esc(v.vitals.bp)||'—'} · Pulse ${esc(v.vitals.pulse)||'—'} · Temp ${esc(v.vitals.temp)||'—'} · Weight ${esc(v.vitals.weight)||'—'}</div></div>
+      <div class="sheet-section"><span class="lbl">Chief complaints</span><div>${esc(v.complaints)||'—'}</div></div>
+      <div class="sheet-section"><span class="lbl">Examination</span><div>${esc(v.examination)||'—'}</div></div>
+      <div class="sheet-section"><span class="lbl">Diagnosis</span><div>${esc(v.diagnosis)||'—'}</div></div>
+      <div class="sheet-section"><span class="lbl">Notes</span><div>${esc(v.notes)||'—'}</div></div>
+      <div class="sheet-section" style="margin-top:20px;"><span class="lbl">Attending doctor</span><div>${esc(v.doctorName)||'—'}</div></div>
+    </div>`;
+
+  const rxSheet = v.prescriptions.length ? `
+    <div class="print-sheet" id="sheet-rx">
+      <div class="letterhead"><div class="clinic-name">${esc(ci.name)}</div>
+        <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${ci.phone}</div></div>
+      <div class="sheet-title">PRESCRIPTION</div>
+      <div class="patient-strip">
+        <span><strong>${esc(p.name)}</strong> (${p.id}) — ${esc(p.age)}/${esc(p.sex)}</span>
+        <span>${fmtDate(v.date)}</span>
+      </div>
+      ${v.diagnosis?`<div class="sheet-section"><span class="lbl">Diagnosis</span><div>${esc(v.diagnosis)}</div></div>`:''}
+      <div style="margin-top:10px;">
+        ${v.prescriptions.map((r,i)=>`
+          <div class="rx-line"><span class="n">${i+1}.</span>
+            <span><strong>${esc(r.medicine)}</strong> ${esc(r.dosage)} — ${esc(r.frequency)} ${r.duration?'· '+esc(r.duration):''}
+            ${r.instructions?`<br><span class="faint">${esc(r.instructions)}</span>`:''}</span></div>`).join('')}
+      </div>
+      <div class="sheet-section" style="margin-top:24px;"><span class="lbl">Prescribed by</span><div>${esc(v.doctorName)||'—'}</div></div>
+    </div>` : '';
+
+  const invSheet = v.investigations.length ? `
+    <div class="print-sheet" id="sheet-inv">
+      <div class="letterhead"><div class="clinic-name">${esc(ci.name)}</div>
+        <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${ci.phone}</div></div>
+      <div class="sheet-title">INVESTIGATION REQUEST</div>
+      <div class="patient-strip">
+        <span><strong>${esc(p.name)}</strong> (${p.id}) — ${esc(p.age)}/${esc(p.sex)}</span>
+        <span>${fmtDate(v.date)}</span>
+      </div>
+      ${v.diagnosis?`<div class="sheet-section"><span class="lbl">Clinical diagnosis</span><div>${esc(v.diagnosis)}</div></div>`:''}
+      <div style="margin-top:10px;">
+        ${v.investigations.map((r,i)=>`
+          <div class="rx-line"><span class="n">${i+1}.</span>
+            <span><strong>${esc(r.test)}</strong>${r.notes?` — ${esc(r.notes)}`:''}</span></div>`).join('')}
+      </div>
+      <div class="sheet-section" style="margin-top:24px;"><span class="lbl">Requested by</span><div>${esc(v.doctorName)||'—'}</div></div>
+    </div>` : '';
+
+  return `
+    <div class="page-head">
+      <div><h1>Visit summary</h1><p class="muted">${esc(p.name)} (${p.id}) — ${fmtDate(v.date)}</p></div>
+      <button class="btn btn-ghost" onclick="go('patient',{patientId:p.id})">Back to patient</button>
+    </div>
+    <div class="row" style="margin-bottom:18px;">
+      <button class="btn btn-primary" onclick="printSection('sheet-opd')">Print OPD card</button>
+      ${v.prescriptions.length?`<button class="btn btn-accent" onclick="printSection('sheet-rx')">Print prescription</button>`:''}
+      ${v.investigations.length?`<button class="btn" onclick="printSection('sheet-inv')">Print investigation form</button>`:''}
+    </div>
+    <div class="print-preview">${opdSheet.replace('print-sheet','print-sheet-preview').replace(/style="display:none"/,'')}</div>
+    ${v.prescriptions.length?`<div class="print-preview">${rxSheet.replace('print-sheet','print-sheet-preview')}</div>`:''}
+    ${v.investigations.length?`<div class="print-preview">${invSheet.replace('print-sheet','print-sheet-preview')}</div>`:''}
+    ${opdSheet}${rxSheet}${invSheet}
+  `;
+}
+
+function settingsView(){
+  const ci = state.data.clinicInfo;
+  const staffRows = state.data.staff.map(s=>`
+    <tr><td>${esc(s.name)}</td><td>${esc(s.role)}</td><td>••••</td>
+      <td>${s.name!==state.session.staffName?`<button class="btn btn-ghost btn-sm" onclick="removeStaff('${esc(s.name)}')">Remove</button>`:'<span class="faint">You</span>'}</td></tr>`).join('');
+
+  return `
+    <div class="page-head"><h1>Settings</h1></div>
+    <div class="card" style="margin-bottom:18px;max-width:520px;">
+      <h2 style="margin-bottom:12px;">Clinic info</h2>
+      <div class="field"><label>Clinic name</label><input id="ci-name" value="${esc(ci.name)}"></div>
+      <div class="field"><label>Address (shown on printouts)</label><input id="ci-address" value="${esc(ci.address)}"></div>
+      <div class="field"><label>Phone (shown on printouts)</label><input id="ci-phone" value="${esc(ci.phone)}"></div>
+      <button class="btn btn-primary" onclick="saveClinicInfo()">Save</button>
+    </div>
+
+    <div class="card" style="margin-bottom:18px;max-width:640px;">
+      <h2 style="margin-bottom:12px;">Staff accounts</h2>
+      <table><thead><tr><th>Name</th><th>Role</th><th>PIN</th><th></th></tr></thead><tbody>${staffRows}</tbody></table>
+      <div class="row" style="margin-top:14px;">
+        <div class="field"><label>Name</label><input id="st-name"></div>
+        <div class="field"><label>Role</label><select id="st-role"><option>Doctor</option><option>Receptionist</option><option>Staff</option></select></div>
+        <div class="field"><label>4-digit PIN</label><input id="st-pin" inputmode="numeric" maxlength="4"></div>
+      </div>
+      <div id="st-error" class="error-text"></div>
+      <button class="btn btn-sm" onclick="addStaff()">+ Add staff</button>
+    </div>
+
+    <div class="card" style="max-width:520px;border-color:var(--danger);">
+      <h2 style="color:var(--danger);margin-bottom:8px;">Danger zone</h2>
+      <p class="muted">This permanently deletes every patient, visit and staff account. Type RESET to confirm.</p>
+      <div class="field"><input oninput="onResetConfirmInput(this.value)" placeholder="RESET"></div>
+      <button id="reset-btn" class="btn btn-danger" disabled onclick="doReset()">Erase all clinic data</button>
+    </div>`;
+}
+
+function connectionErrorView(){
+  return `<div class="center-screen"><div class="auth-card" style="text-align:center;">
+    <div class="brand-mark" style="margin:0 auto 12px auto;">MMC</div>
+    <h1 style="font-size:18px;">Can't reach the clinic server</h1>
+    <p class="muted" style="font-size:13px;">${esc(state.loadError)}</p>
+    <button class="btn btn-primary btn-block" onclick="retryLoad()">Try again</button>
+  </div></div>`;
+}
+function retryLoad(){ state.loading = true; render(); loadData(); }
+
+/* ============================= ROOT RENDER ============================= */
+function render(){
+  const app = document.getElementById('app');
+  if(state.loading){ app.innerHTML = loadingView(); return; }
+  if(state.loadError && !state.data){ app.innerHTML = connectionErrorView(); return; }
+  if(!state.session.staffName){
+    app.innerHTML = state.data.staff.length===0 ? setupView() : loginView();
+    return;
+  }
+  app.innerHTML = shellView();
+}
+
+loadData();
+</script>
+</body>
+</html>
