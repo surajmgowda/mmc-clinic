@@ -116,10 +116,11 @@ app.put('/api/data', async (req, res) => {
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
-// ---- Static frontend ----
-app.use(express.static(path.join(__dirname, 'public')));
+// ---- Frontend ----
+// Single self-contained HTML file (all CSS/JS inline) — served for every
+// non-API route.
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
 ensureStore()
