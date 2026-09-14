@@ -134,8 +134,8 @@
   .auth-brand .brand-mark{margin:0 auto 10px auto;width:44px;height:44px;font-size:18px;}
 
   /* ---- Print sheets ---- */
-  .print-sheet{display:none;}
-  .print-preview{border:1px dashed var(--line);border-radius:8px;padding:22px;background:#fff;margin-bottom:16px;max-width:560px;}
+  .print-sheet{border:1px dashed var(--line);border-radius:8px;padding:22px;background:#fff;margin-bottom:16px;max-width:560px;}
+  .sheet-divider{border-top:1px dashed var(--line);margin:18px 0;}
   .letterhead{text-align:center;border-bottom:2px solid var(--primary-dark);padding-bottom:10px;margin-bottom:14px;}
   .letterhead .clinic-name{font-family:'Source Serif 4',serif;font-size:20px;font-weight:700;color:var(--primary-dark);}
   .letterhead .clinic-meta{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
@@ -150,7 +150,7 @@
     body *{visibility:hidden;}
     .print-sheet.print-active,.print-sheet.print-active *{visibility:visible;}
     .print-sheet.print-active{
-      display:block;position:absolute;top:0;left:0;width:100%;padding:18px 26px;
+      display:block;position:absolute;top:0;left:0;width:100%;padding:18px 26px;border:none;
     }
   }
 
@@ -823,15 +823,53 @@ function rxRowsHTML(){
       <div class="rx-row-head"><span class="idx">MEDICINE ${i+1}</span>
         <button class="btn btn-ghost btn-sm" onclick="removeRxRow(${i})">Remove</button></div>
       <div class="row">
-        <div class="field" style="flex:2;"><label>Medicine</label><input data-f="medicine" value="${esc(r.medicine)}"></div>
-        <div class="field"><label>Dosage</label><input data-f="dosage" placeholder="e.g. 500mg" value="${esc(r.dosage)}"></div>
+        <div class="field" style="flex:2;"><label>Medicine</label><input data-f="medicine" list="mmc-medicine-list" value="${esc(r.medicine)}"></div>
+        <div class="field"><label>Dosage</label><input data-f="dosage" list="mmc-dosage-list" placeholder="e.g. 500mg" value="${esc(r.dosage)}"></div>
       </div>
       <div class="row">
-        <div class="field"><label>Frequency</label><input data-f="frequency" placeholder="e.g. 1-0-1" value="${esc(r.frequency)}"></div>
+        <div class="field"><label>Frequency</label><input data-f="frequency" list="mmc-frequency-list" placeholder="e.g. 1-0-1" value="${esc(r.frequency)}"></div>
         <div class="field"><label>Duration</label><input data-f="duration" placeholder="e.g. 5 days" value="${esc(r.duration)}"></div>
         <div class="field" style="flex:2;"><label>Instructions</label><input data-f="instructions" placeholder="e.g. after food" value="${esc(r.instructions)}"></div>
       </div>
     </div>`).join('');
+}
+
+// Common OPD medicines, dosages and frequencies — offered as suggestions via
+// <datalist>, but every field stays a free-text input, so anything not
+// listed can still just be typed in.
+const COMMON_MEDICINES = [
+  'Paracetamol 500mg','Paracetamol 650mg','Ibuprofen 400mg','Diclofenac 50mg',
+  'Amoxicillin 500mg','Amoxicillin + Clavulanic Acid 625mg','Azithromycin 500mg',
+  'Ciprofloxacin 500mg','Cefixime 200mg','Doxycycline 100mg','Metronidazole 400mg',
+  'Pantoprazole 40mg','Omeprazole 20mg','Rabeprazole 20mg','Ranitidine 150mg',
+  'Domperidone 10mg','Ondansetron 4mg','Metoclopramide 10mg',
+  'Cetirizine 10mg','Levocetirizine 5mg','Chlorpheniramine 4mg','Montelukast 10mg',
+  'Metformin 500mg','Glimepiride 1mg','Insulin (Human Mixtard)',
+  'Amlodipine 5mg','Telmisartan 40mg','Losartan 50mg','Atenolol 50mg',
+  'Atorvastatin 10mg','Aspirin 75mg','Clopidogrel 75mg',
+  'Salbutamol Inhaler','Ambroxol Syrup','Cough Syrup (Dextromethorphan)',
+  'Vitamin B Complex','Vitamin D3 60000IU','Calcium + Vitamin D3','Iron + Folic Acid',
+  'Multivitamin Tablet','Zinc Sulphate','ORS Sachet','Albendazole 400mg',
+  'Loperamide 2mg','Tramadol 50mg','Diclofenac Gel','Betadine Ointment',
+  'Prednisolone 10mg','Dexamethasone Injection','Hydrocortisone Cream',
+  'Levothyroxine 50mcg'
+];
+const COMMON_DOSAGES = [
+  '500mg','650mg','250mg','400mg','100mg','50mg','25mg','10mg','5mg',
+  '1 tablet','2 tablets','1 capsule','5ml','10ml','1 sachet','1 puff','1 drop','2 drops'
+];
+const COMMON_FREQUENCIES = [
+  'OD (once daily)','BD (twice daily)','TDS (thrice daily)','QID (four times daily)',
+  '1-0-1','1-1-1','1-0-0','0-0-1','0-1-0','SOS (as needed)','STAT (immediately)',
+  'HS (at bedtime)','Before food','After food'
+];
+function datalistsHTML(){
+  const opt = v => `<option value="${esc(v)}"></option>`;
+  return `
+    <datalist id="mmc-medicine-list">${COMMON_MEDICINES.map(opt).join('')}</datalist>
+    <datalist id="mmc-dosage-list">${COMMON_DOSAGES.map(opt).join('')}</datalist>
+    <datalist id="mmc-frequency-list">${COMMON_FREQUENCIES.map(opt).join('')}</datalist>
+  `;
 }
 function invRowsHTML(){
   return state.draftVisit.investigations.map((r,i)=>`
@@ -877,6 +915,7 @@ function newVisitView(){
 
   return `
     <div class="page-head"><h1>New OPD Visit</h1></div>
+    ${datalistsHTML()}
     ${patientBlock}
     <div class="card stack">
       <div class="field"><label>Attending doctor</label><input id="v-doctor" value="${esc(dv.doctorName)}"></div>
@@ -919,41 +958,37 @@ function visitPrintView(patientId, visitId){
   if(!v) return `<p class="error-text">Visit not found.</p>`;
   const ci = state.data.clinicInfo;
 
+  const rxBlock = v.prescriptions.length ? `
+      <div class="sheet-divider"></div>
+      <div class="sheet-title">PRESCRIPTION</div>
+      <div>
+        ${v.prescriptions.map((r,i)=>`
+          <div class="rx-line"><span class="n">${i+1}.</span>
+            <span><strong>${esc(r.medicine)}</strong> ${esc(r.dosage)} — ${esc(r.frequency)} ${r.duration?'· '+esc(r.duration):''}
+            ${r.instructions?`<br><span class="faint">${esc(r.instructions)}</span>`:''}</span></div>`).join('')}
+      </div>` : '';
+
+  // OPD card + prescription are one combined, printable sheet: patient
+  // details and consultation notes on top (filled in by the receptionist
+  // / doctor), prescription at the bottom.
   const opdSheet = `
     <div class="print-sheet" id="sheet-opd">
       <div class="letterhead"><div class="clinic-name">${esc(ci.name)}</div>
         <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${ci.phone}</div></div>
       <div class="sheet-title">OPD CARD</div>
       <div class="patient-strip">
-        <span><strong>${esc(p.name)}</strong> (${p.id}) — ${esc(p.age)}/${esc(p.sex)}</span>
+        <span><strong>${esc(p.name)}</strong> (${p.id}) — ${esc(p.age)}/${esc(p.sex)}${p.phone?' · '+esc(p.phone):''}</span>
         <span>${fmtDate(v.date)} ${v.time||''}</span>
       </div>
+      <div class="sheet-section"><span class="lbl">Address</span><div>${esc(p.address)||'—'}</div></div>
       <div class="sheet-section"><span class="lbl">Vitals</span><div>BP ${esc(v.vitals.bp)||'—'} · Pulse ${esc(v.vitals.pulse)||'—'} · Temp ${esc(v.vitals.temp)||'—'} · Weight ${esc(v.vitals.weight)||'—'}</div></div>
       <div class="sheet-section"><span class="lbl">Chief complaints</span><div>${esc(v.complaints)||'—'}</div></div>
       <div class="sheet-section"><span class="lbl">Examination</span><div>${esc(v.examination)||'—'}</div></div>
       <div class="sheet-section"><span class="lbl">Diagnosis</span><div>${esc(v.diagnosis)||'—'}</div></div>
       <div class="sheet-section"><span class="lbl">Notes</span><div>${esc(v.notes)||'—'}</div></div>
-      <div class="sheet-section" style="margin-top:20px;"><span class="lbl">Attending doctor</span><div>${esc(v.doctorName)||'—'}</div></div>
+      <div class="sheet-section" style="margin-top:14px;"><span class="lbl">Attending doctor</span><div>${esc(v.doctorName)||'—'}</div></div>
+      ${rxBlock}
     </div>`;
-
-  const rxSheet = v.prescriptions.length ? `
-    <div class="print-sheet" id="sheet-rx">
-      <div class="letterhead"><div class="clinic-name">${esc(ci.name)}</div>
-        <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${ci.phone}</div></div>
-      <div class="sheet-title">PRESCRIPTION</div>
-      <div class="patient-strip">
-        <span><strong>${esc(p.name)}</strong> (${p.id}) — ${esc(p.age)}/${esc(p.sex)}</span>
-        <span>${fmtDate(v.date)}</span>
-      </div>
-      ${v.diagnosis?`<div class="sheet-section"><span class="lbl">Diagnosis</span><div>${esc(v.diagnosis)}</div></div>`:''}
-      <div style="margin-top:10px;">
-        ${v.prescriptions.map((r,i)=>`
-          <div class="rx-line"><span class="n">${i+1}.</span>
-            <span><strong>${esc(r.medicine)}</strong> ${esc(r.dosage)} — ${esc(r.frequency)} ${r.duration?'· '+esc(r.duration):''}
-            ${r.instructions?`<br><span class="faint">${esc(r.instructions)}</span>`:''}</span></div>`).join('')}
-      </div>
-      <div class="sheet-section" style="margin-top:24px;"><span class="lbl">Prescribed by</span><div>${esc(v.doctorName)||'—'}</div></div>
-    </div>` : '';
 
   const invSheet = v.investigations.length ? `
     <div class="print-sheet" id="sheet-inv">
@@ -979,14 +1014,11 @@ function visitPrintView(patientId, visitId){
       <button class="btn btn-ghost" onclick="go('patient',{patientId:p.id})">Back to patient</button>
     </div>
     <div class="row" style="margin-bottom:18px;">
-      <button class="btn btn-primary" onclick="printSection('sheet-opd')">Print OPD card</button>
-      ${v.prescriptions.length?`<button class="btn btn-accent" onclick="printSection('sheet-rx')">Print prescription</button>`:''}
+      <button class="btn btn-primary" onclick="printSection('sheet-opd')">Print OPD card${v.prescriptions.length?' + prescription':''}</button>
       ${v.investigations.length?`<button class="btn" onclick="printSection('sheet-inv')">Print investigation form</button>`:''}
     </div>
-    <div class="print-preview">${opdSheet.replace('print-sheet','print-sheet-preview').replace(/style="display:none"/,'')}</div>
-    ${v.prescriptions.length?`<div class="print-preview">${rxSheet.replace('print-sheet','print-sheet-preview')}</div>`:''}
-    ${v.investigations.length?`<div class="print-preview">${invSheet.replace('print-sheet','print-sheet-preview')}</div>`:''}
-    ${opdSheet}${rxSheet}${invSheet}
+    ${opdSheet}
+    ${invSheet}
   `;
 }
 
