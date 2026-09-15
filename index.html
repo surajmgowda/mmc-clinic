@@ -51,6 +51,7 @@
     background:var(--surface);color:var(--ink);
   }
   .field textarea{resize:vertical;min-height:60px;}
+  .field select + input{margin-top:6px;}
   .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--primary);}
   .row{display:flex;gap:12px;flex-wrap:wrap;}
   .row > .field{flex:1;min-width:130px;}
@@ -125,13 +126,6 @@
   .search-wrap{position:relative;max-width:340px;}
 
   .rx-row,.inv-row{border:1px solid var(--line);border-radius:var(--radius);padding:10px;margin-bottom:8px;background:#FCFBF9;}
-  .ac-wrap{position:relative;}
-  .ac-list{position:absolute;top:100%;left:0;right:0;margin-top:2px;background:var(--surface);border:1px solid var(--line);
-    border-radius:6px;box-shadow:0 6px 16px rgba(20,54,48,0.14);max-height:190px;overflow-y:auto;z-index:30;display:none;}
-  .ac-list.open{display:block;}
-  .ac-item{padding:9px 10px;font-size:13.5px;border-bottom:1px solid var(--line);}
-  .ac-item:last-child{border-bottom:none;}
-  .ac-item:active{background:var(--primary-tint);}
   .rx-row-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
   .rx-row-head .idx{font-size:11.5px;font-weight:700;color:var(--accent);}
 
@@ -283,7 +277,14 @@ function go(route, params){
   state.routeParams = params || {};
   state.search = '';
   state.ui.editingPatient = false;
-  if(route === 'newVisit'){ initDraftVisit(state.routeParams.patientId || null); }
+  if(route === 'newVisit'){
+    let existingVisit = null;
+    if(state.routeParams.editVisitId && state.routeParams.patientId){
+      const p = state.data.patients.find(p=>p.id===state.routeParams.patientId);
+      existingVisit = p ? (p.visits||[]).find(v=>v.id===state.routeParams.editVisitId) : null;
+    }
+    initDraftVisit(state.routeParams.patientId || null, existingVisit);
+  }
   render();
 }
 
@@ -301,6 +302,20 @@ async function doSetup(){
   if(!ok){ err.textContent = state.saveError; render(); return; }
   state.session.staffName = name;
   go('dashboard');
+}
+
+// Whoever's logged in — used to gate doctor-only actions like "Continue".
+function currentStaffRole(){
+  const s = state.data.staff.find(s=>s.name===state.session.staffName);
+  return s ? s.role : null;
+}
+function isDoctor(){ return currentStaffRole()==='Doctor'; }
+
+// A visit a receptionist saved without a diagnosis yet is "waiting" for a
+// doctor to continue it. Older records with no explicit status fall back
+// to inferring it from whether a diagnosis was ever recorded.
+function visitStatus(v){
+  return v.status || (v.diagnosis ? 'completed' : 'waiting');
 }
 
 function doLogin(){
@@ -407,16 +422,33 @@ async function saveEditPatient(patientId){
 }
 
 /* ============================= NEW VISIT (draft) ============================= */
-function initDraftVisit(patientId){
-  state.draftVisit = {
-    patientId: patientId || null,
-    newPatient: null,
-    doctorName: state.session.staffName || '',
-    vitals: {bp:'',pulse:'',temp:'',weight:''},
-    complaints:'', examination:'', diagnosis:'', notes:'',
-    prescriptions: [{medicine:'',dosage:'',frequency:'',duration:'',instructions:''}],
-    investigations: [{test:'',notes:''}]
-  };
+function initDraftVisit(patientId, existingVisit){
+  if(existingVisit){
+    state.draftVisit = {
+      patientId: patientId,
+      newPatient: null,
+      editingVisitId: existingVisit.id,
+      doctorName: existingVisit.doctorName || state.session.staffName || '',
+      vitals: { bp:'', pulse:'', temp:'', weight:'', ...(existingVisit.vitals||{}) },
+      complaints: existingVisit.complaints||'', examination: existingVisit.examination||'',
+      diagnosis: existingVisit.diagnosis||'', notes: existingVisit.notes||'',
+      prescriptions: (existingVisit.prescriptions && existingVisit.prescriptions.length)
+        ? existingVisit.prescriptions.map(r=>({...r})) : [{medicine:'',dosage:'',frequency:'',duration:'',instructions:''}],
+      investigations: (existingVisit.investigations && existingVisit.investigations.length)
+        ? existingVisit.investigations.map(r=>({...r})) : [{test:'',notes:''}]
+    };
+  } else {
+    state.draftVisit = {
+      patientId: patientId || null,
+      newPatient: null,
+      editingVisitId: null,
+      doctorName: state.session.staffName || '',
+      vitals: {bp:'',pulse:'',temp:'',weight:''},
+      complaints:'', examination:'', diagnosis:'', notes:'',
+      prescriptions: [{medicine:'',dosage:'',frequency:'',duration:'',instructions:''}],
+      investigations: [{test:'',notes:''}]
+    };
+  }
   state.visitError = '';
 }
 
@@ -502,9 +534,6 @@ async function saveVisit(){
       errEl.textContent = 'New patient needs a name, age and sex.'; return;
     }
   }
-  if(!dv.diagnosis){
-    errEl.textContent = 'Add a diagnosis / assessment before saving.'; return;
-  }
   errEl.textContent = '';
 
   let patient;
@@ -518,14 +547,32 @@ async function saveVisit(){
     patient = state.data.patients.find(p=>p.id===dv.patientId);
   }
 
-  const visit = {
-    id: newVisitId(), date: todayStr(), time: nowTimeStr(),
-    doctorName: dv.doctorName, vitals: dv.vitals,
-    complaints: dv.complaints, examination: dv.examination, diagnosis: dv.diagnosis, notes: dv.notes,
-    prescriptions: dv.prescriptions.filter(r=>r.medicine),
-    investigations: dv.investigations.filter(r=>r.test)
-  };
-  patient.visits.unshift(visit);
+  const prescriptions = dv.prescriptions.filter(r=>r.medicine);
+  const investigations = dv.investigations.filter(r=>r.test);
+  const status = dv.diagnosis ? 'completed' : 'waiting';
+
+  let visit = dv.editingVisitId ? (patient.visits||[]).find(v=>v.id===dv.editingVisitId) : null;
+  if(visit){
+    // Continuing a visit the receptionist started — update in place, keep
+    // the original id/date/time.
+    visit.doctorName = dv.doctorName;
+    visit.vitals = dv.vitals;
+    visit.complaints = dv.complaints;
+    visit.examination = dv.examination;
+    visit.diagnosis = dv.diagnosis;
+    visit.notes = dv.notes;
+    visit.prescriptions = prescriptions;
+    visit.investigations = investigations;
+    visit.status = status;
+  } else {
+    visit = {
+      id: newVisitId(), date: todayStr(), time: nowTimeStr(),
+      doctorName: dv.doctorName, vitals: dv.vitals,
+      complaints: dv.complaints, examination: dv.examination, diagnosis: dv.diagnosis, notes: dv.notes,
+      prescriptions, investigations, status
+    };
+    patient.visits.unshift(visit);
+  }
   const ok = await saveData();
   if(!ok){ errEl.textContent = state.saveError; render(); return; }
   go('visitPrint', {patientId: patient.id, visitId: visit.id});
@@ -680,12 +727,15 @@ function routeContent(){
 function dashboardView(){
   const today = todayStr();
   const todaysVisits = [];
+  const waitingVisits = [];
   state.data.patients.forEach(p=>{
     (p.visits||[]).forEach(v=>{
       if(v.date===today) todaysVisits.push({patient:p, visit:v});
+      if(visitStatus(v)==='waiting') waitingVisits.push({patient:p, visit:v});
     });
   });
   todaysVisits.sort((a,b)=> (b.visit.time||'').localeCompare(a.visit.time||''));
+  waitingVisits.sort((a,b)=> (b.visit.date+b.visit.time).localeCompare(a.visit.date+a.visit.time));
 
   const rows = todaysVisits.map(({patient,visit})=>`
     <tr class="clickable" onclick="go('visitPrint',{patientId:'${patient.id}',visitId:'${visit.id}'})">
@@ -693,6 +743,16 @@ function dashboardView(){
       <td>${esc(patient.name)} <span class="faint">${patient.id}</span></td>
       <td>${esc(visit.diagnosis)||'<span class="faint">—</span>'}</td>
       <td>${esc(visit.doctorName)}</td>
+    </tr>`).join('');
+
+  const waitingRows = waitingVisits.map(({patient,visit})=>`
+    <tr>
+      <td>${esc(patient.name)} <span class="pill">${patient.id}</span></td>
+      <td>${fmtDate(visit.date)} ${visit.time||''}</td>
+      <td>${esc(visit.complaints)||'<span class="faint">—</span>'}</td>
+      <td>${isDoctor()
+        ? `<button class="btn btn-sm btn-accent" onclick="go('newVisit',{patientId:'${patient.id}',editVisitId:'${visit.id}'})">Continue</button>`
+        : '<span class="faint">Waiting for doctor</span>'}</td>
     </tr>`).join('');
 
   return `
@@ -703,7 +763,12 @@ function dashboardView(){
     <div class="stat-grid">
       <div class="stat-card"><div class="stat-num">${state.data.patients.length}</div><div class="stat-label">Total patients</div></div>
       <div class="stat-card"><div class="stat-num">${todaysVisits.length}</div><div class="stat-label">Visits today</div></div>
-      <div class="stat-card"><div class="stat-num">${state.data.staff.length}</div><div class="stat-label">Staff accounts</div></div>
+      <div class="stat-card"><div class="stat-num">${waitingVisits.length}</div><div class="stat-label">Waiting for doctor</div></div>
+    </div>
+    <div class="card" style="margin-bottom:18px;">
+      <h2 style="margin-bottom:10px;">Waiting for doctor</h2>
+      ${waitingVisits.length ? `<table><thead><tr><th>Patient</th><th>Registered</th><th>Complaints</th><th></th></tr></thead><tbody>${waitingRows}</tbody></table>`
+        : `<p class="muted">No patients waiting right now.</p>`}
     </div>
     <div class="card">
       <h2 style="margin-bottom:10px;">Today's visits</h2>
@@ -791,13 +856,22 @@ function patientView(patientId){
   `;
 
   const visits = (p.visits||[]).slice().sort((a,b)=> (b.date+b.id).localeCompare(a.date+a.id));
-  const visitRows = visits.map(v=>`
-    <tr class="clickable" onclick="go('visitPrint',{patientId:'${p.id}',visitId:'${v.id}'})">
+  const visitRows = visits.map(v=>{
+    const st = visitStatus(v);
+    const canContinue = st==='waiting' && isDoctor();
+    const clickAction = canContinue
+      ? `go('newVisit',{patientId:'${p.id}',editVisitId:'${v.id}'})`
+      : `go('visitPrint',{patientId:'${p.id}',visitId:'${v.id}'})`;
+    return `
+    <tr class="clickable" onclick="${clickAction}">
       <td>${fmtDate(v.date)}</td>
       <td>${esc(v.diagnosis)||'<span class="faint">—</span>'}</td>
       <td>${esc(v.doctorName)||'<span class="faint">—</span>'}</td>
-      <td>${v.prescriptions.length ? v.prescriptions.length+' item(s)' : '<span class="faint">—</span>'}</td>
-    </tr>`).join('');
+      <td>${st==='waiting'
+        ? `<span class="pill" style="background:var(--accent-tint);color:var(--accent);">Waiting${canContinue?' — tap to continue':''}</span>`
+        : '<span class="pill">Completed</span>'}</td>
+    </tr>`;
+  }).join('');
 
   return `
     <div class="page-head">
@@ -807,7 +881,7 @@ function patientView(patientId){
     <div class="card" style="margin-bottom:18px;">${infoBlock}</div>
     <div class="card">
       <h2 style="margin-bottom:10px;">Visit history</h2>
-      ${visits.length ? `<table><thead><tr><th>Date</th><th>Diagnosis</th><th>Doctor</th><th>Prescription</th></tr></thead><tbody>${visitRows}</tbody></table>`
+      ${visits.length ? `<table><thead><tr><th>Date</th><th>Diagnosis</th><th>Doctor</th><th>Status</th></tr></thead><tbody>${visitRows}</tbody></table>`
         : `<p class="muted">No visits recorded yet.</p>`}
     </div>`;
 }
@@ -832,23 +906,28 @@ function rxRowsHTML(){
       <div class="rx-row-head"><span class="idx">MEDICINE ${i+1}</span>
         <button class="btn btn-ghost btn-sm" onclick="removeRxRow(${i})">Remove</button></div>
       <div class="row">
-        <div class="field ac-wrap" style="flex:2;"><label>Medicine</label>
-          <input data-f="medicine" autocomplete="off" placeholder="Tab. / Syp. / Inj. ..."
-            value="${esc(r.medicine)}"
-            oninput="onMedicineInput(this,${i})" onfocus="onMedicineInput(this,${i})" onblur="scheduleHideAc(this)">
-          <div class="ac-list" id="ac-med-${i}"></div>
+        <div class="field" style="flex:2;"><label>Medicine</label>
+          <select onchange="pickMedicine(${i},this.value)">
+            <option value="">Select…</option>
+            ${medicineOptionsList().map(m=>`<option value="${esc(m.name)}" ${r.medicine===m.name?'selected':''}>${esc(m.name)}</option>`).join('')}
+          </select>
+          <input data-f="medicine" type="text" placeholder="or type a medicine name" value="${esc(r.medicine)}"
+            oninput="state.draftVisit.prescriptions[${i}].medicine=this.value">
         </div>
-        <div class="field ac-wrap"><label>Dosage</label>
-          <input data-f="dosage" autocomplete="off" placeholder="e.g. 500mg" value="${esc(r.dosage)}"
-            oninput="onDosageInput(this,${i})" onfocus="onDosageInput(this,${i})" onblur="scheduleHideAc(this)">
-          <div class="ac-list" id="ac-dose-${i}"></div>
+        <div class="field"><label>Dosage</label>
+          <select id="rx-dose-select-${i}" onchange="pickDosage(${i},this.value)">${dosageOptionsHTML(r.medicine, r.dosage)}</select>
+          <input data-f="dosage" type="text" placeholder="or type dosage" value="${esc(r.dosage)}"
+            oninput="state.draftVisit.prescriptions[${i}].dosage=this.value">
         </div>
       </div>
       <div class="row">
-        <div class="field ac-wrap"><label>Frequency</label>
-          <input data-f="frequency" autocomplete="off" placeholder="e.g. 1-0-1" value="${esc(r.frequency)}"
-            oninput="onFrequencyInput(this,${i})" onfocus="onFrequencyInput(this,${i})" onblur="scheduleHideAc(this)">
-          <div class="ac-list" id="ac-freq-${i}"></div>
+        <div class="field"><label>Frequency</label>
+          <select onchange="pickFrequency(${i},this.value)">
+            <option value="">Select…</option>
+            ${FREQUENCY_OPTIONS.map(f=>`<option value="${esc(f)}" ${r.frequency===f?'selected':''}>${esc(f)}</option>`).join('')}
+          </select>
+          <input data-f="frequency" type="text" placeholder="or type e.g. 1-0-1" value="${esc(r.frequency)}"
+            oninput="state.draftVisit.prescriptions[${i}].frequency=this.value">
         </div>
         <div class="field"><label>Days</label><input data-f="duration" type="number" min="1" step="1" inputmode="numeric" placeholder="e.g. 5" value="${esc(r.duration)}"></div>
         <div class="field"><label>Timing</label>
@@ -1050,80 +1129,42 @@ function computeQuantityLabel(medicine, freq, duration){
   return `Total: ${qty} ${unit}${qty===1?'':'s'}`;
 }
 
-// ---- Tap-to-select suggestion lists (medicine / dosage / frequency / test) ----
-// Deliberately not a native <datalist>: on mobile, datalist suggestions
-// render inconsistently (sometimes stuck near the keyboard). This renders
-// a plain, positioned list directly under the field instead.
-function acRender(boxId, items, onPickFn, rowIdx){
-  const box = document.getElementById(boxId);
-  if(!box) return;
-  if(items.length===0){ box.classList.remove('open'); box.innerHTML=''; return; }
-  box.innerHTML = items.map(v=>`<div class="ac-item" data-name="${esc(v)}" onmousedown="${onPickFn}(${rowIdx},this)">${esc(v)}</div>`).join('');
-  box.classList.add('open');
+// ---- Dropdown pickers (Medicine / Dosage / Frequency / Investigation) ----
+// Plain native <select> elements — same control type as the Sex field —
+// paired with a free-text input. Picking an option fills the text input
+// (which is what actually gets saved); typing directly works too.
+function dosageOptionsFor(medicineName){
+  const match = medicineOptionsList().find(m=>m.name.toLowerCase()===((medicineName||'').trim().toLowerCase()));
+  return (match && match.dosages && match.dosages.length) ? match.dosages : COMMON_DOSAGES;
 }
-function hideAc(id){ const el=document.getElementById(id); if(el){ el.classList.remove('open'); el.innerHTML=''; } }
-function scheduleHideAc(inputEl){
-  const wrap = inputEl.closest('.ac-wrap');
-  const box = wrap ? wrap.querySelector('.ac-list') : null;
-  if(box) setTimeout(()=>{ box.classList.remove('open'); box.innerHTML=''; }, 180);
+function dosageOptionsHTML(medicineName, currentDosage){
+  const opts = dosageOptionsFor(medicineName);
+  return `<option value="">Select…</option>` + opts.map(d=>`<option value="${esc(d)}" ${currentDosage===d?'selected':''}>${esc(d)}</option>`).join('');
 }
-
-function onMedicineInput(inputEl, i){
-  state.draftVisit.prescriptions[i].medicine = inputEl.value;
-  const q = inputEl.value.trim().toLowerCase();
-  const all = medicineOptionsList();
-  const matches = (q ? all.filter(m=>m.name.toLowerCase().includes(q)) : all).slice(0,8).map(m=>m.name);
-  acRender('ac-med-'+i, matches, 'selectMedicine', i);
-}
-function selectMedicine(i, el){
-  const name = el.getAttribute('data-name');
+function pickMedicine(i, name){
   const row = document.querySelector(`[data-rx-idx="${i}"]`);
   row.querySelector('[data-f="medicine"]').value = name;
   state.draftVisit.prescriptions[i].medicine = name;
-  hideAc('ac-med-'+i);
+  const doseSel = document.getElementById('rx-dose-select-'+i);
+  if(doseSel) doseSel.innerHTML = dosageOptionsHTML(name, state.draftVisit.prescriptions[i].dosage);
 }
-function onDosageInput(inputEl, i){
-  state.draftVisit.prescriptions[i].dosage = inputEl.value;
-  const row = document.querySelector(`[data-rx-idx="${i}"]`);
-  const medName = row.querySelector('[data-f="medicine"]').value.trim().toLowerCase();
-  const match = medicineOptionsList().find(m=>m.name.toLowerCase()===medName);
-  const source = (match && match.dosages && match.dosages.length) ? match.dosages : COMMON_DOSAGES;
-  const q = inputEl.value.trim().toLowerCase();
-  const matches = (q ? source.filter(d=>d.toLowerCase().includes(q)) : source).slice(0,8);
-  acRender('ac-dose-'+i, matches, 'selectDosage', i);
-}
-function selectDosage(i, el){
-  const val = el.getAttribute('data-name');
+function pickDosage(i, val){
+  if(!val) return;
   const row = document.querySelector(`[data-rx-idx="${i}"]`);
   row.querySelector('[data-f="dosage"]').value = val;
   state.draftVisit.prescriptions[i].dosage = val;
-  hideAc('ac-dose-'+i);
 }
-function onFrequencyInput(inputEl, i){
-  state.draftVisit.prescriptions[i].frequency = inputEl.value;
-  const q = inputEl.value.trim().toLowerCase();
-  const matches = (q ? FREQUENCY_OPTIONS.filter(f=>f.toLowerCase().includes(q)) : FREQUENCY_OPTIONS).slice(0,8);
-  acRender('ac-freq-'+i, matches, 'selectFrequency', i);
-}
-function selectFrequency(i, el){
-  const val = el.getAttribute('data-name');
+function pickFrequency(i, val){
+  if(!val) return;
   const row = document.querySelector(`[data-rx-idx="${i}"]`);
   row.querySelector('[data-f="frequency"]').value = val;
   state.draftVisit.prescriptions[i].frequency = val;
-  hideAc('ac-freq-'+i);
 }
-function onInvTestInput(inputEl, i){
-  state.draftVisit.investigations[i].test = inputEl.value;
-  const q = inputEl.value.trim().toLowerCase();
-  const matches = (q ? INVESTIGATION_DB.filter(t=>t.toLowerCase().includes(q)) : INVESTIGATION_DB).slice(0,8);
-  acRender('ac-inv-'+i, matches, 'selectInvTest', i);
-}
-function selectInvTest(i, el){
-  const val = el.getAttribute('data-name');
+function pickInvTest(i, val){
+  if(!val) return;
   const row = document.querySelector(`[data-inv-idx="${i}"]`);
   row.querySelector('[data-f="test"]').value = val;
   state.draftVisit.investigations[i].test = val;
-  hideAc('ac-inv-'+i);
 }
 
 // Saves whatever's currently typed in a row's Medicine + Dosage fields into
@@ -1148,10 +1189,13 @@ function invRowsHTML(){
       <div class="rx-row-head"><span class="idx">TEST ${i+1}</span>
         <button class="btn btn-ghost btn-sm" onclick="removeInvRow(${i})">Remove</button></div>
       <div class="row">
-        <div class="field ac-wrap" style="flex:2;"><label>Test / Investigation</label>
-          <input data-f="test" autocomplete="off" value="${esc(r.test)}"
-            oninput="onInvTestInput(this,${i})" onfocus="onInvTestInput(this,${i})" onblur="scheduleHideAc(this)">
-          <div class="ac-list" id="ac-inv-${i}"></div>
+        <div class="field" style="flex:2;"><label>Test / Investigation</label>
+          <select onchange="pickInvTest(${i},this.value)">
+            <option value="">Select…</option>
+            ${INVESTIGATION_DB.map(t=>`<option value="${esc(t)}" ${r.test===t?'selected':''}>${esc(t)}</option>`).join('')}
+          </select>
+          <input data-f="test" type="text" placeholder="or type a test name" value="${esc(r.test)}"
+            oninput="state.draftVisit.investigations[${i}].test=this.value">
         </div>
         <div class="field" style="flex:2;"><label>Clinical notes</label><input data-f="notes" value="${esc(r.notes)}"></div>
       </div>
@@ -1189,7 +1233,8 @@ function newVisitView(){
   }
 
   return `
-    <div class="page-head"><h1>New OPD Visit</h1></div>
+    <div class="page-head"><h1>${dv.editingVisitId ? 'Continue Consultation' : 'New OPD Visit'}</h1></div>
+    ${dv.editingVisitId ? `<div class="banner banner-info">Continuing the visit started earlier today — patient details and vitals are already filled in.</div>` : ''}
     ${patientBlock}
     <div class="card stack">
       <div class="field"><label>Attending doctor</label><input id="v-doctor" value="${esc(dv.doctorName)}"></div>
@@ -1204,7 +1249,7 @@ function newVisitView(){
       </div>
       <div class="field"><label>Chief complaints</label><textarea id="v-complaints">${esc(dv.complaints)}</textarea></div>
       <div class="field"><label>Examination findings</label><textarea id="v-exam">${esc(dv.examination)}</textarea></div>
-      <div class="field"><label>Diagnosis *</label><input id="v-diagnosis" value="${esc(dv.diagnosis)}"></div>
+      <div class="field"><label>Diagnosis</label><input id="v-diagnosis" value="${esc(dv.diagnosis)}" placeholder="leave blank if you're just registering the patient — the doctor will complete this"></div>
       <div class="field"><label>Doctor's notes</label><textarea id="v-notes">${esc(dv.notes)}</textarea></div>
 
       <div>
