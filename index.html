@@ -292,6 +292,22 @@ function go(route, params){
 }
 
 /* ============================= AUTH ============================= */
+// Staff PINs are stored as SHA-256 hashes, not plain text (matters since
+// the data backup export makes the raw record easy to open). Accounts
+// created before this existed still have a plain 4-digit PIN on file;
+// verifyPin() accepts either, and silently upgrades a legacy account to a
+// hash the next time that PIN is used successfully.
+async function hashPin(pin){
+  const enc = new TextEncoder().encode(pin);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+function looksHashed(pin){ return typeof pin === 'string' && pin.length === 64 && /^[0-9a-f]+$/.test(pin); }
+async function verifyPin(staff, enteredPin){
+  if(looksHashed(staff.pin)) return (await hashPin(enteredPin)) === staff.pin;
+  return staff.pin === enteredPin;
+}
+
 async function doSetup(){
   const name = document.getElementById('setup-name').value.trim();
   const role = document.getElementById('setup-role').value;
@@ -300,7 +316,7 @@ async function doSetup(){
   if(!name || !/^\d{4}$/.test(pin)){
     err.textContent = 'Enter your name and a 4-digit PIN.'; return;
   }
-  state.data.staff.push({name, role, pin});
+  state.data.staff.push({name, role, pin: await hashPin(pin)});
   const ok = await saveData();
   if(!ok){ err.textContent = state.saveError; render(); return; }
   state.session.staffName = name;
@@ -321,13 +337,25 @@ function visitStatus(v){
   return v.status || (v.diagnosis ? 'completed' : 'waiting');
 }
 
-function doLogin(){
+// Older visits (saved before billing existed) get a default here rather
+// than being migrated in the database.
+function billingOf(v){
+  return v.billing || { fee:'', charges:[], paid:false, mode:'' };
+}
+function billingTotal(b){
+  const fee = parseFloat(b.fee) || 0;
+  const chargeSum = (b.charges||[]).reduce((sum,c)=> sum + (parseFloat(c.amount)||0), 0);
+  return fee + chargeSum;
+}
+
+async function doLogin(){
   const name = document.getElementById('login-select').value;
   const pin = document.getElementById('login-pin').value.trim();
   const staff = state.data.staff.find(s => s.name === name);
-  if(staff && staff.pin === pin){
+  if(staff && await verifyPin(staff, pin)){
     state.session.staffName = name;
     state.loginError = '';
+    if(!looksHashed(staff.pin)){ staff.pin = await hashPin(pin); saveData(); }
     go('dashboard');
   } else {
     state.loginError = 'Incorrect PIN. Try again.';
@@ -352,7 +380,7 @@ async function addStaffFromLogin(){
   if(state.data.staff.some(s=>s.name===name)){
     err.textContent = 'That name is already registered.'; return;
   }
-  state.data.staff.push({name, role, pin});
+  state.data.staff.push({name, role, pin: await hashPin(pin)});
   const ok = await saveData();
   if(!ok){ err.textContent = state.saveError; render(); return; }
   state.loginMode = 'login';
@@ -396,13 +424,14 @@ async function saveNewPatient(){
   const sex = document.getElementById('reg-sex').value;
   const phone = document.getElementById('reg-phone').value.trim();
   const address = document.getElementById('reg-address').value.trim();
+  const allergies = document.getElementById('reg-allergies').value.trim();
   const err = document.getElementById('reg-error');
   if(!name || !age || !sex || !phone || !address){
     err.textContent = 'Name, age, sex, phone and address are all required.'; return;
   }
   const patient = {
-    id: newPatientId(), name, age, sex, phone, address,
-    registeredDate: todayStr(), visits: []
+    id: newPatientId(), name, age, sex, phone, address, allergies,
+    registeredDate: todayStr(), visits: [], growthRecords: [], vaccinations: []
   };
   state.data.patients.push(patient);
   const ok = await saveData();
@@ -419,12 +448,13 @@ async function saveEditPatient(patientId){
   const sex = document.getElementById('ep-sex').value;
   const phone = document.getElementById('ep-phone').value.trim();
   const address = document.getElementById('ep-address').value.trim();
+  const allergies = document.getElementById('ep-allergies').value.trim();
   const err = document.getElementById('ep-error');
   if(!name || !age || !sex || !phone || !address){
     if(err) err.textContent = 'Name, age, sex, phone and address are all required.';
     return;
   }
-  p.name = name; p.age = age; p.sex = sex; p.phone = phone; p.address = address;
+  p.name = name; p.age = age; p.sex = sex; p.phone = phone; p.address = address; p.allergies = allergies;
   state.ui.editingPatient = false;
   await saveData();
   render();
@@ -441,6 +471,8 @@ function initDraftVisit(patientId, existingVisit){
       vitals: { bp:'', pulse:'', temp:'', weight:'', ...(existingVisit.vitals||{}) },
       complaints: existingVisit.complaints||'', examination: existingVisit.examination||'',
       diagnosis: existingVisit.diagnosis||'', notes: existingVisit.notes||'',
+      followUpDate: existingVisit.followUpDate||'',
+      assignedDoctor: existingVisit.assignedDoctor||'',
       prescriptions: (existingVisit.prescriptions && existingVisit.prescriptions.length)
         ? existingVisit.prescriptions.map(r=>({...r})) : [{medicine:'',dosage:'',frequency:'',duration:'',instructions:''}],
       investigations: (existingVisit.investigations && existingVisit.investigations.length)
@@ -453,7 +485,7 @@ function initDraftVisit(patientId, existingVisit){
       editingVisitId: null,
       doctorName: state.session.staffName || '',
       vitals: {bp:'',pulse:'',temp:'',weight:''},
-      complaints:'', examination:'', diagnosis:'', notes:'',
+      complaints:'', examination:'', diagnosis:'', notes:'', followUpDate:'', assignedDoctor:'',
       prescriptions: [{medicine:'',dosage:'',frequency:'',duration:'',instructions:''}],
       investigations: [{test:'',notes:''}]
     };
@@ -510,10 +542,14 @@ async function saveVisit(){
     dv.examination = val('v-exam');
     dv.diagnosis = val('v-diagnosis');
     dv.notes = val('v-notes');
+    dv.followUpDate = val('v-followup');
     dv.vitals.bp = val('v-bp');
     dv.vitals.pulse = val('v-pulse');
     dv.vitals.temp = val('v-temp');
     dv.vitals.weight = val('v-weight');
+  }
+  if(document.getElementById('v-assigned-doctor') !== null){
+    dv.assignedDoctor = val('v-assigned-doctor');
   }
 
   document.querySelectorAll('[data-rx-idx]').forEach(row=>{
@@ -544,6 +580,7 @@ async function saveVisit(){
     dv.newPatient.sex = document.getElementById('np-sex').value;
     dv.newPatient.phone = document.getElementById('np-phone').value.trim();
     dv.newPatient.address = document.getElementById('np-address').value.trim();
+    dv.newPatient.allergies = document.getElementById('np-allergies') ? document.getElementById('np-allergies').value.trim() : '';
     if(!dv.newPatient.name || !dv.newPatient.age || !dv.newPatient.sex || !dv.newPatient.phone || !dv.newPatient.address){
       errEl.textContent = 'New patient needs name, age, sex, phone and address.'; return;
     }
@@ -554,7 +591,8 @@ async function saveVisit(){
   if(dv.newPatient){
     patient = {
       id: newPatientId(), name: dv.newPatient.name, age: dv.newPatient.age, sex: dv.newPatient.sex,
-      phone: dv.newPatient.phone, address: dv.newPatient.address, registeredDate: todayStr(), visits: []
+      phone: dv.newPatient.phone, address: dv.newPatient.address, allergies: dv.newPatient.allergies||'',
+      registeredDate: todayStr(), visits: [], growthRecords: [], vaccinations: []
     };
     state.data.patients.push(patient);
   } else {
@@ -575,6 +613,8 @@ async function saveVisit(){
     visit.examination = dv.examination;
     visit.diagnosis = dv.diagnosis;
     visit.notes = dv.notes;
+    visit.followUpDate = dv.followUpDate;
+    visit.assignedDoctor = dv.assignedDoctor;
     visit.prescriptions = prescriptions;
     visit.investigations = investigations;
     visit.status = status;
@@ -583,7 +623,9 @@ async function saveVisit(){
       id: newVisitId(), date: todayStr(), time: nowTimeStr(),
       doctorName: dv.doctorName, vitals: dv.vitals,
       complaints: dv.complaints, examination: dv.examination, diagnosis: dv.diagnosis, notes: dv.notes,
-      prescriptions, investigations, status
+      followUpDate: dv.followUpDate, assignedDoctor: dv.assignedDoctor||'',
+      prescriptions, investigations, status,
+      billing: { fee:'', charges:[], paid:false, mode:'' }
     };
     patient.visits.unshift(visit);
   }
@@ -611,6 +653,17 @@ async function saveClinicInfo(){
   await saveData();
   render();
 }
+function downloadBackup(){
+  const blob = new Blob([JSON.stringify(state.data, null, 2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `mmc-clinic-backup-${todayStr()}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 async function addStaff(){
   const name = document.getElementById('st-name').value.trim();
   const role = document.getElementById('st-role').value;
@@ -618,7 +671,7 @@ async function addStaff(){
   const err = document.getElementById('st-error');
   if(!name || !/^\d{4}$/.test(pin)){ err.textContent = 'Enter a name and a 4-digit PIN.'; return; }
   if(state.data.staff.some(s=>s.name===name)){ err.textContent = 'That name is already registered.'; return; }
-  state.data.staff.push({name, role, pin});
+  state.data.staff.push({name, role, pin: await hashPin(pin)});
   await saveData();
   render();
 }
@@ -706,6 +759,7 @@ function shellView(){
     ['newVisit', isDoctor() ? 'New OPD Visit' : 'Check In Patient']
   ];
   if(isDoctor()) items.push(['pediatrics','Pediatrics']);
+  items.push(['billing','Billing']);
   items.push(['settings','Settings']);
   const nav = items.map(([r,label])=>
     `<button class="nav-item ${state.route===r?'active':''}" onclick="go('${r}')">${label}</button>`
@@ -740,6 +794,8 @@ function routeContent(){
     case 'visitPrint': return visitPrintView(state.routeParams.patientId, state.routeParams.visitId);
     case 'settings': return settingsView();
     case 'pediatrics': return pediatricsView();
+    case 'billing': return billingView();
+    case 'billingDetail': return billingDetailView(state.routeParams.patientId, state.routeParams.visitId);
     default: return dashboardView();
   }
 }
@@ -748,14 +804,17 @@ function dashboardView(){
   const today = todayStr();
   const todaysVisits = [];
   const waitingVisits = [];
+  const followUps = [];
   state.data.patients.forEach(p=>{
     (p.visits||[]).forEach(v=>{
       if(v.date===today) todaysVisits.push({patient:p, visit:v});
-      if(visitStatus(v)==='waiting') waitingVisits.push({patient:p, visit:v});
+      if(visitStatus(v)==='waiting' && (!isDoctor() || !v.assignedDoctor || v.assignedDoctor===state.session.staffName)) waitingVisits.push({patient:p, visit:v});
+      if(v.followUpDate && v.followUpDate<=today) followUps.push({patient:p, visit:v});
     });
   });
   todaysVisits.sort((a,b)=> (b.visit.time||'').localeCompare(a.visit.time||''));
   waitingVisits.sort((a,b)=> (b.visit.date+b.visit.time).localeCompare(a.visit.date+a.visit.time));
+  followUps.sort((a,b)=> a.visit.followUpDate.localeCompare(b.visit.followUpDate));
 
   const showClinical = isDoctor();
   const rows = todaysVisits.map(({patient,visit})=>`
@@ -768,13 +827,30 @@ function dashboardView(){
 
   const waitingRows = waitingVisits.map(({patient,visit})=>`
     <tr>
-      <td>${esc(patient.name)} <span class="pill">${patient.id}</span></td>
+      <td>${esc(patient.name)} <span class="pill">${patient.id}</span>${visit.assignedDoctor?` <span class="faint">for ${esc(visit.assignedDoctor)}</span>`:''}</td>
       <td>${fmtDate(visit.date)} ${visit.time||''}</td>
       <td>${showClinical ? (esc(visit.complaints)||'<span class="faint">—</span>') : '<span class="faint">—</span>'}</td>
       <td>${isDoctor()
         ? `<button class="btn btn-sm btn-accent" onclick="go('newVisit',{patientId:'${patient.id}',editVisitId:'${visit.id}'})">Continue</button>`
         : '<span class="faint">Waiting for doctor</span>'}</td>
     </tr>`).join('');
+
+  const followUpRows = followUps.map(({patient,visit})=>`
+    <tr>
+      <td>${esc(patient.name)} <span class="pill">${patient.id}</span></td>
+      <td>${fmtDate(visit.followUpDate)}${visit.followUpDate<today?' <span class="faint">(overdue)</span>':''}</td>
+      <td>${esc(visit.diagnosis)||'<span class="faint">—</span>'}</td>
+      <td>
+        <button class="btn btn-sm" onclick="go('newVisit',{patientId:'${patient.id}',editVisitId:'${visit.id}'})">Open</button>
+        <button class="btn btn-ghost btn-sm" onclick="markFollowUpDone('${patient.id}','${visit.id}')">Mark done</button>
+      </td>
+    </tr>`).join('');
+  const followUpCard = isDoctor() ? `
+    <div class="card" style="margin-bottom:18px;">
+      <h2 style="margin-bottom:10px;">Follow-ups due</h2>
+      ${followUps.length ? `<table><thead><tr><th>Patient</th><th>Due</th><th>Diagnosis</th><th></th></tr></thead><tbody>${followUpRows}</tbody></table>`
+        : `<p class="muted">No follow-ups due.</p>`}
+    </div>` : '';
 
   return `
     <div class="page-head">
@@ -791,11 +867,20 @@ function dashboardView(){
       ${waitingVisits.length ? `<table><thead><tr><th>Patient</th><th>Registered</th><th>Complaints</th><th></th></tr></thead><tbody>${waitingRows}</tbody></table>`
         : `<p class="muted">No patients waiting right now.</p>`}
     </div>
+    ${followUpCard}
     <div class="card">
       <h2 style="margin-bottom:10px;">Today's visits</h2>
       ${todaysVisits.length ? `<table><thead><tr><th>Time</th><th>Patient</th><th>Diagnosis</th><th>Doctor</th></tr></thead><tbody>${rows}</tbody></table>`
         : `<p class="muted">No visits recorded yet today.</p>`}
     </div>`;
+}
+async function markFollowUpDone(patientId, visitId){
+  const p = state.data.patients.find(p=>p.id===patientId);
+  const v = p && (p.visits||[]).find(v=>v.id===visitId);
+  if(!v) return;
+  v.followUpDate = '';
+  await saveData();
+  render();
 }
 
 function patientsTableHTML(){
@@ -839,6 +924,7 @@ function newPatientView(){
       </div>
       <div class="field"><label>Phone *</label><input id="reg-phone" type="text"></div>
       <div class="field"><label>Address *</label><textarea id="reg-address"></textarea></div>
+      <div class="field"><label>Known allergies</label><input id="reg-allergies" type="text" placeholder="e.g. Penicillin, Sulfa — leave blank if none known"></div>
       <div id="reg-error" class="error-text"></div>
       <div class="row" style="margin-top:6px;">
         <button class="btn btn-primary" onclick="saveNewPatient()">Save patient</button>
@@ -865,6 +951,7 @@ function patientView(patientId){
       <div class="field"><label>Phone *</label><input id="ep-phone" value="${esc(p.phone)}"></div>
     </div>
     <div class="field"><label>Address *</label><textarea id="ep-address">${esc(p.address)}</textarea></div>
+    <div class="field"><label>Known allergies</label><input id="ep-allergies" value="${esc(p.allergies)}" placeholder="e.g. Penicillin, Sulfa — leave blank if none known"></div>
     <div id="ep-error" class="error-text"></div>
     <div class="row"><button class="btn btn-primary" onclick="saveEditPatient('${p.id}')">Save</button><button class="btn btn-ghost" onclick="cancelEditPatient()">Cancel</button></div>
   ` : `
@@ -874,6 +961,7 @@ function patientView(patientId){
       <div><span class="faint">Registered</span><div>${fmtDate(p.registeredDate)}</div></div>
     </div>
     <div><span class="faint">Address</span><div>${esc(p.address)||'—'}</div></div>
+    ${p.allergies ? `<div class="banner" style="background:var(--danger-tint);color:var(--danger);margin-top:10px;"><strong>⚠ Allergies:</strong> ${esc(p.allergies)}</div>` : ''}
     <button class="btn btn-sm" style="margin-top:12px;" onclick="startEditPatient()">Edit details</button>
   `;
 
@@ -901,11 +989,70 @@ function patientView(patientId){
       <button class="btn btn-accent" onclick="go('newVisit',{patientId:'${p.id}'})">+ New OPD Visit</button>
     </div>
     <div class="card" style="margin-bottom:18px;">${infoBlock}</div>
+    ${isDoctor() ? growthRecordsCardHTML(p) : ''}
+    ${isDoctor() ? vaccinationCardHTML(p) : ''}
     <div class="card">
       <h2 style="margin-bottom:10px;">Visit history</h2>
       ${visits.length ? `<table><thead><tr><th>Date</th><th>Diagnosis</th><th>Doctor</th><th>Status</th></tr></thead><tbody>${visitRows}</tbody></table>`
         : `<p class="muted">No visits recorded yet.</p>`}
     </div>`;
+}
+
+function growthRecordsCardHTML(p){
+  const recs = p.growthRecords || [];
+  if(!recs.length) return '';
+  const rows = recs.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(r=>`
+    <tr><td>${fmtDate(r.date)}</td><td>${(r.ageMonths/12).toFixed(1)}y</td>
+      <td>${r.weight?r.weight+'kg ('+r.weightPercentile+'th)':'<span class="faint">—</span>'}</td>
+      <td>${r.height?r.height+'cm ('+r.heightPercentile+'th)':'<span class="faint">—</span>'}</td>
+      <td>${r.hc?r.hc+'cm ('+r.hcPercentile+'th)':'<span class="faint">—</span>'}</td>
+    </tr>`).join('');
+  return `
+    <div class="card" style="margin-bottom:18px;">
+      <h2 style="margin-bottom:10px;">Growth records</h2>
+      <table><thead><tr><th>Date</th><th>Age</th><th>Weight</th><th>Height</th><th>Head circ.</th></tr></thead><tbody>${rows}</tbody></table>
+    </div>`;
+}
+
+function vaccineOptionsList(){
+  const set = new Set();
+  IMMUNIZATION_SCHEDULE.forEach(r=> r.vaccines.split(',').forEach(v=> set.add(v.trim())));
+  return Array.from(set);
+}
+function vaccinationCardHTML(p){
+  const vacs = (p.vaccinations||[]).slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const rows = vacs.map((v,i)=>`
+    <tr><td>${esc(v.vaccine)}</td><td>${v.date?fmtDate(v.date):'<span class="faint">—</span>'}</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="removeVaccination('${p.id}',${i})">Remove</button></td></tr>`).join('');
+  return `
+    <div class="card" style="margin-bottom:18px;">
+      <h2 style="margin-bottom:10px;">Vaccinations</h2>
+      ${vacs.length ? `<table><thead><tr><th>Vaccine</th><th>Date given</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="muted">None recorded yet.</p>`}
+      <div class="row" style="margin-top:10px;">
+        <div class="field" style="flex:2;"><label>Vaccine</label>
+          <select id="vac-name">${vaccineOptionsList().map(v=>`<option>${esc(v)}</option>`).join('')}</select>
+        </div>
+        <div class="field"><label>Date given</label><input id="vac-date" type="date" value="${todayStr()}"></div>
+      </div>
+      <button class="btn btn-sm" onclick="addVaccination('${p.id}')">+ Add</button>
+    </div>`;
+}
+async function addVaccination(patientId){
+  const p = state.data.patients.find(p=>p.id===patientId);
+  if(!p) return;
+  const vaccine = document.getElementById('vac-name').value;
+  const date = document.getElementById('vac-date').value;
+  if(!p.vaccinations) p.vaccinations = [];
+  p.vaccinations.push({vaccine, date});
+  await saveData();
+  render();
+}
+async function removeVaccination(patientId, idx){
+  const p = state.data.patients.find(p=>p.id===patientId);
+  if(!p || !p.vaccinations) return;
+  p.vaccinations.splice(idx,1);
+  await saveData();
+  render();
 }
 
 function visitPatientResultsHTML(){
@@ -1405,6 +1552,7 @@ function newVisitView(){
           <div class="field"><label>Phone *</label><input id="np-phone"></div>
           <div class="field"><label>Address *</label><input id="np-address"></div>
         </div>
+        <div class="field"><label>Known allergies</label><input id="np-allergies" placeholder="leave blank if none known"></div>
       </div>`;
   } else {
     patientBlock = `
@@ -1420,11 +1568,16 @@ function newVisitView(){
   // Receptionist: patient check-in only — no vitals, history, diagnosis,
   // prescription or investigations. The doctor fills all of that in.
   if(!isDoctor()){
+    const doctors = state.data.staff.filter(s=>s.role==='Doctor');
     return `
       <div class="page-head"><h1>Check In Patient</h1></div>
       <p class="muted" style="margin-bottom:14px;">Find or register the patient. The doctor will take vitals and handle the consultation.</p>
       ${patientBlock}
       <div class="card">
+        ${doctors.length ? `<div class="field"><label>Preferred doctor (optional)</label>
+          <select id="v-assigned-doctor"><option value="">No preference — any doctor</option>
+            ${doctors.map(d=>`<option>${esc(d.name)}</option>`).join('')}
+          </select></div>` : ''}
         <div id="visit-error" class="error-text"></div>
         <div class="row">
           <button class="btn btn-primary" onclick="saveVisit()">Check in</button>
@@ -1433,9 +1586,14 @@ function newVisitView(){
       </div>`;
   }
 
+  const allergyPatient = dv.patientId ? state.data.patients.find(p=>p.id===dv.patientId) : null;
+  const allergyBanner = (allergyPatient && allergyPatient.allergies)
+    ? `<div class="banner" style="background:var(--danger-tint);color:var(--danger);"><strong>⚠ Known allergies:</strong> ${esc(allergyPatient.allergies)}</div>` : '';
+
   return `
     <div class="page-head"><h1>${dv.editingVisitId ? 'Continue Consultation' : 'New OPD Visit'}</h1></div>
     ${dv.editingVisitId ? `<div class="banner banner-info">Continuing a visit checked in earlier — patient details are already filled in.</div>` : ''}
+    ${allergyBanner}
     ${patientBlock}
     <div class="card stack">
       <div class="field"><label>Attending doctor</label><input id="v-doctor" value="${esc(dv.doctorName)}"></div>
@@ -1458,6 +1616,7 @@ function newVisitView(){
         <div class="chip-row" id="diagnosis-chips">${chipRowHTML(chipsFor(dv.diagnosis, DIAGNOSIS_TERMS), 'insertDiagnosisChip')}</div>
       </div>
       <div class="field"><label>Doctor's notes</label><textarea id="v-notes">${esc(dv.notes)}</textarea></div>
+      <div class="field"><label>Follow-up date (optional)</label><input id="v-followup" type="date" value="${esc(dv.followUpDate||'')}"></div>
 
       <div>
         <div class="rx-row-head"><h3>Prescription</h3><button class="btn btn-sm" onclick="addRxRow()">+ Add medicine</button></div>
@@ -1587,6 +1746,17 @@ function visitPrintView(patientId, visitId){
       <div class="sheet-section" style="margin-top:24px;"><span class="lbl">Requested by</span><div>${esc(v.doctorName)||'—'}</div></div>
     </div>` : '';
 
+  const resultsCard = v.investigations.length ? `
+    <div class="card" style="margin-bottom:16px;max-width:560px;">
+      <h2 style="margin-bottom:10px;">Investigation results</h2>
+      ${v.investigations.map((r,i)=>`
+        <div class="field"><label>${esc(r.test)}</label>
+          <input data-result-idx="${i}" value="${esc(r.result||'')}" placeholder="Enter result when available">
+        </div>`).join('')}
+      <button class="btn btn-sm" onclick="saveInvestigationResults('${p.id}','${v.id}')">Save results</button>
+      <span id="results-saved-msg" class="faint" style="margin-left:8px;"></span>
+    </div>` : '';
+
   return `
     <div class="page-head">
       <div><h1>Visit summary</h1><p class="muted">${esc(p.name)} (${p.id}) — ${fmtDate(v.date)}</p></div>
@@ -1595,14 +1765,28 @@ function visitPrintView(patientId, visitId){
     <div class="row" style="margin-bottom:18px;">
       <button class="btn btn-primary" onclick="printSection('sheet-opd')">Print OPD card${v.prescriptions.length?' + prescription':''}</button>
       ${v.investigations.length?`<button class="btn" onclick="printSection('sheet-inv')">Print investigation form</button>`:''}
+      <button class="btn btn-ghost" onclick="go('newVisit',{patientId:'${p.id}',editVisitId:'${v.id}'})">Edit this visit</button>
     </div>
+    ${resultsCard}
     ${opdSheet}
     ${invSheet}
   `;
 }
+async function saveInvestigationResults(patientId, visitId){
+  const p = state.data.patients.find(p=>p.id===patientId);
+  const v = p && (p.visits||[]).find(v=>v.id===visitId);
+  if(!v) return;
+  document.querySelectorAll('[data-result-idx]').forEach(el=>{
+    const i = Number(el.getAttribute('data-result-idx'));
+    if(v.investigations[i]) v.investigations[i].result = el.value.trim();
+  });
+  const ok = await saveData();
+  const msg = document.getElementById('results-saved-msg');
+  if(msg) msg.textContent = ok ? 'Saved ✓' : 'Could not save — try again';
+}
 
 /* ============================= PEDIATRICS ============================= */
-function setPedTab(tab){ state.pedTab = tab; render(); }
+function setPedTab(tab){ state.pedTab = tab; state.search=''; render(); }
 
 function pediatricsView(){
   if(!isDoctor()){
@@ -1625,12 +1809,18 @@ function pediatricsView(){
 }
 
 function growthCalcHTML(){
+  const linked = state.pedLinkedPatientId ? state.data.patients.find(p=>p.id===state.pedLinkedPatientId) : null;
   return `
     <div class="card" style="max-width:540px;">
       <h2 style="margin-bottom:4px;">Growth Percentile Calculator</h2>
       <p class="faint" style="margin-bottom:12px;">WHO Child Growth Standards, birth to 5 years. A single reading is a snapshot — trend across visits, and clinical judgment, matter more than one number.</p>
+      <div class="field"><label>Link to a patient (optional — lets you save this reading to their record)</label>
+        ${linked ? `<div class="banner banner-info">${esc(linked.name)} (${linked.id}) <button class="btn btn-ghost btn-sm" onclick="state.pedLinkedPatientId=null;render()">Unlink</button></div>`
+          : `<input type="text" placeholder="Search by name, ID or phone" oninput="onGrowthPatientSearch(this.value)">
+             <div id="growth-patient-results">${growthPatientResultsHTML()}</div>`}
+      </div>
       <div class="row">
-        <div class="field"><label>Sex</label><select id="gc-sex"><option>Male</option><option>Female</option></select></div>
+        <div class="field"><label>Sex</label><select id="gc-sex"><option ${linked&&linked.sex==='Female'?'':'selected'}>Male</option><option ${linked&&linked.sex==='Female'?'selected':''}>Female</option></select></div>
         <div class="field"><label>Age — years</label><input id="gc-years" type="number" min="0" max="5" inputmode="numeric" placeholder="0"></div>
         <div class="field"><label>Age — months</label><input id="gc-months" type="number" min="0" max="11" inputmode="numeric" placeholder="0"></div>
       </div>
@@ -1642,6 +1832,19 @@ function growthCalcHTML(){
       <button class="btn btn-primary" onclick="calcGrowth()">Calculate</button>
       <div id="growth-result" style="margin-top:14px;"></div>
     </div>`;
+}
+function growthPatientResultsHTML(){
+  const q = (state.search||'').trim().toLowerCase();
+  if(!q) return '';
+  const list = state.data.patients.filter(p=>p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || (p.phone||'').includes(q)).slice(0,6);
+  if(list.length===0) return `<p class="faint">No matching patients.</p>`;
+  return list.map(p=>`<div class="rx-row" style="cursor:pointer;" onclick="state.pedLinkedPatientId='${p.id}';state.search='';render()">
+    <strong>${esc(p.name)}</strong> <span class="pill">${p.id}</span> <span class="faint">${esc(p.age)}/${esc(p.sex)}</span>
+  </div>`).join('');
+}
+function onGrowthPatientSearch(v){
+  state.search = v;
+  document.getElementById('growth-patient-results').innerHTML = growthPatientResultsHTML();
 }
 
 function growthRowHTML(label, valueStr, r){
@@ -1656,6 +1859,7 @@ function growthRowHTML(label, valueStr, r){
   </div>`;
 }
 
+let lastGrowthReading = null;
 function calcGrowth(){
   const sex = document.getElementById('gc-sex').value;
   const years = parseFloat(document.getElementById('gc-years').value) || 0;
@@ -1671,10 +1875,25 @@ function calcGrowth(){
     return;
   }
   let rows = '';
-  if(weight){ const r = growthPercentile('weight', sex, ageMonths, weight); if(r) rows += growthRowHTML('Weight', weight+' kg', r); }
-  if(height){ const r = growthPercentile('height', sex, ageMonths, height); if(r) rows += growthRowHTML('Height / Length', height+' cm', r); }
-  if(hc){ const r = growthPercentile('hc', sex, ageMonths, hc); if(r) rows += growthRowHTML('Head circumference', hc+' cm', r); }
-  box.innerHTML = rows || `<p class="muted">Enter at least one measurement.</p>`;
+  const reading = {date: todayStr(), ageMonths, sex, weight:weight||null, height:height||null, hc:hc||null, weightPercentile:null, heightPercentile:null, hcPercentile:null};
+  if(weight){ const r = growthPercentile('weight', sex, ageMonths, weight); if(r){ rows += growthRowHTML('Weight', weight+' kg', r); reading.weightPercentile = Math.round(r.percentile); } }
+  if(height){ const r = growthPercentile('height', sex, ageMonths, height); if(r){ rows += growthRowHTML('Height / Length', height+' cm', r); reading.heightPercentile = Math.round(r.percentile); } }
+  if(hc){ const r = growthPercentile('hc', sex, ageMonths, hc); if(r){ rows += growthRowHTML('Head circumference', hc+' cm', r); reading.hcPercentile = Math.round(r.percentile); } }
+  if(!rows){ box.innerHTML = `<p class="muted">Enter at least one measurement.</p>`; return; }
+  lastGrowthReading = reading;
+  const saveBtn = state.pedLinkedPatientId
+    ? `<button class="btn btn-sm" style="margin-top:8px;" onclick="saveGrowthToPatient()">+ Save this reading to patient record</button><span id="growth-save-msg" class="faint" style="margin-left:8px;"></span>`
+    : `<p class="faint" style="margin-top:8px;">Link a patient above to save this reading to their record.</p>`;
+  box.innerHTML = rows + saveBtn;
+}
+async function saveGrowthToPatient(){
+  const p = state.data.patients.find(p=>p.id===state.pedLinkedPatientId);
+  if(!p || !lastGrowthReading) return;
+  if(!p.growthRecords) p.growthRecords = [];
+  p.growthRecords.push(lastGrowthReading);
+  const ok = await saveData();
+  const msg = document.getElementById('growth-save-msg');
+  if(msg) msg.textContent = ok ? 'Saved to record ✓' : 'Could not save — try again';
 }
 
 function doseCalcHTML(){
@@ -1741,6 +1960,165 @@ function pedReferenceHTML(){
     </div>`;
 }
 
+/* ============================= BILLING ============================= */
+function billingView(){
+  const all = [];
+  state.data.patients.forEach(p=>{
+    (p.visits||[]).forEach(v=>{
+      all.push({patient:p, visit:v});
+    });
+  });
+  all.sort((a,b)=> (b.visit.date+b.visit.time).localeCompare(a.visit.date+a.visit.time));
+  const q = state.search.trim().toLowerCase();
+  const filtered = q ? all.filter(({patient})=> patient.name.toLowerCase().includes(q) || patient.id.toLowerCase().includes(q)) : all;
+  const shown = filtered.slice(0,100);
+
+  const rows = shown.map(({patient,visit})=>{
+    const b = billingOf(visit);
+    const total = billingTotal(b);
+    return `
+    <tr class="clickable" onclick="go('billingDetail',{patientId:'${patient.id}',visitId:'${visit.id}'})">
+      <td>${fmtDate(visit.date)}</td>
+      <td>${esc(patient.name)} <span class="faint">${patient.id}</span></td>
+      <td>${total ? '₹'+total.toFixed(0) : '<span class="faint">Not set</span>'}</td>
+      <td>${b.paid ? '<span class="pill">Paid</span>' : '<span class="pill" style="background:var(--accent-tint);color:var(--accent);">Unpaid</span>'}</td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div class="page-head"><h1>Billing</h1></div>
+    <div class="card">
+      <div class="search-wrap" style="margin-bottom:14px;">
+        <input type="text" placeholder="Search by patient name or ID" value="${esc(state.search)}" oninput="onBillingSearchInput(this.value)">
+      </div>
+      <div id="billing-table-container">
+        ${shown.length ? `<table><thead><tr><th>Date</th><th>Patient</th><th>Total</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`
+          : `<p class="muted">No visits found.</p>`}
+      </div>
+    </div>`;
+}
+function onBillingSearchInput(v){
+  state.search = v;
+  render();
+}
+
+function billingDetailView(patientId, visitId){
+  const p = state.data.patients.find(p=>p.id===patientId);
+  if(!p) return `<p class="error-text">Patient not found.</p>`;
+  const v = (p.visits||[]).find(v=>v.id===visitId);
+  if(!v) return `<p class="error-text">Visit not found.</p>`;
+  const b = billingOf(v);
+  if(!v.billing) v.billing = b;
+
+  const chargeRows = (b.charges||[]).map((c,i)=>`
+    <div class="row" data-charge-idx="${i}">
+      <div class="field" style="flex:2;"><input data-cf="label" placeholder="e.g. Dressing" value="${esc(c.label)}"></div>
+      <div class="field"><input data-cf="amount" type="number" step="0.01" placeholder="Amount" value="${esc(c.amount)}"></div>
+      <button class="btn btn-ghost btn-sm" onclick="removeChargeRow(${i})">Remove</button>
+    </div>`).join('');
+
+  const ci = state.data.clinicInfo;
+  const total = billingTotal(b);
+  const receiptSheet = `
+    <div class="print-sheet" id="sheet-receipt">
+      <div class="letterhead"><div class="clinic-name">${esc(ci.name)}</div>
+        <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${ci.phone}</div></div>
+      <div class="sheet-title">RECEIPT</div>
+      <div class="patient-strip">
+        <span><strong>${esc(p.name)}</strong> (${p.id})</span>
+        <span>${fmtDate(v.date)}</span>
+      </div>
+      <div class="sheet-section"><span class="lbl">Consultation fee</span><div>₹${(parseFloat(b.fee)||0).toFixed(2)}</div></div>
+      ${(b.charges||[]).filter(c=>c.label).map(c=>`<div class="sheet-section"><span class="lbl">${esc(c.label)}</span><div>₹${(parseFloat(c.amount)||0).toFixed(2)}</div></div>`).join('')}
+      <div class="sheet-divider"></div>
+      <div class="sheet-section"><span class="lbl">Total</span><div style="font-size:20px;font-family:'Source Serif 4',serif;color:var(--primary-dark);">₹${total.toFixed(2)}</div></div>
+      <div class="sheet-section" style="margin-top:14px;"><span class="lbl">Payment status</span><div>${b.paid?'Paid'+(b.mode?' — '+esc(b.mode):''):'Unpaid'}</div></div>
+    </div>`;
+
+  return `
+    <div class="page-head">
+      <div><h1>Billing — ${esc(p.name)}</h1><p class="muted">${p.id} · ${fmtDate(v.date)}</p></div>
+      <button class="btn btn-ghost" onclick="go('billing')">Back to billing</button>
+    </div>
+    <div class="card stack" style="max-width:560px;margin-bottom:16px;">
+      <div class="field"><label>Consultation fee (₹)</label><input id="bill-fee" type="number" step="0.01" value="${esc(b.fee)}"></div>
+      <div>
+        <div class="rx-row-head"><h3>Additional charges</h3><button class="btn btn-sm" onclick="addChargeRow()">+ Add charge</button></div>
+        <div id="charge-rows">${chargeRows || '<p class="faint">None added.</p>'}</div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Payment status</label>
+          <select id="bill-paid"><option value="false" ${!b.paid?'selected':''}>Unpaid</option><option value="true" ${b.paid?'selected':''}>Paid</option></select>
+        </div>
+        <div class="field"><label>Payment mode</label>
+          <select id="bill-mode">
+            <option value="" ${!b.mode?'selected':''}>—</option>
+            <option ${b.mode==='Cash'?'selected':''}>Cash</option>
+            <option ${b.mode==='UPI'?'selected':''}>UPI</option>
+            <option ${b.mode==='Card'?'selected':''}>Card</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <button class="btn btn-primary" onclick="saveBilling('${p.id}','${v.id}')">Save</button>
+        <button class="btn btn-accent" onclick="printSection('sheet-receipt')">Print receipt</button>
+      </div>
+      <div id="billing-saved-msg" class="faint"></div>
+    </div>
+    ${receiptSheet}`;
+}
+function addChargeRow(){
+  const v = currentBillingVisit();
+  if(!v) return;
+  if(!v.billing.charges) v.billing.charges = [];
+  v.billing.charges.push({label:'', amount:''});
+  document.getElementById('charge-rows').innerHTML = chargeRowsHTML(v.billing.charges);
+}
+function removeChargeRow(i){
+  const v = currentBillingVisit();
+  if(!v) return;
+  syncChargesFromDOM(v);
+  v.billing.charges.splice(i,1);
+  document.getElementById('charge-rows').innerHTML = chargeRowsHTML(v.billing.charges);
+}
+function chargeRowsHTML(charges){
+  return (charges||[]).map((c,i)=>`
+    <div class="row" data-charge-idx="${i}">
+      <div class="field" style="flex:2;"><input data-cf="label" placeholder="e.g. Dressing" value="${esc(c.label)}"></div>
+      <div class="field"><input data-cf="amount" type="number" step="0.01" placeholder="Amount" value="${esc(c.amount)}"></div>
+      <button class="btn btn-ghost btn-sm" onclick="removeChargeRow(${i})">Remove</button>
+    </div>`).join('') || '<p class="faint">None added.</p>';
+}
+function syncChargesFromDOM(v){
+  document.querySelectorAll('[data-charge-idx]').forEach(row=>{
+    const i = Number(row.getAttribute('data-charge-idx'));
+    if(v.billing.charges[i]){
+      v.billing.charges[i] = {
+        label: row.querySelector('[data-cf="label"]').value.trim(),
+        amount: row.querySelector('[data-cf="amount"]').value.trim()
+      };
+    }
+  });
+}
+function currentBillingVisit(){
+  const {patientId, visitId} = state.routeParams;
+  const p = state.data.patients.find(p=>p.id===patientId);
+  return p ? (p.visits||[]).find(v=>v.id===visitId) : null;
+}
+async function saveBilling(patientId, visitId){
+  const p = state.data.patients.find(p=>p.id===patientId);
+  const v = p && (p.visits||[]).find(v=>v.id===visitId);
+  if(!v) return;
+  if(!v.billing) v.billing = { fee:'', charges:[], paid:false, mode:'' };
+  syncChargesFromDOM(v);
+  v.billing.fee = document.getElementById('bill-fee').value.trim();
+  v.billing.paid = document.getElementById('bill-paid').value === 'true';
+  v.billing.mode = document.getElementById('bill-mode').value;
+  const ok = await saveData();
+  const msg = document.getElementById('billing-saved-msg');
+  if(msg) msg.textContent = ok ? 'Saved ✓' : 'Could not save — try again';
+}
+
 function settingsView(){
   const ci = state.data.clinicInfo;
   const staffRows = state.data.staff.map(s=>`
@@ -1759,6 +2137,12 @@ function settingsView(){
       <div class="field"><label>Address (shown on printouts)</label><input id="ci-address" value="${esc(ci.address)}"></div>
       <div class="field"><label>Phone (shown on printouts)</label><input id="ci-phone" value="${esc(ci.phone)}"></div>
       <button class="btn btn-primary" onclick="saveClinicInfo()">Save</button>
+    </div>
+
+    <div class="card" style="margin-bottom:18px;max-width:520px;">
+      <h2 style="margin-bottom:6px;">Backup</h2>
+      <p class="muted" style="font-size:12.5px;">Downloads every patient, visit, and staff record as a single JSON file — keep a copy somewhere safe periodically, especially before any database change.</p>
+      <button class="btn btn-sm" onclick="downloadBackup()">⬇ Download backup (JSON)</button>
     </div>
 
     <div class="card" style="margin-bottom:18px;max-width:640px;">
