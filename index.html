@@ -193,6 +193,7 @@ let state = {
   apptError: '',
   auditSearch: '',
   dashboardMineOnly: false, // "My patients today" toggle, doctor dashboard
+  billingUnpaidOnly: false,
   ui: { editingPatient: false, resetConfirmText: '' },
   regDupeAcknowledged: false, // set once staff confirms a phone-match warning isn't the same person
   mergeUI: null // { aId, bId, searchA, searchB, choices } — active on the Merge patients screen
@@ -206,7 +207,8 @@ function defaultData(){
     staff: [],
     customMedicines: [], // clinic-added medicines: {name, dosages:[...]}
     appointments: [], // booked slots: {id, patientId|null, name, phone, date, time, doctorName, notes, status}
-    auditLog: [] // who changed what and when: {ts, staff, action, details}
+    auditLog: [], // who changed what and when: {ts, staff, action, details}
+    rxTemplates: [] // reusable prescriptions: {id, name, prescriptions:[...], investigations:[...], createdAt}
   };
 }
 
@@ -271,6 +273,7 @@ async function loadData(){
     if(!state.data.customMedicines) state.data.customMedicines = [];
     if(!state.data.appointments) state.data.appointments = [];
     if(!state.data.auditLog) state.data.auditLog = [];
+    if(!state.data.rxTemplates) state.data.rxTemplates = [];
     dataVersion = json.version;
     state.loadError = null;
   } catch(e){
@@ -324,6 +327,7 @@ function go(route, params){
       existingVisit = p ? (p.visits||[]).find(v=>v.id===state.routeParams.editVisitId) : null;
     }
     initDraftVisit(state.routeParams.patientId || null, existingVisit);
+    if(!existingVisit) restoreVisitDraftIfAny();
   }
   if(route === 'newAppointment'){
     initDraftAppt();
@@ -354,6 +358,55 @@ async function verifyPin(staff, enteredPin){
   return staff.pin === enteredPin;
 }
 
+/* ============================= PIN LOCKOUT ============================= */
+// A 4-digit PIN only has 10,000 combinations, so with no limit it's
+// guessable quickly. We track wrong attempts per staff name in
+// localStorage (survives a page reload, unlike in-memory state) and lock
+// that name out for a cooldown once the threshold is hit. The cooldown
+// doubles each time it's triggered again, so repeated guessing gets
+// slower rather than staying a fixed, plannable delay.
+const PIN_LOCK_THRESHOLD = 5;
+const PIN_LOCK_BASE_MS = 30 * 1000; // 30s, then 60s, 120s... capped below
+const PIN_LOCK_MAX_MS = 15 * 60 * 1000; // cap at 15 minutes
+function getPinAttempts(){
+  try{ return JSON.parse(localStorage.getItem('mmc_pin_attempts')||'{}'); } catch(e){ return {}; }
+}
+function savePinAttempts(obj){
+  try{ localStorage.setItem('mmc_pin_attempts', JSON.stringify(obj)); } catch(e){ /* storage unavailable */ }
+}
+function pinLockStatus(name){
+  if(!name) return {locked:false};
+  const rec = getPinAttempts()[name];
+  if(rec && rec.lockedUntil && Date.now() < rec.lockedUntil){
+    return {locked:true, remainingMs: rec.lockedUntil - Date.now()};
+  }
+  return {locked:false};
+}
+function recordFailedPin(name){
+  const all = getPinAttempts();
+  const rec = all[name] || {fails:0, lockCount:0};
+  rec.fails++;
+  if(rec.fails >= PIN_LOCK_THRESHOLD){
+    rec.lockCount++;
+    rec.lockedUntil = Date.now() + Math.min(PIN_LOCK_BASE_MS * Math.pow(2, rec.lockCount-1), PIN_LOCK_MAX_MS);
+    rec.fails = 0;
+  }
+  all[name] = rec;
+  savePinAttempts(all);
+  return rec;
+}
+function clearPinAttempts(name){
+  const all = getPinAttempts();
+  delete all[name];
+  savePinAttempts(all);
+}
+function onLoginStaffChange(name){
+  state.loginSelectedName = name;
+  const lock = pinLockStatus(name);
+  state.loginError = lock.locked ? `Too many incorrect attempts. Try again in ${Math.ceil(lock.remainingMs/1000)}s.` : '';
+  render();
+}
+
 async function doSetup(){
   const name = document.getElementById('setup-name').value.trim();
   const role = document.getElementById('setup-role').value;
@@ -373,6 +426,7 @@ async function doSetup(){
 
 // Whoever's logged in — used to gate doctor-only actions like "Continue".
 function currentStaffRole(){
+  if(!state.data || !state.data.staff) return null; // data hasn't loaded yet (or failed to)
   const s = state.data.staff.find(s=>s.name===state.session.staffName);
   return s ? s.role : null;
 }
@@ -415,15 +469,28 @@ function logAudit(action, details, actor){
 async function doLogin(){
   const name = document.getElementById('login-select').value;
   const pin = document.getElementById('login-pin').value.trim();
+  const lock = pinLockStatus(name);
+  if(lock.locked){
+    state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil(lock.remainingMs/1000)}s.`;
+    render();
+    return;
+  }
   const staff = state.data.staff.find(s => s.name === name);
   if(staff && await verifyPin(staff, pin)){
+    clearPinAttempts(name);
     state.session.staffName = name;
     state.loginError = '';
     saveSessionToStorage();
     if(!looksHashed(staff.pin)){ staff.pin = await hashPin(pin); saveData(); }
     go('dashboard');
   } else {
-    state.loginError = 'Incorrect PIN. Try again.';
+    const rec = recordFailedPin(name);
+    if(rec.lockedUntil && Date.now() < rec.lockedUntil){
+      state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil((rec.lockedUntil-Date.now())/1000)}s.`;
+    } else {
+      const left = PIN_LOCK_THRESHOLD - rec.fails;
+      state.loginError = `Incorrect PIN. Try again.${left<=2 ? ` (${left} attempt${left===1?'':'s'} left before a cooldown)` : ''}`;
+    }
     render();
   }
 }
@@ -889,6 +956,7 @@ function initDraftVisit(patientId, existingVisit){
       diagnosis: existingVisit.diagnosis||'', notes: existingVisit.notes||'',
       followUpDate: existingVisit.followUpDate||'',
       assignedDoctor: existingVisit.assignedDoctor||'',
+      referredTo: existingVisit.referredTo||'', referralReason: existingVisit.referralReason||'',
       prescriptions: (existingVisit.prescriptions && existingVisit.prescriptions.length)
         ? existingVisit.prescriptions.map(r=>({...r})) : [{medicine:'',dosage:'',frequency:'',duration:'',instructions:''}],
       investigations: (existingVisit.investigations && existingVisit.investigations.length)
@@ -902,6 +970,7 @@ function initDraftVisit(patientId, existingVisit){
       doctorName: state.session.staffName || '',
       vitals: {bp:'',pulse:'',temp:'',weight:''},
       complaints:'', examination:'', diagnosis:'', notes:'', followUpDate:'', assignedDoctor:'',
+      referredTo:'', referralReason:'',
       prescriptions: [{medicine:'',dosage:'',frequency:'',duration:'',instructions:''}],
       investigations: [{test:'',notes:''}]
     };
@@ -914,6 +983,99 @@ function toggleNewPatientInVisit(){
   state.draftVisit.patientId = null;
   render();
 }
+
+/* ============================= OFFLINE DRAFT RESILIENCE ============================= */
+// A consultation in progress lives only in the DOM/JS memory until "Save
+// visit" successfully reaches the server. On a shaky connection — or if the
+// tab is closed or reloaded by accident — that typed work would otherwise
+// vanish with no way back. We snapshot the doctor's form into localStorage
+// every few seconds while it's open, and offer to restore it the next time
+// a blank consultation is opened. This is a local safety net only — it
+// doesn't sync anything to the server by itself.
+const VISIT_DRAFT_KEY = 'mmc_visit_draft';
+function snapshotVisitFormFields(){
+  const dv = state.draftVisit;
+  if(!dv) return null;
+  const val = id => { const el = document.getElementById(id); return el ? el.value : undefined; };
+  const prescriptions = [];
+  document.querySelectorAll('[data-rx-idx]').forEach(row=>{
+    const i = Number(row.getAttribute('data-rx-idx'));
+    prescriptions[i] = {
+      medicine: row.querySelector('[data-f="medicine"]')?.value || '',
+      dosage: row.querySelector('[data-f="dosage"]')?.value || '',
+      frequency: row.querySelector('[data-f="frequency"]')?.value || '',
+      duration: row.querySelector('[data-f="duration"]')?.value || '',
+      instructions: row.querySelector('[data-f="instructions"]')?.value || ''
+    };
+  });
+  const investigations = [];
+  document.querySelectorAll('[data-inv-idx]').forEach(row=>{
+    const i = Number(row.getAttribute('data-inv-idx'));
+    investigations[i] = {
+      test: row.querySelector('[data-f="test"]')?.value || '',
+      notes: row.querySelector('[data-f="notes"]')?.value || ''
+    };
+  });
+  return {
+    savedAt: Date.now(),
+    patientId: dv.patientId, newPatient: dv.newPatient, editingVisitId: dv.editingVisitId,
+    doctorName: val('v-doctor'),
+    vitals: { bp: val('v-bp'), pulse: val('v-pulse'), temp: val('v-temp'), weight: val('v-weight') },
+    complaints: val('v-complaints'), examination: val('v-exam'),
+    diagnosis: val('v-diagnosis'), notes: val('v-notes'), followUpDate: val('v-followup'),
+    referredTo: val('v-referred-to'), referralReason: val('v-referral-reason'),
+    prescriptions: prescriptions.length ? prescriptions : undefined,
+    investigations: investigations.length ? investigations : undefined
+  };
+}
+function autosaveVisitDraft(){
+  if(!state.data || !isDoctor() || state.route !== 'newVisit' || !state.draftVisit) return;
+  const snap = snapshotVisitFormFields();
+  if(!snap) return;
+  try{
+    localStorage.setItem(VISIT_DRAFT_KEY, JSON.stringify(snap));
+    const ind = document.getElementById('draft-save-indicator');
+    if(ind) ind.textContent = `Draft saved on this device at ${new Date(snap.savedAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`;
+  } catch(e){ /* storage unavailable (e.g. private mode) — nothing we can do locally */ }
+}
+function clearVisitDraftStorage(){
+  try{ localStorage.removeItem(VISIT_DRAFT_KEY); } catch(e){}
+}
+function restoreVisitDraftIfAny(){
+  if(!isDoctor()) return;
+  let raw;
+  try{ raw = localStorage.getItem(VISIT_DRAFT_KEY); } catch(e){ return; }
+  if(!raw) return;
+  let snap;
+  try{ snap = JSON.parse(raw); } catch(e){ clearVisitDraftStorage(); return; }
+  if(!snap || !snap.savedAt){ clearVisitDraftStorage(); return; }
+  if(Date.now() - snap.savedAt > 24*60*60*1000){ clearVisitDraftStorage(); return; } // stale, don't offer
+  const when = new Date(snap.savedAt).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+  if(!confirm(`An unsaved consultation draft was found from ${when} (likely from a dropped connection, or the tab closing before it was saved). Restore it into this form?`)){
+    clearVisitDraftStorage();
+    return;
+  }
+  const dv = state.draftVisit;
+  if(snap.patientId) dv.patientId = snap.patientId;
+  if(snap.newPatient) dv.newPatient = snap.newPatient;
+  if(snap.doctorName) dv.doctorName = snap.doctorName;
+  dv.vitals = Object.assign({}, dv.vitals, snap.vitals||{});
+  if(snap.complaints) dv.complaints = snap.complaints;
+  if(snap.examination) dv.examination = snap.examination;
+  if(snap.diagnosis) dv.diagnosis = snap.diagnosis;
+  if(snap.notes) dv.notes = snap.notes;
+  if(snap.followUpDate) dv.followUpDate = snap.followUpDate;
+  if(snap.referredTo) dv.referredTo = snap.referredTo;
+  if(snap.referralReason) dv.referralReason = snap.referralReason;
+  if(snap.prescriptions && snap.prescriptions.length) dv.prescriptions = snap.prescriptions.map(r=>({medicine:'',dosage:'',frequency:'',duration:'',instructions:'',...r}));
+  if(snap.investigations && snap.investigations.length) dv.investigations = snap.investigations.map(r=>({test:'',notes:'',...r}));
+}
+function cancelVisitFlow(){
+  clearVisitDraftStorage();
+  go(state.routeParams.patientId?'patient':'patients', state.routeParams.patientId?{patientId:state.routeParams.patientId}:{});
+}
+// Checked every 10s — cheap no-op unless a doctor has the visit form open.
+setInterval(autosaveVisitDraft, 10000);
 
 function onVisitPatientSearch(v){
   state.search = v;
@@ -947,6 +1109,73 @@ function removeInvRow(i){
   document.getElementById('inv-rows').innerHTML = invRowsHTML();
 }
 
+/* ============================= PRESCRIPTION TEMPLATES ============================= */
+// A named, reusable bundle of medicines + investigations (e.g. "Standard
+// viral fever Rx") — saved from a visit in progress, applied into any
+// later one so a repeat combination doesn't need retyping.
+function applyRxTemplate(){
+  const sel = document.getElementById('rx-template-select');
+  if(!sel || sel.value==='') return;
+  const t = (state.data.rxTemplates||[])[Number(sel.value)];
+  if(!t) return;
+  const dv = state.draftVisit;
+  const rxIsBlank = dv.prescriptions.length===1 && !dv.prescriptions[0].medicine;
+  const invIsBlank = dv.investigations.length===1 && !dv.investigations[0].test;
+  dv.prescriptions = (rxIsBlank ? [] : dv.prescriptions).concat((t.prescriptions||[]).map(r=>({...r})));
+  dv.investigations = (invIsBlank ? [] : dv.investigations).concat((t.investigations||[]).map(r=>({...r})));
+  if(!dv.prescriptions.length) dv.prescriptions = [{medicine:'',dosage:'',frequency:'',duration:'',instructions:''}];
+  if(!dv.investigations.length) dv.investigations = [{test:'',notes:''}];
+  document.getElementById('rx-rows').innerHTML = rxRowsHTML();
+  document.getElementById('inv-rows').innerHTML = invRowsHTML();
+}
+async function saveCurrentAsTemplate(){
+  const dv = state.draftVisit;
+  // Pull the latest typed values off the DOM first, same as saveVisit() does.
+  document.querySelectorAll('[data-rx-idx]').forEach(row=>{
+    const i = Number(row.getAttribute('data-rx-idx'));
+    dv.prescriptions[i] = {
+      medicine: row.querySelector('[data-f="medicine"]').value.trim(),
+      dosage: row.querySelector('[data-f="dosage"]').value.trim(),
+      frequency: row.querySelector('[data-f="frequency"]').value.trim(),
+      duration: row.querySelector('[data-f="duration"]').value.trim(),
+      instructions: row.querySelector('[data-f="instructions"]').value.trim()
+    };
+  });
+  document.querySelectorAll('[data-inv-idx]').forEach(row=>{
+    const i = Number(row.getAttribute('data-inv-idx'));
+    dv.investigations[i] = {
+      test: row.querySelector('[data-f="test"]').value.trim(),
+      notes: row.querySelector('[data-f="notes"]').value.trim()
+    };
+  });
+  const prescriptions = dv.prescriptions.filter(r=>r.medicine);
+  const investigations = dv.investigations.filter(r=>r.test);
+  if(!prescriptions.length && !investigations.length){
+    alert('Add at least one medicine or test before saving it as a template.');
+    return;
+  }
+  const name = prompt('Name this template (e.g. "Standard viral fever Rx"):');
+  if(!name || !name.trim()) return;
+  if(!state.data.rxTemplates) state.data.rxTemplates = [];
+  state.data.rxTemplates.push({
+    id: 'RXT'+Date.now().toString(36).toUpperCase(),
+    name: name.trim(), prescriptions, investigations, createdAt: new Date().toISOString()
+  });
+  logAudit('Saved prescription template', `${name.trim()} — ${prescriptions.length} medicine(s), ${investigations.length} test(s)`);
+  const ok = await saveData();
+  if(!ok){ alert(state.saveError || 'Could not save the template — try again.'); return; }
+  render();
+}
+async function removeRxTemplate(idx){
+  const t = (state.data.rxTemplates||[])[idx];
+  if(!t) return;
+  if(!confirm(`Remove the "${t.name}" template?`)) return;
+  state.data.rxTemplates.splice(idx,1);
+  logAudit('Removed prescription template', t.name);
+  await saveData();
+  render();
+}
+
 async function saveVisit(){
   const dv = state.draftVisit;
   const val = id => { const el = document.getElementById(id); return el ? el.value.trim() : null; };
@@ -959,6 +1188,8 @@ async function saveVisit(){
     dv.diagnosis = val('v-diagnosis');
     dv.notes = val('v-notes');
     dv.followUpDate = val('v-followup');
+    dv.referredTo = val('v-referred-to');
+    dv.referralReason = val('v-referral-reason');
     dv.vitals.bp = val('v-bp');
     dv.vitals.pulse = val('v-pulse');
     dv.vitals.temp = val('v-temp');
@@ -1032,6 +1263,7 @@ async function saveVisit(){
     visit.diagnosis = dv.diagnosis;
     visit.notes = dv.notes;
     visit.followUpDate = dv.followUpDate;
+    visit.referredTo = dv.referredTo; visit.referralReason = dv.referralReason;
     visit.assignedDoctor = dv.assignedDoctor;
     visit.prescriptions = prescriptions;
     visit.investigations = investigations;
@@ -1042,6 +1274,7 @@ async function saveVisit(){
       doctorName: dv.doctorName, vitals: dv.vitals,
       complaints: dv.complaints, examination: dv.examination, diagnosis: dv.diagnosis, notes: dv.notes,
       followUpDate: dv.followUpDate, assignedDoctor: dv.assignedDoctor||'',
+      referredTo: dv.referredTo||'', referralReason: dv.referralReason||'',
       prescriptions, investigations, status,
       billing: { fee:'', charges:[], paid:false, mode:'' }
     };
@@ -1050,6 +1283,7 @@ async function saveVisit(){
   logAudit(wasExisting ? 'Updated visit' : 'Recorded visit', `${patient.name} (${patient.id}) — ${fmtDate(visit.date)}${visit.doctorName?' · '+visit.doctorName:''}`);
   const ok = await saveData();
   if(!ok){ errEl.textContent = state.saveError; render(); return; }
+  clearVisitDraftStorage();
   if(isDoctor()){
     go('visitPrint', {patientId: patient.id, visitId: visit.id});
   } else {
@@ -1205,7 +1439,9 @@ function setupView(){
 }
 
 function loginView(){
-  const staffOptions = state.data.staff.map(s=>`<option value="${esc(s.name)}">${esc(s.name)} — ${esc(s.role)}</option>`).join('');
+  const selectedName = state.loginSelectedName || (state.data.staff[0] && state.data.staff[0].name) || '';
+  const lock = pinLockStatus(selectedName);
+  const staffOptions = state.data.staff.map(s=>`<option value="${esc(s.name)}" ${s.name===selectedName?'selected':''}>${esc(s.name)} — ${esc(s.role)}</option>`).join('');
   if(state.loginMode === 'addFromLogin'){
     return `
     <div class="center-screen">
@@ -1228,10 +1464,10 @@ function loginView(){
         <h1 style="font-size:19px;">${esc(state.data.clinicInfo.name)}</h1>
         <p class="muted" style="font-size:13px;">Log in to continue</p>
       </div>
-      <div class="field"><label>Staff</label><select id="login-select">${staffOptions}</select></div>
-      <div class="field"><label>PIN</label><input id="login-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••"></div>
+      <div class="field"><label>Staff</label><select id="login-select" onchange="onLoginStaffChange(this.value)">${staffOptions}</select></div>
+      <div class="field"><label>PIN</label><input id="login-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" ${lock.locked?'disabled':''}></div>
       ${state.loginError ? `<div class="error-text">${esc(state.loginError)}</div>` : ''}
-      <button class="btn btn-primary btn-block" onclick="doLogin()">Log in</button>
+      <button class="btn btn-primary btn-block" ${lock.locked?'disabled':''} onclick="doLogin()">Log in</button>
       <button class="btn btn-ghost btn-block" style="margin-top:6px;" onclick="toggleAddFromLogin()">+ Add a staff account</button>
       <p class="faint" style="text-align:center;margin-top:14px;">Forgot your PIN? Ask another staff member to reset it from Settings → Staff accounts.</p>
     </div>
@@ -1624,7 +1860,8 @@ function patientView(patientId){
       <td>${esc(v.doctorName)||'<span class="faint">—</span>'}</td>
       <td>${st==='waiting'
         ? `<span class="pill" style="background:var(--accent-tint);color:var(--accent);">Waiting${canContinue?' — tap to continue':''}</span>`
-        : '<span class="pill">Completed</span>'}</td>
+        : '<span class="pill">Completed</span>'}
+        ${v.referredTo ? `<span class="pill" title="Referred to ${esc(v.referredTo)}${v.referralReason?' — '+esc(v.referralReason):''}" style="margin-left:4px;">↗ Referred</span>` : ''}</td>
       <td>${isDoctor() ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();deleteVisit('${p.id}','${v.id}')">Delete</button>` : ''}</td>
     </tr>`;
   }).join('');
@@ -2105,25 +2342,29 @@ function growthChartCardHTML(measure, sex, childAgeMonths, childValue){
 // ---- Pediatric weight-based dose formulary (reference only) ----
 // mgPerKg is per single dose unless noted; always shown with a "confirm
 // before prescribing" note in the UI, and capped at maxMg where relevant.
+// mgPerMl lists the common syrup strength(s) in mg per mL (e.g. 125mg/5ml
+// = 25mg/mL), used to convert the calculated dose into a volume to give.
+// Left blank where the form is an injection (reconstitution varies) or the
+// marketed concentration varies too much by brand to state a default.
 const PEDIATRIC_DOSE_DB = [
-  {name:'Paracetamol', mgPerKg:15, maxMg:500, freq:'Every 6 hours (max 4 doses/day)', form:'Syrup 125mg/5ml or 250mg/5ml'},
-  {name:'Ibuprofen', mgPerKg:10, maxMg:400, freq:'Every 6-8 hours', form:'Syrup 100mg/5ml'},
-  {name:'Amoxicillin', mgPerKg:25, maxMg:500, freq:'Per dose, BD (total ~50mg/kg/day)', form:'Syrup 125mg/5ml or 250mg/5ml'},
-  {name:'Amoxicillin + Clavulanic Acid', mgPerKg:22.5, maxMg:625, freq:'Per dose, BD (amoxicillin component)', form:'Syrup 228.5mg/5ml (as amoxicillin)'},
-  {name:'Azithromycin', mgPerKg:10, maxMg:500, freq:'OD for 3 days', form:'Syrup 200mg/5ml'},
-  {name:'Cefixime', mgPerKg:4, maxMg:200, freq:'Per dose, BD (total ~8mg/kg/day)', form:'Syrup 100mg/5ml'},
-  {name:'Cefpodoxime', mgPerKg:5, maxMg:200, freq:'Per dose, BD (total ~10mg/kg/day)', form:'Syrup 50mg/5ml or 100mg/5ml'},
-  {name:'Metronidazole', mgPerKg:7.5, maxMg:400, freq:'Every 8 hours', form:'Syrup 200mg/5ml'},
+  {name:'Paracetamol', mgPerKg:15, maxMg:500, freq:'Every 6 hours (max 4 doses/day)', form:'Syrup 125mg/5ml or 250mg/5ml', mgPerMl:[25,50]},
+  {name:'Ibuprofen', mgPerKg:10, maxMg:400, freq:'Every 6-8 hours', form:'Syrup 100mg/5ml', mgPerMl:[20]},
+  {name:'Amoxicillin', mgPerKg:25, maxMg:500, freq:'Per dose, BD (total ~50mg/kg/day)', form:'Syrup 125mg/5ml or 250mg/5ml', mgPerMl:[25,50]},
+  {name:'Amoxicillin + Clavulanic Acid', mgPerKg:22.5, maxMg:625, freq:'Per dose, BD (amoxicillin component)', form:'Syrup 228.5mg/5ml (as amoxicillin)', mgPerMl:[45.7]},
+  {name:'Azithromycin', mgPerKg:10, maxMg:500, freq:'OD for 3 days', form:'Syrup 200mg/5ml', mgPerMl:[40]},
+  {name:'Cefixime', mgPerKg:4, maxMg:200, freq:'Per dose, BD (total ~8mg/kg/day)', form:'Syrup 100mg/5ml', mgPerMl:[20]},
+  {name:'Cefpodoxime', mgPerKg:5, maxMg:200, freq:'Per dose, BD (total ~10mg/kg/day)', form:'Syrup 50mg/5ml or 100mg/5ml', mgPerMl:[10,20]},
+  {name:'Metronidazole', mgPerKg:7.5, maxMg:400, freq:'Every 8 hours', form:'Syrup 200mg/5ml', mgPerMl:[40]},
   {name:'Ceftriaxone (Inj.)', mgPerKg:50, maxMg:2000, freq:'OD or BD (per day total, 50-75mg/kg/day)', form:'Injection'},
-  {name:'Domperidone', mgPerKg:0.3, maxMg:10, freq:'Every 8 hours before food', form:'Syrup 5mg/5ml'},
-  {name:'Ondansetron', mgPerKg:0.15, maxMg:4, freq:'Every 8 hours as needed', form:'Syrup 2mg/5ml'},
-  {name:'Salbutamol', mgPerKg:0.1, maxMg:4, freq:'Every 8 hours', form:'Syrup 2mg/5ml'},
-  {name:'Cetirizine', mgPerKg:0.25, maxMg:10, freq:'OD or BD', form:'Syrup 5mg/5ml'},
+  {name:'Domperidone', mgPerKg:0.3, maxMg:10, freq:'Every 8 hours before food', form:'Syrup 5mg/5ml', mgPerMl:[1]},
+  {name:'Ondansetron', mgPerKg:0.15, maxMg:4, freq:'Every 8 hours as needed', form:'Syrup 2mg/5ml', mgPerMl:[0.4]},
+  {name:'Salbutamol', mgPerKg:0.1, maxMg:4, freq:'Every 8 hours', form:'Syrup 2mg/5ml', mgPerMl:[0.4]},
+  {name:'Cetirizine', mgPerKg:0.25, maxMg:10, freq:'OD or BD', form:'Syrup 5mg/5ml', mgPerMl:[1]},
   {name:'Iron (elemental)', mgPerKg:4, maxMg:150, freq:'OD (total 3-6mg/kg/day elemental iron)', form:'Syrup / drops'},
-  {name:'Ceftriaxone / Cefixime alt — Ofloxacin', mgPerKg:7.5, maxMg:200, freq:'Every 12 hours', form:'Syrup 50mg/5ml'},
+  {name:'Ceftriaxone / Cefixime alt — Ofloxacin', mgPerKg:7.5, maxMg:200, freq:'Every 12 hours', form:'Syrup 50mg/5ml', mgPerMl:[10]},
   {name:'Diclofenac', mgPerKg:1, maxMg:50, freq:'Every 8 hours (use cautiously in young children)', form:'Syrup / suspension'},
-  {name:'Ranitidine', mgPerKg:2, maxMg:150, freq:'Every 12 hours', form:'Syrup 75mg/5ml'},
-  {name:'Prednisolone', mgPerKg:1, maxMg:40, freq:'OD, short course as directed', form:'Syrup 15mg/5ml'}
+  {name:'Ranitidine', mgPerKg:2, maxMg:150, freq:'Every 12 hours', form:'Syrup 75mg/5ml', mgPerMl:[15]},
+  {name:'Prednisolone', mgPerKg:1, maxMg:40, freq:'OD, short course as directed', form:'Syrup 15mg/5ml', mgPerMl:[3]}
 ];
 
 // ---- IAP-aligned immunization schedule (reference; confirm current IAP/UIP guidance) ----
@@ -2360,7 +2601,7 @@ function newVisitView(){
       </div>`;
   }
 
-  const cancelBtn = `<button class="btn btn-ghost" onclick="go(state.routeParams.patientId?'patient':'patients', state.routeParams.patientId?{patientId:state.routeParams.patientId}:{})">Cancel</button>`;
+  const cancelBtn = `<button class="btn btn-ghost" onclick="cancelVisitFlow()">Cancel</button>`;
 
   // Receptionist: patient check-in only — no vitals, history, diagnosis,
   // prescription or investigations. The doctor fills all of that in.
@@ -2414,9 +2655,25 @@ function newVisitView(){
       </div>
       <div class="field"><label>Doctor's notes</label><textarea id="v-notes">${esc(dv.notes)}</textarea></div>
       <div class="field"><label>Follow-up date (optional)</label><input id="v-followup" type="date" value="${esc(dv.followUpDate||'')}"></div>
+      <div class="row">
+        <div class="field"><label>Referred to (optional)</label><input id="v-referred-to" placeholder="e.g. City Hospital — Cardiology" value="${esc(dv.referredTo||'')}"></div>
+        <div class="field"><label>Reason for referral</label><input id="v-referral-reason" placeholder="beyond OPD scope, needs specialist, etc." value="${esc(dv.referralReason||'')}"></div>
+      </div>
 
       <div>
-        <div class="rx-row-head"><h3>Prescription</h3><button class="btn btn-sm" onclick="addRxRow()">+ Add medicine</button></div>
+        <div class="rx-row-head">
+          <h3>Prescription</h3>
+          <div class="row" style="gap:6px;flex-wrap:wrap;">
+            ${(state.data.rxTemplates||[]).length ? `
+            <select id="rx-template-select" style="max-width:170px;">
+              <option value="">Use template…</option>
+              ${state.data.rxTemplates.map((t,i)=>`<option value="${i}">${esc(t.name)}</option>`).join('')}
+            </select>
+            <button class="btn btn-sm" onclick="applyRxTemplate()">Apply</button>` : ''}
+            <button class="btn btn-sm" onclick="saveCurrentAsTemplate()">💾 Save as template</button>
+            <button class="btn btn-sm" onclick="addRxRow()">+ Add medicine</button>
+          </div>
+        </div>
         <div id="rx-rows">${rxRowsHTML()}</div>
       </div>
 
@@ -2430,6 +2687,7 @@ function newVisitView(){
         <button class="btn btn-primary" onclick="saveVisit()">Save visit</button>
         ${cancelBtn}
       </div>
+      <p id="draft-save-indicator" class="faint" style="margin-top:8px;"></p>
     </div>`;
 }
 
@@ -2521,6 +2779,7 @@ function visitPrintView(patientId, visitId){
       <div class="sheet-section"><span class="lbl">Examination</span><div>${esc(v.examination)||'—'}</div></div>
       <div class="sheet-section"><span class="lbl">Diagnosis</span><div>${esc(v.diagnosis)||'—'}</div></div>
       <div class="sheet-section"><span class="lbl">Notes</span><div>${esc(v.notes)||'—'}</div></div>
+      ${v.referredTo ? `<div class="sheet-section"><span class="lbl">Referred to</span><div>${esc(v.referredTo)}${v.referralReason?' — '+esc(v.referralReason):''}</div></div>` : ''}
       <div class="sheet-section" style="margin-top:14px;"><span class="lbl">Attending doctor</span><div>${esc(v.doctorName)||'—'}</div></div>
       ${rxBlock}
     </div>`;
@@ -2725,11 +2984,25 @@ function calcDose(){
   let doseMg = weight * d.mgPerKg;
   let capped = false;
   if(d.maxMg && doseMg > d.maxMg){ doseMg = d.maxMg; capped = true; }
+
+  let volumeBlock;
+  if(d.mgPerMl && d.mgPerMl.length){
+    const rows = d.mgPerMl.map(strength=>{
+      const ml = doseMg / strength;
+      const mgPer5 = strength*5;
+      return `<div class="sheet-section"><span class="lbl">${mgPer5%1===0?mgPer5:mgPer5.toFixed(1)}mg/5ml syrup</span><div><strong>${ml.toFixed(1)} ml</strong> per dose</div></div>`;
+    }).join('');
+    volumeBlock = rows;
+  } else {
+    volumeBlock = `<div class="sheet-section"><span class="lbl">Volume</span><div class="faint">${d.form==='Injection' ? 'Reconstitute per vial insert — concentration varies by product.' : 'Marketed concentration varies by brand — check the label to convert mg to ml.'}</div></div>`;
+  }
+
   box.innerHTML = `
     <div class="card" style="padding:14px;">
       <strong>${esc(d.name)}</strong>
       <div style="font-size:24px;font-family:'Source Serif 4',serif;color:var(--primary-dark);margin:6px 0;">${doseMg.toFixed(1)} mg <span style="font-size:13px;">per dose</span></div>
       <div class="faint">${d.mgPerKg}mg/kg × ${weight}kg${capped?' — capped at max '+d.maxMg+'mg/dose':''}</div>
+      ${volumeBlock}
       <div class="sheet-section" style="margin-top:10px;"><span class="lbl">Frequency</span><div>${esc(d.freq)}</div></div>
       <div class="sheet-section"><span class="lbl">Common form</span><div>${esc(d.form)}</div></div>
     </div>`;
@@ -2771,7 +3044,9 @@ function billingView(){
   });
   all.sort((a,b)=> (b.visit.date+b.visit.time).localeCompare(a.visit.date+a.visit.time));
   const q = state.search.trim().toLowerCase();
-  const filtered = q ? all.filter(({patient})=> patient.name.toLowerCase().includes(q) || patient.id.toLowerCase().includes(q)) : all;
+  let filtered = q ? all.filter(({patient})=> patient.name.toLowerCase().includes(q) || patient.id.toLowerCase().includes(q)) : all;
+  if(state.billingUnpaidOnly) filtered = filtered.filter(({visit}) => !billingOf(visit).paid);
+  const outstandingTotal = filtered.reduce((sum,{visit})=> !billingOf(visit).paid ? sum + billingTotal(billingOf(visit)) : sum, 0);
   const shown = filtered.slice(0,100);
 
   const rows = shown.map(({patient,visit})=>{
@@ -2789,15 +3064,20 @@ function billingView(){
   return `
     <div class="page-head"><h1>Billing</h1></div>
     <div class="card">
-      <div class="search-wrap" style="margin-bottom:14px;">
-        <input type="text" placeholder="Search by patient name or ID" value="${esc(state.search)}" oninput="onBillingSearchInput(this.value)">
+      <div class="row" style="align-items:flex-end;margin-bottom:10px;flex-wrap:wrap;gap:10px;">
+        <div class="search-wrap" style="flex:1;min-width:180px;">
+          <input type="text" placeholder="Search by patient name or ID" value="${esc(state.search)}" oninput="onBillingSearchInput(this.value)">
+        </div>
+        <button class="btn btn-sm ${state.billingUnpaidOnly?'btn-primary':''}" onclick="toggleBillingUnpaidOnly()">${state.billingUnpaidOnly ? '✓ Unpaid only' : 'Show unpaid only'}</button>
       </div>
+      ${state.billingUnpaidOnly ? `<p class="muted" style="margin-bottom:10px;">${filtered.length} unpaid visit${filtered.length===1?'':'s'} · ₹${outstandingTotal.toFixed(0)} outstanding</p>` : ''}
       <div id="billing-table-container">
         ${shown.length ? `<table><thead><tr><th>Date</th><th>Patient</th><th>Total</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`
-          : `<p class="muted">No visits found.</p>`}
+          : `<p class="muted">${state.billingUnpaidOnly ? 'No unpaid visits — nice.' : 'No visits found.'}</p>`}
       </div>
     </div>`;
 }
+function toggleBillingUnpaidOnly(){ state.billingUnpaidOnly = !state.billingUnpaidOnly; render(); }
 function onBillingSearchInput(v){
   state.search = v;
   render();
@@ -3062,6 +3342,10 @@ function settingsView(){
   const medRows = meds.map((m,i)=>`
     <tr><td>${esc(m.name)}</td><td>${(m.dosages||[]).map(esc).join(', ')||'<span class="faint">—</span>'}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="removeCustomMedicine(${i})">Remove</button></td></tr>`).join('');
+  const templates = state.data.rxTemplates||[];
+  const templateRows = templates.map((t,i)=>`
+    <tr><td>${esc(t.name)}</td><td>${(t.prescriptions||[]).length} medicine(s)</td><td>${(t.investigations||[]).length} test(s)</td>
+      <td><button class="btn btn-ghost btn-sm" onclick="removeRxTemplate(${i})">Remove</button></td></tr>`).join('');
 
   return `
     <div class="page-head"><h1>Settings</h1></div>
@@ -3099,6 +3383,12 @@ function settingsView(){
         <div class="field" style="flex:2;"><label>Dosages (comma-separated)</label><input id="cm-dosages" placeholder="e.g. 100mg, 200mg"></div>
       </div>
       <button class="btn btn-sm" onclick="addCustomMedicine()">+ Add medicine</button>
+    </div>
+
+    <div class="card" style="margin-bottom:18px;max-width:640px;">
+      <h2 style="margin-bottom:6px;">Prescription templates</h2>
+      <p class="muted" style="font-size:12.5px;">Save a whole combination of medicines and tests as one reusable template — from the Prescription section of a visit — for OPD cases that repeat the same standard Rx.</p>
+      ${templates.length ? `<table><thead><tr><th>Name</th><th>Medicines</th><th>Tests</th><th></th></tr></thead><tbody>${templateRows}</tbody></table>` : `<p class="muted">None saved yet.</p>`}
     </div>
 
     <div class="card" style="margin-bottom:18px;max-width:640px;">
