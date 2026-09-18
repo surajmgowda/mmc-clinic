@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>MMC — Male Madeshwara Clinic</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#B8791A">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MMC">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png" type="image/png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
@@ -2956,13 +2964,32 @@ async function saveGrowthToPatient(){
   if(msg) msg.textContent = ok ? 'Saved to record ✓' : 'Could not save — try again';
 }
 
+// Most recent known weight for a linked child — prefers a saved growth
+// reading, falls back to the last visit's recorded vitals.
+function mostRecentPediatricWeight(p){
+  const gr = (p.growthRecords||[]).filter(r=>r.weight).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0];
+  if(gr) return {value: gr.weight, source: 'a growth reading', date: gr.date};
+  const vv = (p.visits||[]).filter(v=>v.vitals && v.vitals.weight).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0];
+  if(vv) return {value: parseFloat(vv.vitals.weight), source: 'visit vitals', date: vv.date};
+  return null;
+}
+
 function doseCalcHTML(){
+  const linked = state.pedLinkedPatientId ? state.data.patients.find(p=>p.id===state.pedLinkedPatientId) : null;
+  const linkedAge = (linked && linked.dob) ? ageFromDob(linked.dob) : null;
+  const knownWeight = linked ? mostRecentPediatricWeight(linked) : null;
   return `
     <div class="card" style="max-width:520px;">
       <h2 style="margin-bottom:4px;">Pediatric Dose Calculator</h2>
       <p class="faint" style="margin-bottom:12px;">Reference only — cross-check against current formulary/BNF-C before prescribing, especially near the maximum dose.</p>
+      <div class="field"><label>Link to a patient (optional — loads their date of birth and last recorded weight)</label>
+        ${linked ? `<div class="banner banner-info">${esc(linked.name)} (${linked.id})${linked.dob ? ` — DOB ${fmtDate(linked.dob)}${linkedAge?' ('+linkedAge.display+')':''}` : ''}
+            <button class="btn btn-ghost btn-sm" onclick="state.pedLinkedPatientId=null;render()">Unlink</button></div>`
+          : `<input type="text" placeholder="Search by name, ID or phone" oninput="onGrowthPatientSearch(this.value)">
+             <div id="growth-patient-results">${growthPatientResultsHTML()}</div>`}
+      </div>
       <div class="row">
-        <div class="field"><label>Child's weight (kg)</label><input id="dc-weight" type="number" step="0.1" inputmode="decimal"></div>
+        <div class="field"><label>Child's weight (kg)</label><input id="dc-weight" type="number" step="0.1" inputmode="decimal" value="${knownWeight?knownWeight.value:''}"></div>
         <div class="field" style="flex:2;"><label>Medicine</label>
           <select id="dc-drug">
             <option value="">Select…</option>
@@ -2970,6 +2997,8 @@ function doseCalcHTML(){
           </select>
         </div>
       </div>
+      ${knownWeight ? `<p class="faint" style="margin:-6px 0 10px;">Weight pulled from ${knownWeight.source} on ${fmtDate(knownWeight.date)} — update it if the child's been weighed since.</p>`
+        : linked ? `<p class="faint" style="margin:-6px 0 10px;">No recorded weight found for ${esc(linked.name)} yet — enter it manually.</p>` : ''}
       <button class="btn btn-primary" onclick="calcDose()">Calculate dose</button>
       <div id="dose-result" style="margin-top:14px;"></div>
     </div>`;
@@ -3498,6 +3527,11 @@ function render(){
 
 restoreSessionFromStorage();
 loadData();
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').catch(()=>{ /* offline app-shell caching just won't be available */ });
+  });
+}
 </script>
 </body>
 </html>
