@@ -187,6 +187,12 @@ let state = {
   loginError: '',
   loginMode: 'login', // 'login' | 'addFromLogin'
   draftVisit: null,
+  apptDate: null, // selected day on the Appointments screen, defaults to today
+  draftAppt: null,
+  apptPatientSearch: '',
+  apptError: '',
+  auditSearch: '',
+  dashboardMineOnly: false, // "My patients today" toggle, doctor dashboard
   ui: { editingPatient: false, resetConfirmText: '' }
 };
 
@@ -196,7 +202,9 @@ function defaultData(){
     nextPatientSeq: 1,
     patients: [],
     staff: [],
-    customMedicines: [] // clinic-added medicines: {name, dosages:[...]}
+    customMedicines: [], // clinic-added medicines: {name, dosages:[...]}
+    appointments: [], // booked slots: {id, patientId|null, name, phone, date, time, doctorName, notes, status}
+    auditLog: [] // who changed what and when: {ts, staff, action, details}
   };
 }
 
@@ -217,6 +225,31 @@ function fmtDate(d){
   if(isNaN(dt)) return d;
   return dt.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
 }
+// Computes age as of today from a YYYY-MM-DD date of birth.
+function ageFromDob(dob){
+  if(!dob) return null;
+  const b = new Date(dob+'T00:00:00');
+  if(isNaN(b)) return null;
+  const now = new Date();
+  if(b > now) return null;
+  let years = now.getFullYear() - b.getFullYear();
+  let months = now.getMonth() - b.getMonth();
+  let days = now.getDate() - b.getDate();
+  if(days < 0) months--;
+  if(months < 0){ years--; months += 12; }
+  const totalMonths = years*12 + months;
+  let display;
+  if(years >= 2) display = months ? `${years}y ${months}m` : `${years}y`;
+  else if(totalMonths >= 1) display = `${totalMonths}m`;
+  else display = `${Math.max(days,0)}d`;
+  return {years, months, totalMonths, display};
+}
+// Patients registered with a DOB get an always-current age; older records
+// that only have the legacy free-text age field fall back to that.
+function displayAge(p){
+  if(p && p.dob){ const a = ageFromDob(p.dob); if(a) return a.display; }
+  return (p && p.age) || '';
+}
 function newPatientId(){
   const seq = state.data.nextPatientSeq;
   state.data.nextPatientSeq = seq + 1;
@@ -234,6 +267,8 @@ async function loadData(){
     const json = await res.json();
     state.data = json.data;
     if(!state.data.customMedicines) state.data.customMedicines = [];
+    if(!state.data.appointments) state.data.appointments = [];
+    if(!state.data.auditLog) state.data.auditLog = [];
     dataVersion = json.version;
     state.loadError = null;
   } catch(e){
@@ -288,6 +323,9 @@ function go(route, params){
     }
     initDraftVisit(state.routeParams.patientId || null, existingVisit);
   }
+  if(route === 'newAppointment'){
+    initDraftAppt();
+  }
   render();
 }
 
@@ -317,6 +355,7 @@ async function doSetup(){
     err.textContent = 'Enter your name and a 4-digit PIN.'; return;
   }
   state.data.staff.push({name, role, pin: await hashPin(pin)});
+  logAudit('Clinic set up', `First account: ${name} (${role})`, name);
   const ok = await saveData();
   if(!ok){ err.textContent = state.saveError; render(); return; }
   state.session.staffName = name;
@@ -346,6 +385,22 @@ function billingTotal(b){
   const fee = parseFloat(b.fee) || 0;
   const chargeSum = (b.charges||[]).reduce((sum,c)=> sum + (parseFloat(c.amount)||0), 0);
   return fee + chargeSum;
+}
+
+// Records who changed what and when. Call this right before saveData() so
+// the entry rides along with the same save. `actor` lets a couple of
+// pre-login flows (first-time setup, adding an account from the login
+// screen) attribute the entry to the name just entered rather than
+// whoever happens to be logged in (nobody, at that point).
+function logAudit(action, details, actor){
+  if(!state.data.auditLog) state.data.auditLog = [];
+  state.data.auditLog.push({
+    ts: new Date().toISOString(),
+    staff: actor || state.session.staffName || 'System',
+    action, details: details || ''
+  });
+  // Keep the log from growing without bound — recent history matters most.
+  if(state.data.auditLog.length > 1000) state.data.auditLog = state.data.auditLog.slice(-1000);
 }
 
 async function doLogin(){
@@ -381,6 +436,7 @@ async function addStaffFromLogin(){
     err.textContent = 'That name is already registered.'; return;
   }
   state.data.staff.push({name, role, pin: await hashPin(pin)});
+  logAudit('Added staff account', `${name} (${role})`);
   const ok = await saveData();
   if(!ok){ err.textContent = state.saveError; render(); return; }
   state.loginMode = 'login';
@@ -392,6 +448,26 @@ function logout(){
   state.loginMode = 'login';
   go('dashboard');
 }
+
+/* ============================= IDLE AUTO-LOGOUT ============================= */
+// A shared front-desk computer shouldn't stay signed in indefinitely, so we
+// log out automatically after a stretch of no keyboard/mouse/touch activity.
+const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+let idleTimer = null;
+function resetIdleTimer(){
+  if(idleTimer){ clearTimeout(idleTimer); idleTimer = null; }
+  if(!state.session.staffName) return;
+  idleTimer = setTimeout(()=>{
+    if(state.session.staffName){
+      logout();
+      state.loginError = 'Logged out after 15 minutes of inactivity.';
+      render();
+    }
+  }, IDLE_TIMEOUT_MS);
+}
+['mousedown','mousemove','keydown','touchstart','scroll'].forEach(evt=>{
+  document.addEventListener(evt, resetIdleTimer, {passive:true});
+});
 
 /* ============================= PATIENTS ============================= */
 function onPatientSearchInput(v){
@@ -420,20 +496,22 @@ function lastVisitDate(p){
 
 async function saveNewPatient(){
   const name = document.getElementById('reg-name').value.trim();
+  const dob = document.getElementById('reg-dob').value;
   const age = document.getElementById('reg-age').value.trim();
   const sex = document.getElementById('reg-sex').value;
   const phone = document.getElementById('reg-phone').value.trim();
   const address = document.getElementById('reg-address').value.trim();
   const allergies = document.getElementById('reg-allergies').value.trim();
   const err = document.getElementById('reg-error');
-  if(!name || !age || !sex || !phone || !address){
-    err.textContent = 'Name, age, sex, phone and address are all required.'; return;
+  if(!name || (!dob && !age) || !sex || !phone || !address){
+    err.textContent = 'Name, date of birth (or age), sex, phone and address are all required.'; return;
   }
   const patient = {
-    id: newPatientId(), name, age, sex, phone, address, allergies,
+    id: newPatientId(), name, dob: dob||'', age, sex, phone, address, allergies,
     registeredDate: todayStr(), visits: [], growthRecords: [], vaccinations: []
   };
   state.data.patients.push(patient);
+  logAudit('Registered patient', `${patient.name} (${patient.id})`);
   const ok = await saveData();
   if(!ok){ err.textContent = state.saveError; render(); return; }
   go('patient', {patientId: patient.id});
@@ -444,20 +522,216 @@ function cancelEditPatient(){ state.ui.editingPatient = false; render(); }
 async function saveEditPatient(patientId){
   const p = state.data.patients.find(p=>p.id===patientId);
   const name = document.getElementById('ep-name').value.trim();
+  const dob = document.getElementById('ep-dob').value;
   const age = document.getElementById('ep-age').value.trim();
   const sex = document.getElementById('ep-sex').value;
   const phone = document.getElementById('ep-phone').value.trim();
   const address = document.getElementById('ep-address').value.trim();
   const allergies = document.getElementById('ep-allergies').value.trim();
   const err = document.getElementById('ep-error');
-  if(!name || !age || !sex || !phone || !address){
-    if(err) err.textContent = 'Name, age, sex, phone and address are all required.';
+  if(!name || (!dob && !age) || !sex || !phone || !address){
+    if(err) err.textContent = 'Name, date of birth (or age), sex, phone and address are all required.';
     return;
   }
-  p.name = name; p.age = age; p.sex = sex; p.phone = phone; p.address = address; p.allergies = allergies;
+  p.name = name; p.dob = dob||''; p.age = age; p.sex = sex; p.phone = phone; p.address = address; p.allergies = allergies;
+  logAudit('Edited patient', `${name} (${p.id})`);
   state.ui.editingPatient = false;
   await saveData();
   render();
+}
+
+/* ============================= APPOINTMENTS ============================= */
+function appointmentsForDate(date){
+  return (state.data.appointments||[])
+    .filter(a=>a.date===date && a.status!=='cancelled')
+    .sort((a,b)=> (a.time||'').localeCompare(b.time||''));
+}
+function shiftApptDate(deltaDays){
+  const d = new Date((state.apptDate||todayStr())+'T00:00:00');
+  d.setDate(d.getDate()+deltaDays);
+  state.apptDate = d.toISOString().slice(0,10);
+  render();
+}
+function setApptDate(v){ state.apptDate = v; render(); }
+function goToApptToday(){ state.apptDate = todayStr(); render(); }
+
+function appointmentsView(){
+  state.apptDate = state.apptDate || todayStr();
+  const date = state.apptDate;
+  const isToday = date === todayStr();
+  const list = appointmentsForDate(date);
+
+  const rows = list.map(a=>{
+    const patient = a.patientId ? state.data.patients.find(p=>p.id===a.patientId) : null;
+    const nameCell = patient
+      ? `${esc(patient.name)} <span class="pill">${patient.id}</span>`
+      : `${esc(a.name)}${a.phone?` <span class="faint">${esc(a.phone)}</span>`:''} <span class="faint">(not registered)</span>`;
+    const canCheckIn = isToday && a.status==='booked';
+    return `<tr>
+      <td>${esc(a.time)}</td>
+      <td>${nameCell}</td>
+      <td>${esc(a.doctorName)||'<span class="faint">Any</span>'}</td>
+      <td>${esc(a.notes)||'<span class="faint">—</span>'}</td>
+      <td>
+        ${a.status==='checked-in' ? '<span class="pill">Arrived</span>' : ''}
+        ${canCheckIn ? `<button class="btn btn-sm btn-accent" onclick="checkInAppointment('${a.id}')">Check in</button>` : ''}
+        ${a.status==='booked' ? `<button class="btn btn-ghost btn-sm" onclick="cancelAppointment('${a.id}')">Cancel</button>` : ''}
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <div class="page-head">
+      <div><h1>Appointments</h1><p class="muted">Book ahead and see the day's booked slots</p></div>
+      <button class="btn btn-accent" onclick="go('newAppointment')">+ Book appointment</button>
+    </div>
+    <div class="card">
+      <div class="row" style="align-items:flex-end;margin-bottom:14px;">
+        <div class="field" style="max-width:180px;flex:none;"><label>Date</label><input type="date" value="${date}" onchange="setApptDate(this.value)"></div>
+        <button class="btn btn-sm" onclick="shiftApptDate(-1)">‹ Prev day</button>
+        <button class="btn btn-sm" onclick="goToApptToday()">Today</button>
+        <button class="btn btn-sm" onclick="shiftApptDate(1)">Next day ›</button>
+      </div>
+      <p class="muted" style="margin-bottom:10px;">${fmtDate(date)}${isToday?' — today':''} · ${list.length} booked</p>
+      ${list.length
+        ? `<table><thead><tr><th>Time</th><th>Patient</th><th>Doctor</th><th>Notes</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+        : `<p class="muted">No appointments booked for this day.</p>`}
+    </div>`;
+}
+
+function initDraftAppt(){
+  state.draftAppt = {
+    patientId: null, guestName:'', guestPhone:'',
+    date: state.apptDate || todayStr(), time:'', doctorName:'', notes:''
+  };
+  state.apptPatientSearch = '';
+  state.apptError = '';
+}
+
+function onApptPatientSearch(v){
+  state.apptPatientSearch = v;
+  const el = document.getElementById('appt-patient-results');
+  if(el) el.innerHTML = apptPatientResultsHTML();
+}
+function apptPatientResultsHTML(){
+  const q = (state.apptPatientSearch||'').trim().toLowerCase();
+  if(!q) return '';
+  const matches = state.data.patients.filter(p=>
+    p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || (p.phone||'').includes(q)
+  ).slice(0,6);
+  if(!matches.length) return `<p class="faint">No matches — fill in the name and phone below instead.</p>`;
+  return matches.map(p=>
+    `<div class="chip" style="display:block;width:fit-content;margin-bottom:4px;" onmousedown="selectPatientForAppt('${p.id}')">${esc(p.name)} — ${p.id}${p.phone?(' · '+esc(p.phone)):''}</div>`
+  ).join('');
+}
+function selectPatientForAppt(id){
+  state.draftAppt.patientId = id;
+  state.apptPatientSearch = '';
+  render();
+}
+
+function newAppointmentView(){
+  if(!state.draftAppt) initDraftAppt();
+  const da = state.draftAppt;
+  const doctors = state.data.staff.filter(s=>s.role==='Doctor');
+
+  let patientBlock;
+  if(da.patientId){
+    const p = state.data.patients.find(p=>p.id===da.patientId);
+    patientBlock = `<div class="banner banner-info">Patient: <strong>${esc(p.name)}</strong> (${p.id}) — ${esc(displayAge(p))}/${esc(p.sex)}
+      <button class="btn btn-ghost btn-sm" style="margin-left:8px;" onclick="state.draftAppt.patientId=null;render()">Change</button></div>`;
+  } else {
+    patientBlock = `
+      <div class="field"><label>Find existing patient (optional)</label>
+        <input type="text" placeholder="Search by name, ID or phone" value="${esc(state.apptPatientSearch)}" oninput="onApptPatientSearch(this.value)"></div>
+      <div id="appt-patient-results" style="margin-bottom:10px;">${apptPatientResultsHTML()}</div>
+      <p class="faint" style="margin:0 0 10px;">Not registered yet? Just fill in their name and phone instead.</p>
+      <div class="row">
+        <div class="field"><label>Name</label><input id="appt-guest-name" value="${esc(da.guestName)}"></div>
+        <div class="field"><label>Phone</label><input id="appt-guest-phone" value="${esc(da.guestPhone)}"></div>
+      </div>`;
+  }
+
+  return `
+    <div class="page-head"><h1>Book appointment</h1></div>
+    <div class="card" style="max-width:520px;">
+      ${patientBlock}
+      <div class="row" style="margin-top:6px;">
+        <div class="field"><label>Date *</label><input id="appt-date" type="date" value="${esc(da.date)}"></div>
+        <div class="field"><label>Time *</label><input id="appt-time" type="time" value="${esc(da.time)}"></div>
+      </div>
+      ${doctors.length ? `<div class="field"><label>Doctor (optional)</label>
+        <select id="appt-doctor"><option value="">No preference</option>${doctors.map(d=>`<option ${d.name===da.doctorName?'selected':''}>${esc(d.name)}</option>`).join('')}</select></div>` : ''}
+      <div class="field"><label>Notes</label><input id="appt-notes" value="${esc(da.notes)}" placeholder="e.g. reason for visit"></div>
+      <div id="appt-error" class="error-text">${esc(state.apptError||'')}</div>
+      <div class="row">
+        <button class="btn btn-primary" onclick="saveAppointment()">Book appointment</button>
+        <button class="btn btn-ghost" onclick="state.draftAppt=null;go('appointments')">Cancel</button>
+      </div>
+    </div>`;
+}
+
+async function saveAppointment(){
+  const da = state.draftAppt;
+  const date = document.getElementById('appt-date').value;
+  const time = document.getElementById('appt-time').value;
+  const doctorEl = document.getElementById('appt-doctor');
+  const doctorName = doctorEl ? doctorEl.value : '';
+  const notes = document.getElementById('appt-notes').value.trim();
+  const errEl = document.getElementById('appt-error');
+  let guestName = '', guestPhone = '';
+  if(!da.patientId){
+    guestName = document.getElementById('appt-guest-name').value.trim();
+    guestPhone = document.getElementById('appt-guest-phone').value.trim();
+  }
+  if(!date || !time){ errEl.textContent = 'Date and time are both required.'; return; }
+  if(!da.patientId && !guestName){ errEl.textContent = 'Select an existing patient, or enter a name for someone not yet registered.'; return; }
+  errEl.textContent = '';
+
+  if(!state.data.appointments) state.data.appointments = [];
+  const apptPatientLabel = da.patientId
+    ? (state.data.patients.find(p=>p.id===da.patientId)||{}).name || da.patientId
+    : guestName;
+  state.data.appointments.push({
+    id: 'A'+Date.now().toString(36).toUpperCase(),
+    patientId: da.patientId || null,
+    name: da.patientId ? '' : guestName,
+    phone: da.patientId ? '' : guestPhone,
+    date, time, doctorName: doctorName||'', notes,
+    status: 'booked', bookedBy: state.session.staffName||'', createdAt: new Date().toISOString()
+  });
+  logAudit('Booked appointment', `${apptPatientLabel} — ${fmtDate(date)} ${time}`);
+  const ok = await saveData();
+  if(!ok){ errEl.textContent = state.saveError; render(); return; }
+  state.apptDate = date;
+  state.draftAppt = null;
+  go('appointments');
+}
+
+async function cancelAppointment(id){
+  const a = (state.data.appointments||[]).find(a=>a.id===id);
+  if(!a) return;
+  if(!confirm('Cancel this appointment? This can\'t be undone.')) return;
+  const label = a.patientId ? (state.data.patients.find(p=>p.id===a.patientId)||{}).name || a.patientId : a.name;
+  a.status = 'cancelled';
+  logAudit('Cancelled appointment', `${label} — ${fmtDate(a.date)} ${a.time}`);
+  const ok = await saveData();
+  if(!ok) render();
+  else render();
+}
+
+async function checkInAppointment(id){
+  const a = (state.data.appointments||[]).find(a=>a.id===id);
+  if(!a) return;
+  a.status = 'checked-in';
+  await saveData();
+  if(a.patientId){
+    go('newVisit', {patientId: a.patientId});
+  } else {
+    go('newVisit');
+    state.draftVisit.newPatient = {name: a.name||'', dob:'', age:'', sex:'', phone: a.phone||'', address:''};
+    render();
+  }
 }
 
 /* ============================= NEW VISIT (draft) ============================= */
@@ -494,7 +768,7 @@ function initDraftVisit(patientId, existingVisit){
 }
 
 function toggleNewPatientInVisit(){
-  state.draftVisit.newPatient = state.draftVisit.newPatient ? null : {name:'',age:'',sex:'',phone:'',address:''};
+  state.draftVisit.newPatient = state.draftVisit.newPatient ? null : {name:'',dob:'',age:'',sex:'',phone:'',address:''};
   state.draftVisit.patientId = null;
   render();
 }
@@ -576,13 +850,14 @@ async function saveVisit(){
   }
   if(dv.newPatient){
     dv.newPatient.name = document.getElementById('np-name').value.trim();
+    dv.newPatient.dob = document.getElementById('np-dob').value;
     dv.newPatient.age = document.getElementById('np-age').value.trim();
     dv.newPatient.sex = document.getElementById('np-sex').value;
     dv.newPatient.phone = document.getElementById('np-phone').value.trim();
     dv.newPatient.address = document.getElementById('np-address').value.trim();
     dv.newPatient.allergies = document.getElementById('np-allergies') ? document.getElementById('np-allergies').value.trim() : '';
-    if(!dv.newPatient.name || !dv.newPatient.age || !dv.newPatient.sex || !dv.newPatient.phone || !dv.newPatient.address){
-      errEl.textContent = 'New patient needs name, age, sex, phone and address.'; return;
+    if(!dv.newPatient.name || (!dv.newPatient.dob && !dv.newPatient.age) || !dv.newPatient.sex || !dv.newPatient.phone || !dv.newPatient.address){
+      errEl.textContent = 'New patient needs name, date of birth (or age), sex, phone and address.'; return;
     }
   }
   errEl.textContent = '';
@@ -590,7 +865,7 @@ async function saveVisit(){
   let patient;
   if(dv.newPatient){
     patient = {
-      id: newPatientId(), name: dv.newPatient.name, age: dv.newPatient.age, sex: dv.newPatient.sex,
+      id: newPatientId(), name: dv.newPatient.name, dob: dv.newPatient.dob||'', age: dv.newPatient.age, sex: dv.newPatient.sex,
       phone: dv.newPatient.phone, address: dv.newPatient.address, allergies: dv.newPatient.allergies||'',
       registeredDate: todayStr(), visits: [], growthRecords: [], vaccinations: []
     };
@@ -604,6 +879,7 @@ async function saveVisit(){
   const status = dv.diagnosis ? 'completed' : 'waiting';
 
   let visit = dv.editingVisitId ? (patient.visits||[]).find(v=>v.id===dv.editingVisitId) : null;
+  const wasExisting = !!visit;
   if(visit){
     // Continuing a visit the receptionist started — update in place, keep
     // the original id/date/time.
@@ -629,6 +905,7 @@ async function saveVisit(){
     };
     patient.visits.unshift(visit);
   }
+  logAudit(wasExisting ? 'Updated visit' : 'Recorded visit', `${patient.name} (${patient.id}) — ${fmtDate(visit.date)}${visit.doctorName?' · '+visit.doctorName:''}`);
   const ok = await saveData();
   if(!ok){ errEl.textContent = state.saveError; render(); return; }
   if(isDoctor()){
@@ -650,6 +927,7 @@ async function saveClinicInfo(){
   state.data.clinicInfo.name = document.getElementById('ci-name').value.trim() || state.data.clinicInfo.name;
   state.data.clinicInfo.address = document.getElementById('ci-address').value.trim();
   state.data.clinicInfo.phone = document.getElementById('ci-phone').value.trim();
+  logAudit('Updated clinic info', state.data.clinicInfo.name);
   await saveData();
   render();
 }
@@ -672,12 +950,15 @@ async function addStaff(){
   if(!name || !/^\d{4}$/.test(pin)){ err.textContent = 'Enter a name and a 4-digit PIN.'; return; }
   if(state.data.staff.some(s=>s.name===name)){ err.textContent = 'That name is already registered.'; return; }
   state.data.staff.push({name, role, pin: await hashPin(pin)});
+  logAudit('Added staff account', `${name} (${role})`);
   await saveData();
   render();
 }
 async function removeStaff(name){
   if(name === state.session.staffName){ return; }
+  if(!confirm(`Remove staff account "${name}"? They will no longer be able to log in.`)) return;
   state.data.staff = state.data.staff.filter(s=>s.name!==name);
+  logAudit('Removed staff account', name);
   await saveData();
   render();
 }
@@ -755,11 +1036,13 @@ function loginView(){
 function shellView(){
   const items = [
     ['dashboard','Dashboard'],
+    ['appointments','Appointments'],
     ['patients','Patients'],
     ['newVisit', isDoctor() ? 'New OPD Visit' : 'Check In Patient']
   ];
   if(isDoctor()) items.push(['pediatrics','Pediatrics']);
   items.push(['billing','Billing']);
+  items.push(['reports','Reports']);
   items.push(['settings','Settings']);
   const nav = items.map(([r,label])=>
     `<button class="nav-item ${state.route===r?'active':''}" onclick="go('${r}')">${label}</button>`
@@ -787,6 +1070,8 @@ function shellView(){
 
 function routeContent(){
   switch(state.route){
+    case 'appointments': return appointmentsView();
+    case 'newAppointment': return newAppointmentView();
     case 'patients': return patientsView();
     case 'newPatient': return newPatientView();
     case 'patient': return patientView(state.routeParams.patientId);
@@ -796,6 +1081,8 @@ function routeContent(){
     case 'pediatrics': return pediatricsView();
     case 'billing': return billingView();
     case 'billingDetail': return billingDetailView(state.routeParams.patientId, state.routeParams.visitId);
+    case 'reports': return reportsView();
+    case 'auditLog': return auditLogView();
     default: return dashboardView();
   }
 }
@@ -817,7 +1104,9 @@ function dashboardView(){
   followUps.sort((a,b)=> a.visit.followUpDate.localeCompare(b.visit.followUpDate));
 
   const showClinical = isDoctor();
-  const rows = todaysVisits.map(({patient,visit})=>`
+  const myVisitsOnly = isDoctor() && state.dashboardMineOnly;
+  const shownTodaysVisits = myVisitsOnly ? todaysVisits.filter(({visit})=> visit.doctorName===state.session.staffName) : todaysVisits;
+  const rows = shownTodaysVisits.map(({patient,visit})=>`
     <tr class="clickable" onclick="go('visitPrint',{patientId:'${patient.id}',visitId:'${visit.id}'})">
       <td>${visit.time||''}</td>
       <td>${esc(patient.name)} <span class="faint">${patient.id}</span></td>
@@ -855,12 +1144,16 @@ function dashboardView(){
   return `
     <div class="page-head">
       <div><h1>Dashboard</h1><p class="muted">${fmtDate(today)}</p></div>
-      <button class="btn btn-accent" onclick="go('newVisit')">+ New OPD Visit</button>
+      <div class="row" style="gap:8px;">
+        <button class="btn" onclick="go('appointments')">📅 Appointments</button>
+        <button class="btn btn-accent" onclick="go('newVisit')">+ New OPD Visit</button>
+      </div>
     </div>
     <div class="stat-grid">
       <div class="stat-card"><div class="stat-num">${state.data.patients.length}</div><div class="stat-label">Total patients</div></div>
       <div class="stat-card"><div class="stat-num">${todaysVisits.length}</div><div class="stat-label">Visits today</div></div>
       <div class="stat-card"><div class="stat-num">${waitingVisits.length}</div><div class="stat-label">Waiting for doctor</div></div>
+      <div class="stat-card"><div class="stat-num">${appointmentsForDate(today).filter(a=>a.status==='booked').length}</div><div class="stat-label">Appointments booked today</div></div>
     </div>
     <div class="card" style="margin-bottom:18px;">
       <h2 style="margin-bottom:10px;">Waiting for doctor</h2>
@@ -869,11 +1162,18 @@ function dashboardView(){
     </div>
     ${followUpCard}
     <div class="card">
-      <h2 style="margin-bottom:10px;">Today's visits</h2>
-      ${todaysVisits.length ? `<table><thead><tr><th>Time</th><th>Patient</th><th>Diagnosis</th><th>Doctor</th></tr></thead><tbody>${rows}</tbody></table>`
-        : `<p class="muted">No visits recorded yet today.</p>`}
+      <div class="rx-row-head" style="margin-bottom:10px;">
+        <h2>Today's visits</h2>
+        ${isDoctor() ? `<div class="row" style="gap:6px;">
+          <button class="btn btn-sm ${!state.dashboardMineOnly?'btn-primary':''}" onclick="toggleDashboardMineOnly(false)">All doctors</button>
+          <button class="btn btn-sm ${state.dashboardMineOnly?'btn-primary':''}" onclick="toggleDashboardMineOnly(true)">My patients</button>
+        </div>` : ''}
+      </div>
+      ${shownTodaysVisits.length ? `<table><thead><tr><th>Time</th><th>Patient</th><th>Diagnosis</th><th>Doctor</th></tr></thead><tbody>${rows}</tbody></table>`
+        : `<p class="muted">${myVisitsOnly ? 'No visits of yours recorded yet today.' : 'No visits recorded yet today.'}</p>`}
     </div>`;
 }
+function toggleDashboardMineOnly(v){ state.dashboardMineOnly = v; render(); }
 async function markFollowUpDone(patientId, visitId){
   const p = state.data.patients.find(p=>p.id===patientId);
   const v = p && (p.visits||[]).find(v=>v.id===visitId);
@@ -891,7 +1191,7 @@ function patientsTableHTML(){
     return `<tr class="clickable" onclick="go('patient',{patientId:'${p.id}'})">
       <td><span class="pill">${p.id}</span></td>
       <td>${esc(p.name)}</td>
-      <td>${esc(p.age)} / ${esc(p.sex)}</td>
+      <td>${esc(displayAge(p))} / ${esc(p.sex)}</td>
       <td>${esc(p.phone)||'<span class="faint">—</span>'}</td>
       <td>${lv?fmtDate(lv):'<span class="faint">No visits</span>'}</td>
     </tr>`;
@@ -919,9 +1219,11 @@ function newPatientView(){
     <div class="card" style="max-width:520px;">
       <div class="row"><div class="field"><label>Full name *</label><input id="reg-name" type="text"></div></div>
       <div class="row">
-        <div class="field"><label>Age *</label><input id="reg-age" type="text" placeholder="e.g. 45"></div>
+        <div class="field"><label>Date of birth</label><input id="reg-dob" type="date" max="${todayStr()}"></div>
+        <div class="field"><label>Age (if DOB unknown)</label><input id="reg-age" type="text" placeholder="e.g. 45"></div>
         <div class="field"><label>Sex *</label><select id="reg-sex"><option value="">Select</option><option>Male</option><option>Female</option><option>Other</option></select></div>
       </div>
+      <p class="faint" style="margin:-8px 0 12px;">Enter a date of birth when known — it keeps age accurate automatically. Otherwise, enter an approximate age.</p>
       <div class="field"><label>Phone *</label><input id="reg-phone" type="text"></div>
       <div class="field"><label>Address *</label><textarea id="reg-address"></textarea></div>
       <div class="field"><label>Known allergies</label><input id="reg-allergies" type="text" placeholder="e.g. Penicillin, Sulfa — leave blank if none known"></div>
@@ -942,7 +1244,8 @@ function patientView(patientId){
       <div class="field"><label>Name *</label><input id="ep-name" value="${esc(p.name)}"></div>
     </div>
     <div class="row">
-      <div class="field"><label>Age *</label><input id="ep-age" value="${esc(p.age)}"></div>
+      <div class="field"><label>Date of birth</label><input id="ep-dob" type="date" max="${todayStr()}" value="${esc(p.dob||'')}"></div>
+      <div class="field"><label>Age (if DOB unknown)</label><input id="ep-age" value="${esc(p.age)}"></div>
       <div class="field"><label>Sex *</label><select id="ep-sex">
         ${['Male','Female','Other'].map(s=>`<option ${p.sex===s?'selected':''}>${s}</option>`).join('')}
       </select></div>
@@ -956,7 +1259,7 @@ function patientView(patientId){
     <div class="row"><button class="btn btn-primary" onclick="saveEditPatient('${p.id}')">Save</button><button class="btn btn-ghost" onclick="cancelEditPatient()">Cancel</button></div>
   ` : `
     <div class="row" style="margin-bottom:4px;">
-      <div><span class="faint">Age / Sex</span><div>${esc(p.age)} / ${esc(p.sex)}</div></div>
+      <div><span class="faint">Age / Sex</span><div>${esc(displayAge(p))} / ${esc(p.sex)}${p.dob?` <span class="faint">(DOB ${fmtDate(p.dob)})</span>`:''}</div></div>
       <div><span class="faint">Phone</span><div>${esc(p.phone)||'—'}</div></div>
       <div><span class="faint">Registered</span><div>${fmtDate(p.registeredDate)}</div></div>
     </div>
@@ -1044,13 +1347,18 @@ async function addVaccination(patientId){
   const date = document.getElementById('vac-date').value;
   if(!p.vaccinations) p.vaccinations = [];
   p.vaccinations.push({vaccine, date});
+  logAudit('Added vaccination', `${vaccine} — ${p.name} (${p.id})`);
   await saveData();
   render();
 }
 async function removeVaccination(patientId, idx){
   const p = state.data.patients.find(p=>p.id===patientId);
   if(!p || !p.vaccinations) return;
+  const v = p.vaccinations[idx];
+  if(!v) return;
+  if(!confirm(`Remove ${v.vaccine}${v.date?' ('+fmtDate(v.date)+')':''} from this patient's record?`)) return;
   p.vaccinations.splice(idx,1);
+  logAudit('Removed vaccination', `${v.vaccine} — ${p.name} (${p.id})`);
   await saveData();
   render();
 }
@@ -1065,7 +1373,7 @@ function visitPatientResultsHTML(){
   return list.map(p=>`
     <div class="rx-row" style="cursor:pointer;" onclick="selectPatientForVisit('${p.id}')">
       <strong>${esc(p.name)}</strong> <span class="pill">${p.id}</span>
-      <div class="faint">${esc(p.age)} / ${esc(p.sex)} ${p.phone?'· '+esc(p.phone):''}</div>
+      <div class="faint">${esc(displayAge(p))} / ${esc(p.sex)} ${p.phone?'· '+esc(p.phone):''}</div>
     </div>`).join('');
 }
 
@@ -1508,6 +1816,7 @@ async function saveMedicineToLibrary(i, btn){
   let entry = state.data.customMedicines.find(m=>m.name.toLowerCase()===name.toLowerCase());
   if(!entry){ entry = {name, dosages:[]}; state.data.customMedicines.push(entry); }
   if(dosage && !entry.dosages.includes(dosage)) entry.dosages.push(dosage);
+  logAudit('Saved medicine to library', dosage ? `${name} (${dosage})` : name);
   const ok = await saveData();
   btn.textContent = ok ? 'Saved ✓' : 'Could not save — try again';
   setTimeout(()=>{ if(btn) btn.textContent = '+ Save this medicine to my list'; }, 1800);
@@ -1537,22 +1846,27 @@ function newVisitView(){
   let patientBlock;
   if(dv.patientId){
     const p = state.data.patients.find(p=>p.id===dv.patientId);
-    patientBlock = `<div class="banner banner-info">Patient: <strong>${esc(p.name)}</strong> (${p.id}) — ${esc(p.age)}/${esc(p.sex)}
+    patientBlock = `<div class="banner banner-info">Patient: <strong>${esc(p.name)}</strong> (${p.id}) — ${esc(displayAge(p))}/${esc(p.sex)}
       ${!state.routeParams.patientId ? `<button class="btn btn-ghost btn-sm" style="margin-left:8px;" onclick="state.draftVisit.patientId=null;render()">Change</button>`:''}</div>`;
   } else if(dv.newPatient){
+    const np = dv.newPatient;
     patientBlock = `
       <div class="card" style="margin-bottom:16px;">
         <div class="rx-row-head"><h3>Register new patient</h3><button class="btn btn-ghost btn-sm" onclick="toggleNewPatientInVisit()">Cancel</button></div>
-        <div class="row"><div class="field"><label>Full name *</label><input id="np-name"></div></div>
+        <div class="row"><div class="field"><label>Full name *</label><input id="np-name" value="${esc(np.name)}"></div></div>
         <div class="row">
-          <div class="field"><label>Age *</label><input id="np-age"></div>
-          <div class="field"><label>Sex *</label><select id="np-sex"><option value="">Select</option><option>Male</option><option>Female</option><option>Other</option></select></div>
+          <div class="field"><label>Date of birth</label><input id="np-dob" type="date" max="${todayStr()}" value="${esc(np.dob||'')}"></div>
+          <div class="field"><label>Age (if DOB unknown)</label><input id="np-age" value="${esc(np.age)}"></div>
+          <div class="field"><label>Sex *</label><select id="np-sex">
+            <option value="">Select</option>
+            ${['Male','Female','Other'].map(s=>`<option ${np.sex===s?'selected':''}>${s}</option>`).join('')}
+          </select></div>
         </div>
         <div class="row">
-          <div class="field"><label>Phone *</label><input id="np-phone"></div>
-          <div class="field"><label>Address *</label><input id="np-address"></div>
+          <div class="field"><label>Phone *</label><input id="np-phone" value="${esc(np.phone)}"></div>
+          <div class="field"><label>Address *</label><input id="np-address" value="${esc(np.address||'')}"></div>
         </div>
-        <div class="field"><label>Known allergies</label><input id="np-allergies" placeholder="leave blank if none known"></div>
+        <div class="field"><label>Known allergies</label><input id="np-allergies" value="${esc(np.allergies||'')}" placeholder="leave blank if none known"></div>
       </div>`;
   } else {
     patientBlock = `
@@ -1715,7 +2029,7 @@ function visitPrintView(patientId, visitId){
         <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${ci.phone}</div></div>
       <div class="sheet-title">OPD CARD</div>
       <div class="patient-strip">
-        <span><strong>${esc(p.name)}</strong> (${p.id}) — ${esc(p.age)}/${esc(p.sex)}${p.phone?' · '+esc(p.phone):''}</span>
+        <span><strong>${esc(p.name)}</strong> (${p.id}) — ${esc(displayAge(p))}/${esc(p.sex)}${p.phone?' · '+esc(p.phone):''}</span>
         <span>${fmtDate(v.date)} ${v.time||''}</span>
       </div>
       <div class="sheet-section"><span class="lbl">Address</span><div>${esc(p.address)||'—'}</div></div>
@@ -1734,7 +2048,7 @@ function visitPrintView(patientId, visitId){
         <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${ci.phone}</div></div>
       <div class="sheet-title">INVESTIGATION REQUEST</div>
       <div class="patient-strip">
-        <span><strong>${esc(p.name)}</strong> (${p.id}) — ${esc(p.age)}/${esc(p.sex)}</span>
+        <span><strong>${esc(p.name)}</strong> (${p.id}) — ${esc(displayAge(p))}/${esc(p.sex)}</span>
         <span>${fmtDate(v.date)}</span>
       </div>
       ${v.diagnosis?`<div class="sheet-section"><span class="lbl">Clinical diagnosis</span><div>${esc(v.diagnosis)}</div></div>`:''}
@@ -1780,6 +2094,7 @@ async function saveInvestigationResults(patientId, visitId){
     const i = Number(el.getAttribute('data-result-idx'));
     if(v.investigations[i]) v.investigations[i].result = el.value.trim();
   });
+  logAudit('Saved investigation results', `${p.name} (${p.id}) — ${fmtDate(v.date)}`);
   const ok = await saveData();
   const msg = document.getElementById('results-saved-msg');
   if(msg) msg.textContent = ok ? 'Saved ✓' : 'Could not save — try again';
@@ -1810,6 +2125,7 @@ function pediatricsView(){
 
 function growthCalcHTML(){
   const linked = state.pedLinkedPatientId ? state.data.patients.find(p=>p.id===state.pedLinkedPatientId) : null;
+  const linkedAge = (linked && linked.dob) ? ageFromDob(linked.dob) : null;
   return `
     <div class="card" style="max-width:540px;">
       <h2 style="margin-bottom:4px;">Growth Percentile Calculator</h2>
@@ -1821,9 +2137,10 @@ function growthCalcHTML(){
       </div>
       <div class="row">
         <div class="field"><label>Sex</label><select id="gc-sex"><option ${linked&&linked.sex==='Female'?'':'selected'}>Male</option><option ${linked&&linked.sex==='Female'?'selected':''}>Female</option></select></div>
-        <div class="field"><label>Age — years</label><input id="gc-years" type="number" min="0" max="5" inputmode="numeric" placeholder="0"></div>
-        <div class="field"><label>Age — months</label><input id="gc-months" type="number" min="0" max="11" inputmode="numeric" placeholder="0"></div>
+        <div class="field"><label>Age — years</label><input id="gc-years" type="number" min="0" max="5" inputmode="numeric" placeholder="0" value="${linkedAge?linkedAge.years:''}"></div>
+        <div class="field"><label>Age — months</label><input id="gc-months" type="number" min="0" max="11" inputmode="numeric" placeholder="0" value="${linkedAge?linkedAge.months:''}"></div>
       </div>
+      ${linkedAge ? `<p class="faint" style="margin:-6px 0 10px;">Age pulled from ${esc(linked.name)}'s date of birth — adjust if this reading is for a different date.</p>` : ''}
       <div class="row">
         <div class="field"><label>Weight (kg)</label><input id="gc-weight" type="number" step="0.01" inputmode="decimal"></div>
         <div class="field"><label>Height/Length (cm)</label><input id="gc-height" type="number" step="0.1" inputmode="decimal"></div>
@@ -1839,7 +2156,7 @@ function growthPatientResultsHTML(){
   const list = state.data.patients.filter(p=>p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || (p.phone||'').includes(q)).slice(0,6);
   if(list.length===0) return `<p class="faint">No matching patients.</p>`;
   return list.map(p=>`<div class="rx-row" style="cursor:pointer;" onclick="state.pedLinkedPatientId='${p.id}';state.search='';render()">
-    <strong>${esc(p.name)}</strong> <span class="pill">${p.id}</span> <span class="faint">${esc(p.age)}/${esc(p.sex)}</span>
+    <strong>${esc(p.name)}</strong> <span class="pill">${p.id}</span> <span class="faint">${esc(displayAge(p))}/${esc(p.sex)}</span>
   </div>`).join('');
 }
 function onGrowthPatientSearch(v){
@@ -1891,6 +2208,7 @@ async function saveGrowthToPatient(){
   if(!p || !lastGrowthReading) return;
   if(!p.growthRecords) p.growthRecords = [];
   p.growthRecords.push(lastGrowthReading);
+  logAudit('Saved growth reading', `${p.name} (${p.id})`);
   const ok = await saveData();
   const msg = document.getElementById('growth-save-msg');
   if(msg) msg.textContent = ok ? 'Saved to record ✓' : 'Could not save — try again';
@@ -2078,6 +2396,9 @@ function removeChargeRow(i){
   const v = currentBillingVisit();
   if(!v) return;
   syncChargesFromDOM(v);
+  const c = v.billing.charges[i];
+  const label = c && (c.label || c.amount) ? ` "${c.label||'Untitled charge'}"${c.amount?' (₹'+c.amount+')':''}` : '';
+  if(!confirm(`Remove this charge${label}?`)) return;
   v.billing.charges.splice(i,1);
   document.getElementById('charge-rows').innerHTML = chargeRowsHTML(v.billing.charges);
 }
@@ -2105,6 +2426,74 @@ function currentBillingVisit(){
   const p = state.data.patients.find(p=>p.id===patientId);
   return p ? (p.visits||[]).find(v=>v.id===visitId) : null;
 }
+
+/* ============================= REPORTS ============================= */
+function reportDateRange(preset){
+  const iso = d => d.toISOString().slice(0,10);
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  if(preset==='today'){ const t = todayStr(); return {from:t, to:t}; }
+  if(preset==='week'){
+    const day = now.getDay(); // 0=Sun
+    const diffToMonday = (day===0?6:day-1);
+    const start = new Date(now); start.setDate(now.getDate()-diffToMonday);
+    return {from: iso(start), to: todayStr()};
+  }
+  if(preset==='lastMonth'){
+    return {from: iso(new Date(y, m-1, 1)), to: iso(new Date(y, m, 0))};
+  }
+  if(preset==='all'){ return {from:'0000-01-01', to:'9999-12-31'}; }
+  return {from: iso(new Date(y, m, 1)), to: todayStr()}; // 'month' default
+}
+function computeReportStats(from, to){
+  let visitCount=0, revenue=0, paidRevenue=0, unpaidRevenue=0;
+  const byDoctor = {};
+  state.data.patients.forEach(p=>{
+    (p.visits||[]).forEach(v=>{
+      if(!v.date || v.date < from || v.date > to) return;
+      visitCount++;
+      const b = billingOf(v);
+      const total = billingTotal(b);
+      revenue += total;
+      if(b.paid) paidRevenue += total; else unpaidRevenue += total;
+      const doc = v.doctorName || 'Unassigned';
+      if(!byDoctor[doc]) byDoctor[doc] = {visits:0, revenue:0};
+      byDoctor[doc].visits++;
+      byDoctor[doc].revenue += total;
+    });
+  });
+  const newPatients = state.data.patients.filter(p=> p.registeredDate && p.registeredDate>=from && p.registeredDate<=to).length;
+  const doctorRows = Object.entries(byDoctor).sort((a,b)=>b[1].visits-a[1].visits);
+  return {visitCount, revenue, paidRevenue, unpaidRevenue, newPatients, doctorRows};
+}
+function setReportRange(r){ state.reportRange = r; render(); }
+function reportsView(){
+  state.reportRange = state.reportRange || 'month';
+  const range = reportDateRange(state.reportRange);
+  const stats = computeReportStats(range.from, range.to);
+  const presets = [['today','Today'],['week','This week'],['month','This month'],['lastMonth','Last month'],['all','All time']];
+  const presetBtns = presets.map(([k,label])=>
+    `<button class="btn btn-sm ${state.reportRange===k?'btn-primary':''}" onclick="setReportRange('${k}')">${label}</button>`
+  ).join(' ');
+  const doctorRows = stats.doctorRows.map(([name,d])=>
+    `<tr><td>${esc(name)}</td><td>${d.visits}</td><td>₹${d.revenue.toFixed(0)}</td></tr>`
+  ).join('');
+  return `
+    <div class="page-head"><h1>Reports</h1></div>
+    <div class="row" style="margin-bottom:12px;flex-wrap:wrap;gap:8px;">${presetBtns}</div>
+    <p class="muted" style="margin-bottom:16px;">${state.reportRange==='all' ? 'All recorded visits' : fmtDate(range.from)+' – '+fmtDate(range.to)}</p>
+    <div class="stat-grid" style="margin-bottom:20px;">
+      <div class="stat-card"><div class="stat-num">${stats.visitCount}</div><div class="stat-label">Visits</div></div>
+      <div class="stat-card"><div class="stat-num">₹${stats.revenue.toFixed(0)}</div><div class="stat-label">Total revenue</div></div>
+      <div class="stat-card"><div class="stat-num">₹${stats.paidRevenue.toFixed(0)}</div><div class="stat-label">Collected</div></div>
+      <div class="stat-card"><div class="stat-num">₹${stats.unpaidRevenue.toFixed(0)}</div><div class="stat-label">Outstanding</div></div>
+      <div class="stat-card"><div class="stat-num">${stats.newPatients}</div><div class="stat-label">New patients</div></div>
+    </div>
+    <div class="card">
+      <h2 style="margin-bottom:10px;">Visits by doctor</h2>
+      ${doctorRows ? `<table><thead><tr><th>Doctor</th><th>Visits</th><th>Revenue</th></tr></thead><tbody>${doctorRows}</tbody></table>` : '<p class="muted">No visits in this period.</p>'}
+    </div>`;
+}
 async function saveBilling(patientId, visitId){
   const p = state.data.patients.find(p=>p.id===patientId);
   const v = p && (p.visits||[]).find(v=>v.id===visitId);
@@ -2114,6 +2503,7 @@ async function saveBilling(patientId, visitId){
   v.billing.fee = document.getElementById('bill-fee').value.trim();
   v.billing.paid = document.getElementById('bill-paid').value === 'true';
   v.billing.mode = document.getElementById('bill-mode').value;
+  logAudit('Updated billing', `${p.name} (${p.id}) — ₹${billingTotal(v.billing).toFixed(0)}${v.billing.paid?' (paid)':' (unpaid)'}`);
   const ok = await saveData();
   const msg = document.getElementById('billing-saved-msg');
   if(msg) msg.textContent = ok ? 'Saved ✓' : 'Could not save — try again';
@@ -2143,6 +2533,12 @@ function settingsView(){
       <h2 style="margin-bottom:6px;">Backup</h2>
       <p class="muted" style="font-size:12.5px;">Downloads every patient, visit, and staff record as a single JSON file — keep a copy somewhere safe periodically, especially before any database change.</p>
       <button class="btn btn-sm" onclick="downloadBackup()">⬇ Download backup (JSON)</button>
+    </div>
+
+    <div class="card" style="margin-bottom:18px;max-width:520px;">
+      <h2 style="margin-bottom:6px;">Activity log</h2>
+      <p class="muted" style="font-size:12.5px;">Who changed what, and when — patients, visits, billing, staff accounts and more.</p>
+      <button class="btn btn-sm" onclick="go('auditLog')">View activity log</button>
     </div>
 
     <div class="card" style="margin-bottom:18px;max-width:640px;">
@@ -2176,6 +2572,45 @@ function settingsView(){
     </div>`;
 }
 
+function onAuditSearchInput(v){
+  state.auditSearch = v;
+  const el = document.getElementById('audit-log-container');
+  if(el) el.innerHTML = auditLogTableHTML();
+}
+function auditLogTableHTML(){
+  const q = (state.auditSearch||'').trim().toLowerCase();
+  let entries = (state.data.auditLog||[]).slice().reverse(); // newest first
+  if(q){
+    entries = entries.filter(e =>
+      (e.staff||'').toLowerCase().includes(q) ||
+      (e.action||'').toLowerCase().includes(q) ||
+      (e.details||'').toLowerCase().includes(q)
+    );
+  }
+  const shown = entries.slice(0,200);
+  if(!shown.length) return `<p class="muted">No activity recorded${q?' matching that search':' yet'}.</p>`;
+  const rows = shown.map(e=>{
+    const d = new Date(e.ts);
+    const when = isNaN(d) ? (e.ts||'') : d.toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    return `<tr><td style="white-space:nowrap;">${esc(when)}</td><td>${esc(e.staff)}</td><td>${esc(e.action)}</td><td>${esc(e.details)}</td></tr>`;
+  }).join('');
+  const note = entries.length > 200 ? `<p class="faint" style="margin-top:8px;">Showing the most recent 200 of ${entries.length} matching entries.</p>` : '';
+  return `<table><thead><tr><th>When</th><th>Staff</th><th>Action</th><th>Details</th></tr></thead><tbody>${rows}</tbody></table>${note}`;
+}
+function auditLogView(){
+  return `
+    <div class="page-head">
+      <div><h1>Activity log</h1><p class="muted">${(state.data.auditLog||[]).length} entries recorded</p></div>
+      <button class="btn btn-ghost" onclick="go('settings')">Back to settings</button>
+    </div>
+    <div class="card">
+      <div class="search-wrap" style="margin-bottom:14px;">
+        <input type="text" placeholder="Search by staff, action or details" value="${esc(state.auditSearch||'')}" oninput="onAuditSearchInput(this.value)">
+      </div>
+      <div id="audit-log-container">${auditLogTableHTML()}</div>
+    </div>`;
+}
+
 async function addCustomMedicine(){
   const name = document.getElementById('cm-name').value.trim();
   const dosagesRaw = document.getElementById('cm-dosages').value.trim();
@@ -2185,11 +2620,16 @@ async function addCustomMedicine(){
   let entry = state.data.customMedicines.find(m=>m.name.toLowerCase()===name.toLowerCase());
   if(entry){ dosages.forEach(d=>{ if(!entry.dosages.includes(d)) entry.dosages.push(d); }); }
   else { state.data.customMedicines.push({name, dosages}); }
+  logAudit('Added medicine to library', name);
   await saveData();
   render();
 }
 async function removeCustomMedicine(idx){
+  const m = (state.data.customMedicines||[])[idx];
+  if(!m) return;
+  if(!confirm(`Remove "${m.name}" from your saved medicines list?`)) return;
   state.data.customMedicines.splice(idx,1);
+  logAudit('Removed medicine from library', m.name);
   await saveData();
   render();
 }
@@ -2206,6 +2646,7 @@ function retryLoad(){ state.loading = true; render(); loadData(); }
 
 /* ============================= ROOT RENDER ============================= */
 function render(){
+  resetIdleTimer();
   const app = document.getElementById('app');
   if(state.loading){ app.innerHTML = loadingView(); return; }
   if(state.loadError && !state.data){ app.innerHTML = connectionErrorView(); return; }
