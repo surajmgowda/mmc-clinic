@@ -116,9 +116,22 @@ app.put('/api/data', async (req, res) => {
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
 
+// ---- PWA files ----
+// Served explicitly, with the right Content-Type, before the catch-all below
+// — otherwise the SPA fallback would hand back index.html for these paths
+// instead of the actual manifest/service worker, breaking installability.
+app.get('/manifest.json', (req, res) => {
+  res.type('application/manifest+json');
+  res.sendFile(path.join(__dirname, 'manifest.json'));
+});
+app.get('/service-worker.js', (req, res) => {
+  res.type('application/javascript');
+  res.sendFile(path.join(__dirname, 'service-worker.js'));
+});
+
 // ---- Frontend ----
 // Single self-contained HTML file (all CSS/JS inline) — served for every
-// non-API route.
+// other non-API route.
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
