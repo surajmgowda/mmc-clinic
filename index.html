@@ -193,7 +193,9 @@ let state = {
   apptError: '',
   auditSearch: '',
   dashboardMineOnly: false, // "My patients today" toggle, doctor dashboard
-  ui: { editingPatient: false, resetConfirmText: '' }
+  ui: { editingPatient: false, resetConfirmText: '' },
+  regDupeAcknowledged: false, // set once staff confirms a phone-match warning isn't the same person
+  mergeUI: null // { aId, bId, searchA, searchB, choices } — active on the Merge patients screen
 };
 
 function defaultData(){
@@ -325,6 +327,12 @@ function go(route, params){
   }
   if(route === 'newAppointment'){
     initDraftAppt();
+  }
+  if(route === 'newPatient'){
+    state.regDupeAcknowledged = false;
+  }
+  if(route === 'mergePatients'){
+    initMergeUI();
   }
   render();
 }
@@ -535,6 +543,32 @@ function lastVisitDate(p){
   return p.visits.slice().sort((a,b)=> (b.date+b.id).localeCompare(a.date+a.id))[0].date;
 }
 
+// Normalizes to digits-only so "98765 43210", "(987) 654-3210" etc. all
+// compare equal — a punctuation difference shouldn't hide a real duplicate.
+function normPhone(p){ return (p||'').replace(/\D/g,''); }
+function phoneDuplicates(phone, excludeId){
+  const np = normPhone(phone);
+  if(!np) return [];
+  return state.data.patients.filter(p=> p.id!==excludeId && normPhone(p.phone)===np);
+}
+function dupeWarningHTML(matches){
+  const cards = matches.map(p=>`
+    <div class="card" style="padding:10px 12px;margin-bottom:6px;">
+      <strong>${esc(p.name)}</strong> <span class="pill">${p.id}</span>
+      <div class="faint">${esc(displayAge(p))}/${esc(p.sex)} · ${(p.visits||[]).length} visit(s)${lastVisitDate(p)?' · last visit '+fmtDate(lastVisitDate(p)):''}</div>
+      <button class="btn btn-sm" style="margin-top:6px;" onclick="go('patient',{patientId:'${p.id}'})">Use this record instead</button>
+    </div>`).join('');
+  return `
+    <div class="banner" style="background:var(--accent-tint);color:var(--accent);margin-top:10px;">
+      <strong>⚠ This phone number is already on file.</strong> A shared family phone can mean two different people — check it's not the same person before registering a new record.
+    </div>
+    ${cards}
+    <button class="btn btn-ghost btn-sm" onclick="confirmRegisterAnyway()">This is a different person — register anyway</button>`;
+}
+function confirmRegisterAnyway(){
+  state.regDupeAcknowledged = true;
+  saveNewPatient();
+}
 async function saveNewPatient(){
   const name = document.getElementById('reg-name').value.trim();
   const dob = document.getElementById('reg-dob').value;
@@ -546,6 +580,15 @@ async function saveNewPatient(){
   const err = document.getElementById('reg-error');
   if(!name || (!dob && !age) || !sex || !phone || !address){
     err.textContent = 'Name, date of birth (or age), sex, phone and address are all required.'; return;
+  }
+  err.textContent = '';
+  if(!state.regDupeAcknowledged){
+    const matches = phoneDuplicates(phone, null);
+    if(matches.length){
+      const warnEl = document.getElementById('reg-dupe-warning');
+      if(warnEl) warnEl.innerHTML = dupeWarningHTML(matches);
+      return;
+    }
   }
   const patient = {
     id: newPatientId(), name, dob: dob||'', age, sex, phone, address, allergies,
@@ -1244,6 +1287,7 @@ function routeContent(){
     case 'billing': return billingView();
     case 'billingDetail': return billingDetailView(state.routeParams.patientId, state.routeParams.visitId);
     case 'reports': return reportsView();
+    case 'mergePatients': return mergePatientsView();
     case 'auditLog': return auditLogView();
     default: return dashboardView();
   }
@@ -1365,7 +1409,10 @@ function patientsView(){
   return `
     <div class="page-head">
       <div><h1>Patients</h1><p class="muted">${state.data.patients.length} registered</p></div>
-      <button class="btn btn-accent" onclick="go('newPatient')">+ New Patient</button>
+      <div class="row">
+        ${isDoctor() ? `<button class="btn btn-ghost" onclick="go('mergePatients')">🔗 Merge duplicates</button>` : ''}
+        <button class="btn btn-accent" onclick="go('newPatient')">+ New Patient</button>
+      </div>
     </div>
     <div class="card">
       <div class="search-wrap" style="margin-bottom:14px;">
@@ -1373,6 +1420,138 @@ function patientsView(){
       </div>
       <div id="patients-table-container">${patientsTableHTML()}</div>
     </div>`;
+}
+
+/* ============================= MERGE PATIENTS ============================= */
+function initMergeUI(){
+  state.mergeUI = { aId: null, bId: null, searchA: '', searchB: '', choices: {} };
+}
+function mergeSearchResultsHTML(side){
+  const mu = state.mergeUI;
+  const q = (side==='A' ? mu.searchA : mu.searchB).trim().toLowerCase();
+  if(!q) return '';
+  const excludeId = side==='A' ? mu.bId : mu.aId;
+  const matches = state.data.patients.filter(p=>
+    p.id!==excludeId && (p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || (p.phone||'').includes(q))
+  ).slice(0,6);
+  if(!matches.length) return `<p class="faint">No matches.</p>`;
+  return matches.map(p=>
+    `<div class="chip" style="display:block;width:fit-content;margin-bottom:4px;" onmousedown="selectMergePatient('${side}','${p.id}')">${esc(p.name)} — ${p.id}${p.phone?(' · '+esc(p.phone)):''}</div>`
+  ).join('');
+}
+function onMergeSearchInput(side, v){
+  if(side==='A') state.mergeUI.searchA = v; else state.mergeUI.searchB = v;
+  const el = document.getElementById('merge-results-'+side);
+  if(el) el.innerHTML = mergeSearchResultsHTML(side);
+}
+function selectMergePatient(side, id){
+  if(side==='A') state.mergeUI.aId = id; else state.mergeUI.bId = id;
+  state.mergeUI.choices = {}; // field picks reset whenever either side changes
+  render();
+}
+function clearMergeSlot(side){
+  if(side==='A') state.mergeUI.aId = null; else state.mergeUI.bId = null;
+  render();
+}
+function mergeFieldRow(field, label, valA, valB){
+  const choice = state.mergeUI.choices[field] || 'A';
+  return `
+    <div class="row" style="align-items:flex-start;border-bottom:1px solid var(--line);padding:8px 0;margin:0;">
+      <div style="width:110px;flex:none;"><strong style="font-size:12.5px;">${esc(label)}</strong></div>
+      <label style="flex:1;display:flex;gap:6px;align-items:flex-start;cursor:pointer;">
+        <input type="radio" name="mf-${field}" ${choice==='A'?'checked':''} onchange="state.mergeUI.choices['${field}']='A'">
+        <span>${esc(valA) || '<span class="faint">—</span>'}</span>
+      </label>
+      <label style="flex:1;display:flex;gap:6px;align-items:flex-start;cursor:pointer;">
+        <input type="radio" name="mf-${field}" ${choice==='B'?'checked':''} onchange="state.mergeUI.choices['${field}']='B'">
+        <span>${esc(valB) || '<span class="faint">—</span>'}</span>
+      </label>
+    </div>`;
+}
+function mergeCompareHTML(a,b){
+  const totalVisits = (a.visits||[]).length + (b.visits||[]).length;
+  return `
+    <div class="card" style="margin-top:16px;max-width:680px;">
+      <h2 style="margin-bottom:4px;">Pick which details to keep</h2>
+      <p class="faint" style="margin-bottom:10px;">Visit history, growth records and vaccinations from both records are combined either way — only these demographic fields need picking.</p>
+      <div class="row" style="padding:0 0 6px;border-bottom:2px solid var(--line);font-weight:600;font-size:12px;color:var(--ink-soft);margin:0;">
+        <div style="width:110px;flex:none;"></div>
+        <div style="flex:1;">${esc(a.name)} (${a.id})</div>
+        <div style="flex:1;">${esc(b.name)} (${b.id})</div>
+      </div>
+      ${mergeFieldRow('name','Name', a.name, b.name)}
+      ${mergeFieldRow('dob','Date of birth', a.dob?fmtDate(a.dob):'', b.dob?fmtDate(b.dob):'')}
+      ${mergeFieldRow('age','Age (if DOB unknown)', a.age, b.age)}
+      ${mergeFieldRow('sex','Sex', a.sex, b.sex)}
+      ${mergeFieldRow('phone','Phone', a.phone, b.phone)}
+      ${mergeFieldRow('address','Address', a.address, b.address)}
+      ${mergeFieldRow('allergies','Allergies', a.allergies, b.allergies)}
+      <p class="muted" style="margin-top:12px;">${totalVisits} visit(s) total will end up on the kept record. "${esc(b.name)}" (${b.id}) will be permanently deleted after merging.</p>
+      <div id="merge-error" class="error-text"></div>
+      <button class="btn btn-primary" onclick="performMerge()">Merge these records</button>
+    </div>`;
+}
+function mergePatientsView(){
+  if(!isDoctor()){
+    return `<div class="page-head"><h1>Merge duplicate patients</h1></div><p class="muted">This is available to staff logged in with the Doctor role.</p>`;
+  }
+  if(!state.mergeUI) initMergeUI();
+  const mu = state.mergeUI;
+  const a = mu.aId ? state.data.patients.find(p=>p.id===mu.aId) : null;
+  const b = mu.bId ? state.data.patients.find(p=>p.id===mu.bId) : null;
+
+  const pickerBlock = (side, p) => p
+    ? `<div class="banner banner-info">${esc(p.name)} (${p.id}) — ${esc(displayAge(p))}/${esc(p.sex)} · ${(p.visits||[]).length} visit(s)
+        <button class="btn btn-ghost btn-sm" style="margin-left:8px;" onclick="clearMergeSlot('${side}')">Change</button></div>`
+    : `<input type="text" placeholder="Search by name, ID or phone" value="${esc(side==='A'?mu.searchA:mu.searchB)}" oninput="onMergeSearchInput('${side}',this.value)">
+       <div id="merge-results-${side}" style="margin-top:6px;">${mergeSearchResultsHTML(side)}</div>`;
+
+  let content = `
+    <div class="row" style="align-items:flex-start;gap:16px;">
+      <div class="card" style="flex:1;min-width:240px;">
+        <h3>Record to keep</h3>
+        ${pickerBlock('A', a)}
+      </div>
+      <div class="card" style="flex:1;min-width:240px;">
+        <h3>Record to merge in <span class="faint">(will be deleted)</span></h3>
+        ${pickerBlock('B', b)}
+      </div>
+    </div>`;
+
+  if(a && b){
+    content += (a.id===b.id)
+      ? `<p class="error-text" style="margin-top:14px;">That's the same record on both sides — choose a different patient to merge in.</p>`
+      : mergeCompareHTML(a,b);
+  }
+
+  return `<div class="page-head"><h1>Merge duplicate patients</h1></div>${content}`;
+}
+async function performMerge(){
+  const mu = state.mergeUI;
+  const a = state.data.patients.find(p=>p.id===mu.aId);
+  const b = state.data.patients.find(p=>p.id===mu.bId);
+  const errEl = document.getElementById('merge-error');
+  if(!a || !b) return;
+  const typed = prompt(`This combines "${b.name}" (${b.id}) into "${a.name}" (${a.id}) and permanently deletes the "${b.name}" (${b.id}) record.\n\nType MERGE to confirm.`);
+  if(typed === null) return;
+  if(typed.trim().toUpperCase() !== 'MERGE'){ if(errEl) errEl.textContent = 'Not confirmed — nothing was merged.'; return; }
+
+  const pick = field => (mu.choices[field]||'A')==='A' ? a[field] : b[field];
+  a.name = pick('name'); a.dob = pick('dob'); a.age = pick('age'); a.sex = pick('sex');
+  a.phone = pick('phone'); a.address = pick('address'); a.allergies = pick('allergies');
+
+  a.visits = (a.visits||[]).concat(b.visits||[]).sort((x,y)=> (x.date+x.id).localeCompare(y.date+y.id));
+  a.growthRecords = (a.growthRecords||[]).concat(b.growthRecords||[]);
+  a.vaccinations = (a.vaccinations||[]).concat(b.vaccinations||[]);
+
+  (state.data.appointments||[]).forEach(appt=>{ if(appt.patientId===b.id) appt.patientId = a.id; });
+
+  state.data.patients = state.data.patients.filter(p=>p.id!==b.id);
+  logAudit('Merged patient records', `${b.name} (${b.id}) merged into ${a.name} (${a.id})`);
+  const ok = await saveData();
+  if(!ok){ if(errEl) errEl.textContent = state.saveError || 'Could not save — try again.'; return; }
+  state.mergeUI = null;
+  go('patient', {patientId: a.id});
 }
 
 function newPatientView(){
@@ -1386,10 +1565,11 @@ function newPatientView(){
         <div class="field"><label>Sex *</label><select id="reg-sex"><option value="">Select</option><option>Male</option><option>Female</option><option>Other</option></select></div>
       </div>
       <p class="faint" style="margin:-8px 0 12px;">Enter a date of birth when known — it keeps age accurate automatically. Otherwise, enter an approximate age.</p>
-      <div class="field"><label>Phone *</label><input id="reg-phone" type="text"></div>
+      <div class="field"><label>Phone *</label><input id="reg-phone" type="text" oninput="state.regDupeAcknowledged=false"></div>
       <div class="field"><label>Address *</label><textarea id="reg-address"></textarea></div>
       <div class="field"><label>Known allergies</label><input id="reg-allergies" type="text" placeholder="e.g. Penicillin, Sulfa — leave blank if none known"></div>
       <div id="reg-error" class="error-text"></div>
+      <div id="reg-dupe-warning"></div>
       <div class="row" style="margin-top:6px;">
         <button class="btn btn-primary" onclick="saveNewPatient()">Save patient</button>
         <button class="btn btn-ghost" onclick="go('patients')">Cancel</button>
@@ -1840,6 +2020,86 @@ function growthPercentile(measure, sex, ageMonths, value){
   const {percentile} = lmsToPercentile(value, L, M, S);
   const clamped = Math.max(0.1, Math.min(99.9, percentile));
   return { percentile: clamped, ...percentileBand(clamped) };
+}
+
+// ---- Growth chart (SVG, self-contained — no charting library) ----
+// Standard Z-scores for the WHO 3rd/15th/50th/85th/97th percentile lines.
+const GROWTH_Z_BANDS = [
+  {z:-1.8808, label:'3rd'}, {z:-1.0364, label:'15th'}, {z:0, label:'50th'},
+  {z:1.0364, label:'85th'}, {z:1.8808, label:'97th'}
+];
+// Exact inverse of the Box-Cox transform used by lmsToPercentile — given a
+// fixed Z, returns the measurement value that sits at that Z for this L/M/S.
+function lmsValueAtZ(L, M, S, Z){
+  if(Math.abs(L) < 1e-6) return M * Math.exp(S*Z);
+  return M * Math.pow(1 + L*S*Z, 1/L);
+}
+function growthCurveData(measure, sex){
+  const table = WHO_LMS[measure + '_' + (sex==='Female'?'girls':'boys')];
+  if(!table) return [];
+  return GROWTH_Z_BANDS.map(band => ({
+    label: band.label,
+    points: table.map((row,m) => ({month:m, value: lmsValueAtZ(row[0],row[1],row[2],band.z)}))
+  }));
+}
+const GROWTH_MEASURE_META = {
+  weight: {title:'Weight-for-age', unit:'kg'},
+  height: {title:'Height/Length-for-age', unit:'cm'},
+  hc: {title:'Head circumference-for-age', unit:'cm'}
+};
+function growthChartSVG(measure, sex, childAgeMonths, childValue){
+  const curves = growthCurveData(measure, sex);
+  if(!curves.length) return '';
+  const allVals = curves.flatMap(c=>c.points.map(p=>p.value));
+  if(childValue!=null) allVals.push(childValue);
+  let minV = Math.min(...allVals), maxV = Math.max(...allVals);
+  const pad = (maxV-minV)*0.08 || 1;
+  minV -= pad; maxV += pad;
+
+  const W=620, H=280, ML=42, MR=12, MT=16, MB=30;
+  const PW=W-ML-MR, PH=H-MT-MB;
+  const xS = m => ML + (Math.min(60,Math.max(0,m))/60)*PW;
+  const yS = v => MT + (1-(v-minV)/(maxV-minV))*PH;
+
+  const lineColor = l => l==='50th' ? 'var(--primary)' : (l==='15th'||l==='85th') ? 'var(--accent)' : 'var(--danger)';
+  const paths = curves.map(c=>{
+    const d = c.points.map((p,i)=> (i===0?'M':'L')+xS(p.month).toFixed(1)+','+yS(p.value).toFixed(1)).join(' ');
+    const isMedian = c.label==='50th';
+    return `<path d="${d}" fill="none" stroke="${lineColor(c.label)}" stroke-width="${isMedian?2:1.2}" stroke-dasharray="${isMedian?'none':'4,3'}" opacity="${isMedian?1:0.8}"/>`;
+  }).join('');
+  // Small end-of-line labels for each band, at the right edge.
+  const endLabels = curves.map(c=>{
+    const last = c.points[c.points.length-1];
+    return `<text x="${xS(last.month)+3}" y="${yS(last.value)+3}" font-size="8.5" fill="${lineColor(c.label)}">${c.label}</text>`;
+  }).join('');
+
+  let xTicks = '';
+  for(let m=0;m<=60;m+=12){
+    xTicks += `<line x1="${xS(m)}" y1="${MT}" x2="${xS(m)}" y2="${MT+PH}" stroke="var(--line)" stroke-width="1"/>
+      <text x="${xS(m)}" y="${MT+PH+16}" font-size="9" fill="var(--ink-soft)" text-anchor="middle">${m/12}y</text>`;
+  }
+  let yTicks = '';
+  for(let i=0;i<=4;i++){
+    const v = minV + (maxV-minV)*i/4;
+    yTicks += `<line x1="${ML}" y1="${yS(v)}" x2="${ML+PW}" y2="${yS(v)}" stroke="var(--line)" stroke-width="0.6"/>
+      <text x="${ML-6}" y="${yS(v)+3}" font-size="9" fill="var(--ink-soft)" text-anchor="end">${v.toFixed(1)}</text>`;
+  }
+
+  let childMarker = '';
+  if(childValue!=null && childAgeMonths!=null){
+    childMarker = `<circle cx="${xS(childAgeMonths)}" cy="${yS(childValue)}" r="5.5" fill="var(--accent)" stroke="#fff" stroke-width="2"/>`;
+  }
+
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;" xmlns="http://www.w3.org/2000/svg">
+    ${yTicks}${xTicks}${paths}${endLabels}${childMarker}
+  </svg>`;
+}
+function growthChartCardHTML(measure, sex, childAgeMonths, childValue){
+  const meta = GROWTH_MEASURE_META[measure];
+  return `<div class="card" style="padding:12px 10px;margin-bottom:8px;">
+    <div class="faint" style="margin-bottom:6px;">${meta.title} (${meta.unit}) — dashed lines 3rd/15th/85th/97th, solid line 50th, dot is this reading</div>
+    ${growthChartSVG(measure, sex, childAgeMonths, childValue)}
+  </div>`;
 }
 
 // ---- Pediatric weight-based dose formulary (reference only) ----
@@ -2416,9 +2676,9 @@ function calcGrowth(){
   }
   let rows = '';
   const reading = {date: todayStr(), ageMonths, sex, weight:weight||null, height:height||null, hc:hc||null, weightPercentile:null, heightPercentile:null, hcPercentile:null};
-  if(weight){ const r = growthPercentile('weight', sex, ageMonths, weight); if(r){ rows += growthRowHTML('Weight', weight+' kg', r); reading.weightPercentile = Math.round(r.percentile); } }
-  if(height){ const r = growthPercentile('height', sex, ageMonths, height); if(r){ rows += growthRowHTML('Height / Length', height+' cm', r); reading.heightPercentile = Math.round(r.percentile); } }
-  if(hc){ const r = growthPercentile('hc', sex, ageMonths, hc); if(r){ rows += growthRowHTML('Head circumference', hc+' cm', r); reading.hcPercentile = Math.round(r.percentile); } }
+  if(weight){ const r = growthPercentile('weight', sex, ageMonths, weight); if(r){ rows += growthRowHTML('Weight', weight+' kg', r) + growthChartCardHTML('weight', sex, ageMonths, weight); reading.weightPercentile = Math.round(r.percentile); } }
+  if(height){ const r = growthPercentile('height', sex, ageMonths, height); if(r){ rows += growthRowHTML('Height / Length', height+' cm', r) + growthChartCardHTML('height', sex, ageMonths, height); reading.heightPercentile = Math.round(r.percentile); } }
+  if(hc){ const r = growthPercentile('hc', sex, ageMonths, hc); if(r){ rows += growthRowHTML('Head circumference', hc+' cm', r) + growthChartCardHTML('hc', sex, ageMonths, hc); reading.hcPercentile = Math.round(r.percentile); } }
   if(!rows){ box.innerHTML = `<p class="muted">Enter at least one measurement.</p>`; return; }
   lastGrowthReading = reading;
   const saveBtn = state.pedLinkedPatientId
