@@ -321,7 +321,7 @@ let state = {
   dashboardMineOnly: false, // "My patients today" toggle, doctor dashboard
   billingUnpaidOnly: false,
   loginSelectedName: '',
-  ui: { editingPatient: false, resetConfirmText: '' },
+  ui: { editingPatient: false, resetConfirmText: '', editingStaffName: null },
   regDupeAcknowledged: false, // set once staff confirms a phone-match warning isn't the same person
   mergeUI: null // { aId, bId, searchA, searchB, choices } — active on the Merge patients screen
 };
@@ -519,6 +519,7 @@ async function loadData(){
     if(!state.data.rxTemplates) state.data.rxTemplates = [];
     dataVersion = json.version;
     state.loadError = null;
+    ensureOwnerExists();
   } catch(e){
     state.loadError = 'Could not reach the clinic server. Check your connection and reload the page.';
   }
@@ -658,7 +659,7 @@ async function doSetup(){
   if(!name || !/^\d{4}$/.test(pin)){
     err.textContent = 'Enter your name and a 4-digit PIN.'; return;
   }
-  state.data.staff.push({name, role, pin: await hashPin(pin)});
+  state.data.staff.push({name, role, pin: await hashPin(pin), owner: true, qualification: ''});
   logAudit('Clinic set up', `First account: ${name} (${role})`, name);
   const ok = await saveData();
   if(!ok){ err.textContent = state.saveError; render(); return; }
@@ -674,6 +675,26 @@ function currentStaffRole(){
   return s ? s.role : null;
 }
 function isDoctor(){ return currentStaffRole()==='Doctor'; }
+// Clinic admin flag on a staff record — never used as a printed title on documents.
+function isOwner(){
+  const s = state.data && state.data.staff
+    ? state.data.staff.find(x=>x.name===state.session.staffName) : null;
+  return !!(s && s.owner);
+}
+// Ensure at least one owner exists (legacy data / first account).
+function ensureOwnerExists(){
+  if(!state.data || !state.data.staff || !state.data.staff.length) return;
+  if(state.data.staff.some(s=>s.owner)) return;
+  // Prefer first Doctor, else first staff account
+  const doc = state.data.staff.find(s=>s.role==='Doctor');
+  (doc || state.data.staff[0]).owner = true;
+}
+function displayStaffRole(s){
+  // Roles shown in the app UI — never print "Owner" on clinical documents.
+  if(!s) return '';
+  return s.role || '';
+}
+
 
 function staffByName(name){
   if(!name || !state.data || !state.data.staff) return null;
@@ -765,7 +786,7 @@ async function addStaffFromLogin(){
   if(state.data.staff.some(s=>s.name===name)){
     err.textContent = 'That name is already registered.'; return;
   }
-  state.data.staff.push({name, role, pin: await hashPin(pin)});
+  state.data.staff.push({name, role, pin: await hashPin(pin), owner: false, qualification: ''});
   logAudit('Added staff account', `${name} (${role})`);
   const ok = await saveData();
   if(!ok){ err.textContent = state.saveError; render(); return; }
@@ -1674,6 +1695,7 @@ async function restoreBackup(file){
   }
 }
 async function addStaff(){
+  if(!isOwner()){ alert('Only the clinic admin can add staff accounts.'); return; }
   const name = document.getElementById('st-name').value.trim();
   const role = document.getElementById('st-role').value;
   const pin = document.getElementById('st-pin').value.trim();
@@ -1681,12 +1703,13 @@ async function addStaff(){
   const err = document.getElementById('st-error');
   if(!name || !/^\d{4}$/.test(pin)){ err.textContent = 'Enter a name and a 4-digit PIN.'; return; }
   if(state.data.staff.some(s=>s.name===name)){ err.textContent = 'That name is already registered.'; return; }
-  state.data.staff.push({name, role, pin: await hashPin(pin), qualification});
+  state.data.staff.push({name, role, pin: await hashPin(pin), qualification, owner: false});
   logAudit('Added staff account', `${name} (${role})${qualification?' · '+qualification:''}`);
   await saveData();
   render();
 }
 async function editStaffQualification(name){
+  if(!isOwner()){ alert('Only the clinic admin can edit staff profiles.'); return; }
   const s = state.data.staff.find(s=>s.name===name);
   if(!s) return;
   const entered = prompt(`Qualification / course for ${name} (e.g. M.B.B.S., M.D. Paediatrics):`, s.qualification || '');
@@ -1697,7 +1720,10 @@ async function editStaffQualification(name){
   render();
 }
 async function removeStaff(name){
+  if(!isOwner()){ alert('Only the clinic admin can remove staff accounts.'); return; }
   if(name === state.session.staffName){ return; }
+  const target = state.data.staff.find(s=>s.name===name);
+  if(target && target.owner){ alert('Cannot remove the clinic admin account.'); return; }
   if(!confirm(`Remove staff account "${name}"? They will no longer be able to log in.`)) return;
   state.data.staff = state.data.staff.filter(s=>s.name!==name);
   logAudit('Removed staff account', name);
@@ -1706,8 +1732,9 @@ async function removeStaff(name){
 }
 // Renaming isn't offered here: a staff name is used as the identifying key
 // throughout visits, appointments and the audit log, so changing it would
-// orphan that history. Role and PIN are safe to change in place.
+// orphan that history. Role and PIN are safe to change in place (admin only).
 async function changeStaffRole(name){
+  if(!isOwner()){ alert('Only the clinic admin can change staff roles.'); return; }
   const s = state.data.staff.find(s=>s.name===name);
   if(!s) return;
   const roles = ['Doctor','Receptionist','Staff'];
@@ -1723,6 +1750,7 @@ async function changeStaffRole(name){
   render();
 }
 async function resetStaffPin(name){
+  if(!isOwner()){ alert('Only the clinic admin can reset staff PINs.'); return; }
   const s = state.data.staff.find(s=>s.name===name);
   if(!s) return;
   const entered = prompt(`New 4-digit PIN for ${name}:`);
@@ -1732,6 +1760,31 @@ async function resetStaffPin(name){
   s.pin = await hashPin(pin);
   logAudit('Reset staff PIN', name);
   await saveData();
+  render();
+}
+async function saveStaffProfileEdit(name){
+  if(!isOwner()){ alert('Only the clinic admin can edit staff profiles.'); return; }
+  const s = state.data.staff.find(s=>s.name===name);
+  if(!s) return;
+  const qualEl = document.getElementById('edit-st-qualification');
+  const roleEl = document.getElementById('edit-st-role');
+  if(qualEl) s.qualification = qualEl.value.trim();
+  if(roleEl){
+    const roles = ['Doctor','Receptionist','Staff'];
+    if(roles.includes(roleEl.value)) s.role = roleEl.value;
+  }
+  state.ui.editingStaffName = null;
+  logAudit('Updated staff profile', `${name}${s.qualification?' · '+s.qualification:''}`);
+  await saveData();
+  render();
+}
+function startEditStaffProfile(name){
+  if(!isOwner()){ alert('Only the clinic admin can edit staff profiles.'); return; }
+  state.ui.editingStaffName = name;
+  render();
+}
+function cancelEditStaffProfile(){
+  state.ui.editingStaffName = null;
   render();
 }
 function onResetConfirmInput(v){
@@ -4234,18 +4287,45 @@ async function saveBilling(patientId, visitId){
 
 function settingsView(){
   const ci = state.data.clinicInfo;
-  const staffRows = state.data.staff.map(s=>`
-    <tr>
-      <td>${esc(s.name)}</td>
+  const canManageStaff = isOwner();
+  const editingName = state.ui.editingStaffName || null;
+  const staffRows = state.data.staff.map(s=>{
+    if(canManageStaff && editingName === s.name){
+      return `<tr>
+        <td colspan="5">
+          <div class="card" style="padding:14px;margin:4px 0;background:var(--primary-tint,#E8F1F6);">
+            <h3 style="margin-bottom:10px;">Edit profile — ${esc(s.name)}</h3>
+            <div class="row">
+              <div class="field"><label>Role</label>
+                <select id="edit-st-role">
+                  ${['Doctor','Receptionist','Staff'].map(r=>`<option ${s.role===r?'selected':''}>${r}</option>`).join('')}
+                </select>
+              </div>
+              <div class="field" style="flex:2;"><label>Qualification / course</label>
+                <input id="edit-st-qualification" value="${esc(s.qualification||'')}" placeholder="e.g. M.B.B.S., M.D. Paediatrics">
+              </div>
+            </div>
+            <div class="row" style="gap:8px;">
+              <button class="btn btn-primary btn-sm" onclick="saveStaffProfileEdit('${esc(s.name)}')">Save profile</button>
+              <button class="btn btn-ghost btn-sm" onclick="cancelEditStaffProfile()">Cancel</button>
+              <button class="btn btn-ghost btn-sm" onclick="resetStaffPin('${esc(s.name)}')">Reset PIN</button>
+            </div>
+          </div>
+        </td>
+      </tr>`;
+    }
+    return `<tr>
+      <td>${esc(s.name)}${s.owner?' <span class="pill" title="Can manage all staff accounts">Admin</span>':''}</td>
       <td>${esc(s.role)}</td>
       <td>${esc(s.qualification)||'<span class="faint">—</span>'}</td>
       <td>••••</td>
       <td style="white-space:nowrap;">
-        <button class="btn btn-ghost btn-sm" onclick="editStaffQualification('${esc(s.name)}')">Qualification</button>
-        <button class="btn btn-ghost btn-sm" onclick="changeStaffRole('${esc(s.name)}')">Change role</button>
-        <button class="btn btn-ghost btn-sm" onclick="resetStaffPin('${esc(s.name)}')">Reset PIN</button>
-        ${s.name!==state.session.staffName?`<button class="btn btn-ghost btn-sm" onclick="removeStaff('${esc(s.name)}')">Remove</button>`:'<span class="faint">(you)</span>'}
-      </td></tr>`).join('');
+        ${canManageStaff ? `
+          <button class="btn btn-sm" onclick="startEditStaffProfile('${esc(s.name)}')">Edit</button>
+          ${s.name!==state.session.staffName && !s.owner ? `<button class="btn btn-ghost btn-sm" onclick="removeStaff('${esc(s.name)}')">Remove</button>` : (s.name===state.session.staffName?'<span class="faint">(you)</span>':'')}
+        ` : `<span class="faint">${s.name===state.session.staffName?'(you)':'—'}</span>`}
+      </td></tr>`;
+  }).join('');
   const meds = state.data.customMedicines||[];
   const medRows = meds.map((m,i)=>`
     <tr><td>${esc(m.name)}</td><td>${(m.dosages||[]).map(esc).join(', ')||'<span class="faint">—</span>'}</td>
@@ -4303,9 +4383,13 @@ function settingsView(){
       ${templates.length ? `<table><thead><tr><th>Name</th><th>Medicines</th><th>Tests</th><th></th></tr></thead><tbody>${templateRows}</tbody></table>` : `<p class="muted">None saved yet.</p>`}
     </div>
 
-    <div class="card" style="margin-bottom:18px;max-width:640px;">
-      <h2 style="margin-bottom:12px;">Staff accounts</h2>
+    <div class="card" style="margin-bottom:18px;max-width:720px;">
+      <h2 style="margin-bottom:6px;">Staff accounts</h2>
+      ${canManageStaff
+        ? `<p class="muted" style="font-size:12.5px;margin-bottom:12px;">As clinic admin you can edit every profile — role, qualification (shown on OPD cards), and PIN.</p>`
+        : `<p class="muted" style="font-size:12.5px;margin-bottom:12px;">Only the clinic admin can edit staff profiles. Contact them to update your qualification or role.</p>`}
       <table><thead><tr><th>Name</th><th>Role</th><th>Qualification</th><th>PIN</th><th></th></tr></thead><tbody>${staffRows}</tbody></table>
+      ${canManageStaff ? `
       <div class="row" style="margin-top:14px;">
         <div class="field"><label>Name</label><input id="st-name"></div>
         <div class="field"><label>Role</label><select id="st-role"><option>Doctor</option><option>Receptionist</option><option>Staff</option></select></div>
@@ -4314,6 +4398,7 @@ function settingsView(){
       </div>
       <div id="st-error" class="error-text"></div>
       <button class="btn btn-sm" onclick="addStaff()">+ Add staff</button>
+      ` : ''}
     </div>
 
     <div class="card" style="max-width:520px;border-color:var(--danger);">
