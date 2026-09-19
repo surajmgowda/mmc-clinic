@@ -293,6 +293,24 @@
     width:160px;text-align:center;font-size:11px;font-weight:600;
     color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.04em;
   }
+  .cert-meta{
+    display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;
+    padding:0 22px 12px;font-size:13px;border-bottom:1px solid var(--line);
+    margin-bottom:4px;
+  }
+  .cert-body{
+    padding:16px 22px 8px;font-size:14px;line-height:1.7;color:var(--ink);
+  }
+  .cert-body p{margin:0 0 12px 0;}
+  .cert-footer{
+    display:flex;justify-content:space-between;align-items:flex-end;
+    gap:24px;padding:20px 22px 22px;margin-top:12px;
+  }
+  .cert-place{font-size:13.5px;max-width:50%;}
+  .cert-sign{
+    display:flex;flex-direction:column;align-items:flex-end;min-width:160px;
+  }
+
   .opd-card .sheet-title{margin-left:22px;margin-right:22px;}
   .opd-card .rx-line{margin-left:0;margin-right:0;}
   .opd-card .sheet-divider{margin-left:22px;margin-right:22px;}
@@ -357,6 +375,7 @@ function defaultData(){
   return {
     clinicInfo: { name: 'Male Madeshwara Clinic', shortName: 'MMC', address: '', phone: '' },
     nextPatientSeq: 1,
+    nextCertSeq: 1,
     nextTokenSeq: 1,
     tokenDate: '', // resets token counter each calendar day
     patients: [],
@@ -3468,9 +3487,10 @@ function visitPrintView(patientId, visitId){
       <div><h1>Visit summary</h1><p class="muted">${esc(p.name)} (${p.id}) — ${fmtDate(v.date)}</p></div>
       <button class="btn btn-ghost" onclick="go('patient',{patientId:p.id})">Back to patient</button>
     </div>
-    <div class="row" style="margin-bottom:18px;">
+    <div class="row" style="margin-bottom:18px;flex-wrap:wrap;gap:8px;">
       <button class="btn btn-primary" onclick="printSection('sheet-opd')">Print OPD card${v.prescriptions.length?' + prescription':''}</button>
       ${v.investigations.length?`<button class="btn" onclick="printSection('sheet-inv')">Print investigation form</button>`:''}
+      <button class="btn" onclick="state.certPatientId='${p.id}';state.certType='sick';go('certificates')">Medical certificate</button>
       <button class="btn btn-ghost" onclick="go('newVisit',{patientId:'${p.id}',editVisitId:'${v.id}'})">Edit this visit</button>
     </div>
     ${resultsCard}
@@ -4127,154 +4147,374 @@ function computeReportStats(from, to){
       byDoctor[doc].revenue += total;
     });
   });
-  const newPatients = state.data.patients.filter(p=> p.registeredDate && p.registeredDate>=from && p.registeredDate<=to).length;
+  const newPatients = state.data.patients.filter(p=>p.registeredDate && p.registeredDate>=from && p.registeredDate<=to).length;
   const doctorRows = Object.entries(byDoctor).sort((a,b)=>b[1].visits-a[1].visits);
   return {visitCount, revenue, paidRevenue, unpaidRevenue, newPatients, doctorRows};
 }
-function setReportRange(r){ state.reportRange = r; render(); }
+function setReportRange(preset){
+  state.reportRange = preset;
+  render();
+}
 
 /* ============================= MEDICAL CERTIFICATES ============================= */
 function certificatesView(){
   const q = (state.search||'').trim().toLowerCase();
   const linked = state.certPatientId ? state.data.patients.find(p=>p.id===state.certPatientId) : null;
+  const type = state.certType || 'sick';
+  const types = [
+    ['sick','Medical leave'],
+    ['fitness','Fitness'],
+    ['school','School / College'],
+    ['general','General medical']
+  ];
+  const typeNav = types.map(([k,l])=>
+    `<button class="btn btn-sm ${type===k?'btn-primary':''}" onclick="state.certType='${k}';render()">${l}</button>`
+  ).join(' ');
+
   let searchBlock = '';
   if(!linked){
     const list = q ? state.data.patients.filter(p=>
       p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || (p.phone||'').includes(q)
-    ).slice(0,8) : [];
+    ).slice(0,10) : [];
     searchBlock = `
-      <div class="card" style="margin-bottom:18px;max-width:520px;">
-        <h2 style="margin-bottom:10px;">Select patient</h2>
+      <div class="card" style="margin-bottom:18px;max-width:560px;">
+        <h2 style="margin-bottom:6px;">Select patient</h2>
+        <p class="faint" style="margin-bottom:12px;">Any registered patient can get a certificate. Search below, or open Certificate from their patient page or visit summary.</p>
         <div class="search-wrap"><input type="text" placeholder="Search by name, ID or phone" value="${esc(state.search||'')}" oninput="state.search=this.value;render()"></div>
         <div style="margin-top:10px;">
           ${list.map(p=>`<div class="rx-row" style="cursor:pointer;" onclick="state.certPatientId='${p.id}';state.search='';render()">
             <strong>${esc(p.name)}</strong> <span class="pill">${p.id}</span>
-            <div class="faint">${esc(opdAgeDisplay(p))} / ${esc(p.sex)}</div>
+            <div class="faint">${esc(opdAgeDisplay(p))} / ${esc(p.sex)} ${p.phone?'· '+esc(p.phone):''}</div>
           </div>`).join('') || (q?`<p class="faint">No matches.</p>`:`<p class="faint">Type to search patients.</p>`)}
         </div>
       </div>`;
   } else {
     searchBlock = `<div class="banner banner-info" style="margin-bottom:14px;">
-      Certificate for <strong>${esc(linked.name)}</strong> (${linked.id}) — ${esc(opdAgeDisplay(linked))}
-      <button class="btn btn-ghost btn-sm" style="margin-left:8px;" onclick="state.certPatientId=null;render()">Change patient</button>
+      Certificate for <strong>${esc(linked.name)}</strong> <span class="pill">${linked.id}</span> — ${esc(opdAgeDisplay(linked))} / ${esc(linked.sex)}
+      <button class="btn btn-ghost btn-sm" style="margin-left:8px;" onclick="state.certPatientId=null;state.search='';render()">Change patient</button>
     </div>`;
   }
 
-  const types = [
-    ['sick','Sick leave / Medical leave'],
-    ['fitness','Fitness certificate'],
-    ['school','School / College medical certificate']
-  ];
-  const type = state.certType || 'sick';
-  const typeNav = types.map(([k,l])=>
-    `<button class="btn btn-sm ${type===k?'btn-primary':''}" onclick="state.certType='${k}';render()">${l}</button>`
-  ).join(' ');
-
+  const today = todayStr();
+  const defaultDoctor = state.session.staffName || '';
+  const qual = staffQualification(defaultDoctor);
   let form = '';
   if(linked){
-    const ci = state.data.clinicInfo;
-    const today = todayStr();
+    const lastVisit = (linked.visits||[]).slice().sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id))[0];
+    const lastDx = lastVisit && lastVisit.diagnosis ? lastVisit.diagnosis : '';
+    const commonFields = `
+      <div class="row">
+        <div class="field"><label>Certificate date</label><input id="cert-date" type="date" value="${today}"></div>
+        <div class="field"><label>Certificate no. (optional)</label><input id="cert-no" placeholder="Auto if left blank"></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Doctor name *</label><input id="cert-doctor" value="${esc(defaultDoctor)}"></div>
+        <div class="field"><label>Qualification</label><input id="cert-qual" value="${esc(qual)}" placeholder="e.g. M.B.B.S."></div>
+      </div>
+      <div class="field"><label>Place of issue</label><input id="cert-place" value="${esc((state.data.clinicInfo&&state.data.clinicInfo.address)||'')}" placeholder="Clinic address / city"></div>`;
+
     if(type==='sick'){
       form = `
-        <div class="card" style="margin-bottom:16px;max-width:560px;">
-          <h2 style="margin-bottom:10px;">Sick leave certificate</h2>
+        <div class="card" style="margin-bottom:16px;max-width:640px;">
+          <h2 style="margin-bottom:4px;">Medical leave / sick leave certificate</h2>
+          <p class="faint" style="margin-bottom:14px;">Enter diagnosis and rest period. A formal certificate will be generated for print.</p>
+          ${commonFields}
           <div class="row">
-            <div class="field"><label>From date</label><input id="cert-from" type="date" value="${today}"></div>
-            <div class="field"><label>To date</label><input id="cert-to" type="date" value="${today}"></div>
+            <div class="field"><label>Leave from *</label><input id="cert-from" type="date" value="${today}"></div>
+            <div class="field"><label>Leave to *</label><input id="cert-to" type="date" value="${today}"></div>
           </div>
-          <div class="field"><label>Diagnosis / reason</label><input id="cert-reason" placeholder="e.g. Acute febrile illness"></div>
-          <div class="field"><label>Advice</label><input id="cert-advice" value="Rest and medication as prescribed"></div>
-          <div class="field"><label>Doctor name</label><input id="cert-doctor" value="${esc(state.session.staffName||'')}"></div>
-          <button class="btn btn-primary" onclick="renderCertificatePreview('sick')">Generate &amp; print</button>
+          <div class="field"><label>Diagnosis / clinical condition *</label>
+            <input id="cert-diagnosis" value="${esc(lastDx)}" placeholder="e.g. Acute febrile illness / Viral fever">
+          </div>
+          <div class="field"><label>Nature of illness (brief)</label>
+            <textarea id="cert-nature" placeholder="e.g. Patient presented with high-grade fever and body ache">${esc(lastVisit&&lastVisit.complaints?lastVisit.complaints:'')}</textarea>
+          </div>
+          <div class="field"><label>Advice / treatment</label>
+            <input id="cert-advice" value="Rest and medication as prescribed. Avoid strenuous activity.">
+          </div>
+          <div class="field"><label>Fit to resume duty / school from (optional)</label>
+            <input id="cert-resume" type="date">
+          </div>
+          <div class="field"><label>Additional remarks</label>
+            <textarea id="cert-remarks" placeholder="Optional"></textarea>
+          </div>
+          <div id="cert-error" class="error-text"></div>
+          <button class="btn btn-primary" onclick="renderCertificatePreview('sick')">Generate medical certificate</button>
         </div>`;
     } else if(type==='fitness'){
       form = `
-        <div class="card" style="margin-bottom:16px;max-width:560px;">
-          <h2 style="margin-bottom:10px;">Fitness certificate</h2>
-          <div class="field"><label>Purpose</label><input id="cert-purpose" placeholder="e.g. Employment / Sports / Travel"></div>
-          <div class="field"><label>Findings</label><textarea id="cert-findings">Examined and found medically fit.</textarea></div>
-          <div class="field"><label>Doctor name</label><input id="cert-doctor" value="${esc(state.session.staffName||'')}"></div>
-          <button class="btn btn-primary" onclick="renderCertificatePreview('fitness')">Generate &amp; print</button>
+        <div class="card" style="margin-bottom:16px;max-width:640px;">
+          <h2 style="margin-bottom:4px;">Fitness certificate</h2>
+          <p class="faint" style="margin-bottom:14px;">For employment, sports, travel, or other fitness declarations.</p>
+          ${commonFields}
+          <div class="field"><label>Purpose *</label>
+            <input id="cert-purpose" placeholder="e.g. Employment / Sports / Driving / Travel abroad">
+          </div>
+          <div class="field"><label>Examination findings *</label>
+            <textarea id="cert-findings">General physical examination was carried out. The above-named person is medically fit for the stated purpose.</textarea>
+          </div>
+          <div class="row">
+            <div class="field"><label>Height (cm)</label><input id="cert-height" placeholder="optional"></div>
+            <div class="field"><label>Weight (kg)</label><input id="cert-weight" placeholder="optional"></div>
+            <div class="field"><label>BP</label><input id="cert-bp" placeholder="optional"></div>
+          </div>
+          <div class="field"><label>Any known disability / limitation</label>
+            <input id="cert-limitation" value="None" placeholder="None / or describe">
+          </div>
+          <div class="field"><label>Additional remarks</label><textarea id="cert-remarks" placeholder="Optional"></textarea></div>
+          <div id="cert-error" class="error-text"></div>
+          <button class="btn btn-primary" onclick="renderCertificatePreview('fitness')">Generate fitness certificate</button>
+        </div>`;
+    } else if(type==='school'){
+      form = `
+        <div class="card" style="margin-bottom:16px;max-width:640px;">
+          <h2 style="margin-bottom:4px;">School / College medical certificate</h2>
+          <p class="faint" style="margin-bottom:14px;">For attendance, leave, or fitness to join school/college activities.</p>
+          ${commonFields}
+          <div class="field"><label>School / College name *</label>
+            <input id="cert-school" placeholder="Name of institution">
+          </div>
+          <div class="field"><label>Class / Course (optional)</label>
+            <input id="cert-class" placeholder="e.g. Class 10 / B.Com I year">
+          </div>
+          <div class="field"><label>Purpose *</label>
+            <select id="cert-purpose">
+              <option>Medical leave / absence from class</option>
+              <option>Fitness for attendance</option>
+              <option>Fitness for sports / physical education</option>
+              <option>General medical fitness</option>
+            </select>
+          </div>
+          <div class="row">
+            <div class="field"><label>Leave from (if leave)</label><input id="cert-from" type="date" value="${today}"></div>
+            <div class="field"><label>Leave to (if leave)</label><input id="cert-to" type="date" value="${today}"></div>
+          </div>
+          <div class="field"><label>Diagnosis / findings *</label>
+            <input id="cert-diagnosis" value="${esc(lastDx)}" placeholder="e.g. Upper respiratory tract infection / Fit on examination">
+          </div>
+          <div class="field"><label>Advice</label>
+            <input id="cert-advice" value="Rest and treatment as advised. Fit to resume classes after the leave period.">
+          </div>
+          <div class="field"><label>Additional remarks</label><textarea id="cert-remarks" placeholder="Optional"></textarea></div>
+          <div id="cert-error" class="error-text"></div>
+          <button class="btn btn-primary" onclick="renderCertificatePreview('school')">Generate school certificate</button>
         </div>`;
     } else {
       form = `
-        <div class="card" style="margin-bottom:16px;max-width:560px;">
-          <h2 style="margin-bottom:10px;">School / College medical certificate</h2>
-          <div class="field"><label>Institution</label><input id="cert-school" placeholder="School / college name"></div>
-          <div class="field"><label>Purpose</label><input id="cert-purpose" value="Medical fitness for attendance"></div>
-          <div class="field"><label>Findings</label><textarea id="cert-findings">Examined and found fit to attend school/college.</textarea></div>
-          <div class="field"><label>Doctor name</label><input id="cert-doctor" value="${esc(state.session.staffName||'')}"></div>
-          <button class="btn btn-primary" onclick="renderCertificatePreview('school')">Generate &amp; print</button>
+        <div class="card" style="margin-bottom:16px;max-width:640px;">
+          <h2 style="margin-bottom:4px;">General medical certificate</h2>
+          <p class="faint" style="margin-bottom:14px;">Flexible certificate — fill diagnosis and statement as required.</p>
+          ${commonFields}
+          <div class="field"><label>Subject / title of certificate</label>
+            <input id="cert-subject" value="MEDICAL CERTIFICATE" placeholder="e.g. MEDICAL CERTIFICATE">
+          </div>
+          <div class="field"><label>Diagnosis / clinical condition *</label>
+            <input id="cert-diagnosis" value="${esc(lastDx)}" placeholder="Required">
+          </div>
+          <div class="field"><label>Certificate body / statement *</label>
+            <textarea id="cert-body" rows="5" placeholder="Write the main statement of the certificate. Patient details will still appear in the formal header.">The above-named patient was examined by me. Based on clinical examination, the diagnosis and advice are as stated above.</textarea>
+          </div>
+          <div class="field"><label>Advice / recommendations</label>
+            <textarea id="cert-advice" placeholder="Optional"></textarea>
+          </div>
+          <div class="field"><label>Additional remarks</label><textarea id="cert-remarks" placeholder="Optional"></textarea></div>
+          <div id="cert-error" class="error-text"></div>
+          <button class="btn btn-primary" onclick="renderCertificatePreview('general')">Generate certificate</button>
         </div>`;
     }
   }
 
   return `
-    <div class="page-head"><h1>Medical certificates</h1></div>
+    <div class="page-head">
+      <div>
+        <h1>Medical certificates</h1>
+        <p class="muted">Issue formal leave, fitness, school or general medical certificates for any patient</p>
+      </div>
+    </div>
     ${searchBlock}
     ${linked?`<div class="row" style="margin-bottom:14px;flex-wrap:wrap;gap:8px;">${typeNav}</div>`:''}
     ${form}
     <div id="cert-preview"></div>`;
 }
 
+function certVal(id){
+  const el = document.getElementById(id);
+  return el ? el.value.trim() : '';
+}
+function nextCertificateNo(){
+  if(!state.data.nextCertSeq) state.data.nextCertSeq = 1;
+  const n = state.data.nextCertSeq;
+  state.data.nextCertSeq = n + 1;
+  return 'MC-' + todayStr().replace(/-/g,'') + '-' + String(n).padStart(3,'0');
+}
+function daysBetweenInclusive(from, to){
+  if(!from || !to) return null;
+  const a = new Date(from+'T00:00:00'), b = new Date(to+'T00:00:00');
+  if(isNaN(a)||isNaN(b)||b < a) return null;
+  return Math.round((b - a) / 86400000) + 1;
+}
+function pronounForSex(sex){
+  if((sex||'').toLowerCase()==='male') return {subj:'He', obj:'him', poss:'his', HeShe:'He', hisHer:'his'};
+  if((sex||'').toLowerCase()==='female') return {subj:'She', obj:'her', poss:'her', HeShe:'She', hisHer:'her'};
+  return {subj:'They', obj:'them', poss:'their', HeShe:'They', hisHer:'their'};
+}
+
 function renderCertificatePreview(type){
   const p = state.data.patients.find(x=>x.id===state.certPatientId);
   if(!p) return;
+  const err = document.getElementById('cert-error');
   const ci = state.data.clinicInfo;
-  const doctor = (document.getElementById('cert-doctor')||{}).value || state.session.staffName || '';
-  const today = fmtDate(todayStr());
-  let body = '';
-  if(type==='sick'){
-    const from = fmtDate((document.getElementById('cert-from')||{}).value||'');
-    const to = fmtDate((document.getElementById('cert-to')||{}).value||'');
-    const reason = (document.getElementById('cert-reason')||{}).value||'—';
-    const advice = (document.getElementById('cert-advice')||{}).value||'';
-    body = `
-      <p>This is to certify that <strong>${esc(p.name)}</strong> (ID: ${esc(p.id)}), aged ${esc(opdAgeDisplay(p))}, ${esc(p.sex||'')}, residing at ${esc(p.address)||'—'}, was under my care from <strong>${from}</strong> to <strong>${to}</strong>.</p>
-      <p><strong>Diagnosis / reason:</strong> ${esc(reason)}</p>
-      ${advice?`<p><strong>Advice:</strong> ${esc(advice)}</p>`:''}
-      <p>He/She is advised medical leave for the above period.</p>`;
-  } else if(type==='fitness'){
-    const purpose = (document.getElementById('cert-purpose')||{}).value||'—';
-    const findings = (document.getElementById('cert-findings')||{}).value||'';
-    body = `
-      <p>This is to certify that <strong>${esc(p.name)}</strong> (ID: ${esc(p.id)}), aged ${esc(opdAgeDisplay(p))}, ${esc(p.sex||'')}, has been examined by me on <strong>${today}</strong>.</p>
-      <p><strong>Purpose:</strong> ${esc(purpose)}</p>
-      <p>${esc(findings)}</p>`;
-  } else {
-    const school = (document.getElementById('cert-school')||{}).value||'—';
-    const purpose = (document.getElementById('cert-purpose')||{}).value||'';
-    const findings = (document.getElementById('cert-findings')||{}).value||'';
-    body = `
-      <p>This is to certify that <strong>${esc(p.name)}</strong> (ID: ${esc(p.id)}), aged ${esc(opdAgeDisplay(p))}, ${esc(p.sex||'')}, is a student of <strong>${esc(school)}</strong>.</p>
-      <p>He/She was examined on <strong>${today}</strong>.</p>
-      <p><strong>Purpose:</strong> ${esc(purpose)}</p>
-      <p>${esc(findings)}</p>`;
+  const doctor = certVal('cert-doctor');
+  const qual = certVal('cert-qual') || staffQualification(doctor);
+  const certDateRaw = certVal('cert-date') || todayStr();
+  const certDate = fmtDate(certDateRaw);
+  let certNo = certVal('cert-no');
+  if(!certNo) certNo = nextCertificateNo();
+  const place = certVal('cert-place') || (ci.address||'');
+  const remarks = certVal('cert-remarks');
+  const pr = pronounForSex(p.sex);
+
+  if(!doctor){
+    if(err) err.textContent = 'Doctor name is required.';
+    return;
   }
-  const titles = {sick:'MEDICAL LEAVE CERTIFICATE', fitness:'FITNESS CERTIFICATE', school:'SCHOOL / COLLEGE MEDICAL CERTIFICATE'};
+
+  let title = 'MEDICAL CERTIFICATE';
+  let bodyHtml = '';
+
+  if(type==='sick'){
+    const fromRaw = certVal('cert-from');
+    const toRaw = certVal('cert-to');
+    const diagnosis = certVal('cert-diagnosis');
+    const nature = certVal('cert-nature');
+    const advice = certVal('cert-advice');
+    const resumeRaw = certVal('cert-resume');
+    if(!fromRaw || !toRaw || !diagnosis){
+      if(err) err.textContent = 'Leave from, leave to, and diagnosis are required.';
+      return;
+    }
+    if(err) err.textContent = '';
+    const days = daysBetweenInclusive(fromRaw, toRaw);
+    title = 'MEDICAL LEAVE CERTIFICATE';
+    bodyHtml = `
+      <p>This is to certify that <strong>${esc(p.name)}</strong>, ${esc(opdAgeDisplay(p))} / ${esc(p.sex||'—')}, Patient ID <strong>${esc(p.id)}</strong>${p.address?', residing at '+esc(p.address):''}, was examined and treated under my care.</p>
+      <p><strong>Diagnosis:</strong> ${esc(diagnosis)}</p>
+      ${nature?`<p><strong>Clinical notes:</strong> ${esc(nature)}</p>`:''}
+      <p>${pr.HeShe} is advised medical leave from <strong>${fmtDate(fromRaw)}</strong> to <strong>${fmtDate(toRaw)}</strong>${days?` (${days} day${days===1?'':'s'})`:''}.</p>
+      ${advice?`<p><strong>Advice:</strong> ${esc(advice)}</p>`:''}
+      ${resumeRaw?`<p>${pr.HeShe} is fit to resume duty / school / college with effect from <strong>${fmtDate(resumeRaw)}</strong>.</p>`
+        :`<p>${pr.HeShe} is advised to resume normal activity only after the leave period, or as further advised.</p>`}
+      ${remarks?`<p><strong>Remarks:</strong> ${esc(remarks)}</p>`:''}
+      <p style="margin-top:14px;">This certificate is issued on the patient's request for official / leave purposes.</p>`;
+  } else if(type==='fitness'){
+    const purpose = certVal('cert-purpose');
+    const findings = certVal('cert-findings');
+    const height = certVal('cert-height');
+    const weight = certVal('cert-weight');
+    const bp = certVal('cert-bp');
+    const limitation = certVal('cert-limitation');
+    if(!purpose || !findings){
+      if(err) err.textContent = 'Purpose and examination findings are required.';
+      return;
+    }
+    if(err) err.textContent = '';
+    title = 'FITNESS CERTIFICATE';
+    const vitalsBits = [height?`Height: ${esc(height)} cm`:'', weight?`Weight: ${esc(weight)} kg`:'', bp?`BP: ${esc(bp)}`:''].filter(Boolean).join(' · ');
+    bodyHtml = `
+      <p>This is to certify that <strong>${esc(p.name)}</strong>, ${esc(opdAgeDisplay(p))} / ${esc(p.sex||'—')}, Patient ID <strong>${esc(p.id)}</strong>${p.address?', residing at '+esc(p.address):''}, has been medically examined by me on <strong>${certDate}</strong>.</p>
+      <p><strong>Purpose:</strong> ${esc(purpose)}</p>
+      ${vitalsBits?`<p><strong>Recorded measurements:</strong> ${vitalsBits}</p>`:''}
+      <p><strong>Findings:</strong> ${esc(findings)}</p>
+      ${limitation?`<p><strong>Disability / limitation:</strong> ${esc(limitation)}</p>`:''}
+      ${remarks?`<p><strong>Remarks:</strong> ${esc(remarks)}</p>`:''}
+      <p style="margin-top:14px;">In my opinion, the above-named person is <strong>medically fit</strong> for the stated purpose at the time of examination.</p>`;
+  } else if(type==='school'){
+    const school = certVal('cert-school');
+    const klass = certVal('cert-class');
+    const purpose = certVal('cert-purpose') || 'Medical leave / absence from class';
+    const diagnosis = certVal('cert-diagnosis');
+    const advice = certVal('cert-advice');
+    const fromRaw = certVal('cert-from');
+    const toRaw = certVal('cert-to');
+    if(!school || !diagnosis){
+      if(err) err.textContent = 'School/college name and diagnosis/findings are required.';
+      return;
+    }
+    if(err) err.textContent = '';
+    title = 'SCHOOL / COLLEGE MEDICAL CERTIFICATE';
+    const days = daysBetweenInclusive(fromRaw, toRaw);
+    const isLeave = /leave|absence/i.test(purpose);
+    bodyHtml = `
+      <p>This is to certify that <strong>${esc(p.name)}</strong>, ${esc(opdAgeDisplay(p))} / ${esc(p.sex||'—')}, Patient ID <strong>${esc(p.id)}</strong>, student of <strong>${esc(school)}</strong>${klass?' ('+esc(klass)+')':''}, was examined by me on <strong>${certDate}</strong>.</p>
+      <p><strong>Purpose:</strong> ${esc(purpose)}</p>
+      <p><strong>Diagnosis / findings:</strong> ${esc(diagnosis)}</p>
+      ${isLeave && fromRaw && toRaw
+        ? `<p>${pr.HeShe} is advised medical leave from <strong>${fmtDate(fromRaw)}</strong> to <strong>${fmtDate(toRaw)}</strong>${days?` (${days} day${days===1?'':'s'})`:''}.</p>`
+        : ''}
+      ${advice?`<p><strong>Advice:</strong> ${esc(advice)}</p>`:''}
+      ${remarks?`<p><strong>Remarks:</strong> ${esc(remarks)}</p>`:''}
+      <p style="margin-top:14px;">This certificate is issued for submission to the school / college authorities.</p>`;
+  } else {
+    const subject = certVal('cert-subject') || 'MEDICAL CERTIFICATE';
+    const diagnosis = certVal('cert-diagnosis');
+    const body = certVal('cert-body');
+    const advice = certVal('cert-advice');
+    if(!diagnosis || !body){
+      if(err) err.textContent = 'Diagnosis and certificate statement are required.';
+      return;
+    }
+    if(err) err.textContent = '';
+    title = subject.toUpperCase();
+    bodyHtml = `
+      <p>This is to certify that <strong>${esc(p.name)}</strong>, ${esc(opdAgeDisplay(p))} / ${esc(p.sex||'—')}, Patient ID <strong>${esc(p.id)}</strong>${p.address?', residing at '+esc(p.address):''}, was examined by me.</p>
+      <p><strong>Diagnosis:</strong> ${esc(diagnosis)}</p>
+      <p>${esc(body)}</p>
+      ${advice?`<p><strong>Advice:</strong> ${esc(advice)}</p>`:''}
+      ${remarks?`<p><strong>Remarks:</strong> ${esc(remarks)}</p>`:''}`;
+  }
+
+  saveData();
+
   const html = `
-    <div class="print-sheet opd-card" id="sheet-cert">
+    <div class="print-sheet opd-card cert-sheet" id="sheet-cert">
       <div class="letterhead">
         <div class="clinic-name">${esc(ci.name)}</div>
-        <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${esc(ci.phone||'')}</div>
+        <div class="clinic-meta">${esc(ci.address||'')}${ci.address&&ci.phone?' · ':''}${esc(ci.phone||'')}</div>
       </div>
-      <div class="opd-badge">${titles[type]||'CERTIFICATE'}</div>
-      <div style="padding:8px 22px 22px;font-size:14px;line-height:1.65;">
-        ${body}
-        <div style="margin-top:36px;display:flex;justify-content:space-between;">
-          <div><span class="faint">Date</span><div>${today}</div></div>
-          <div style="text-align:right;"><span class="faint">Doctor</span><div><strong>${esc(doctor)}</strong></div>
-            ${staffQualification(doctor)?`<div class="faint">${esc(staffQualification(doctor))}</div>`:''}
-            <div class="faint" style="margin-top:24px;">Signature &amp; stamp</div>
-          </div>
+      <div class="opd-badge">${esc(title)}</div>
+      <div class="cert-meta">
+        <span>No. <strong>${esc(certNo)}</strong></span>
+        <span>Date: <strong>${certDate}</strong></span>
+      </div>
+      <div class="cert-body">
+        ${bodyHtml}
+      </div>
+      <div class="cert-footer">
+        <div class="cert-place">
+          ${place?`<div class="faint">Place</div><div>${esc(place)}</div>`:''}
+          <div class="faint" style="margin-top:10px;">Date</div>
+          <div>${certDate}</div>
+        </div>
+        <div class="cert-sign">
+          <div class="opd-sign-space"></div>
+          <div class="opd-sign-name">${esc(doctor)}</div>
+          ${qual?`<div class="opd-doctor-qual" style="text-align:center;width:180px;">${esc(qual)}</div>`:''}
+          <div class="opd-sign-label">Signature &amp; stamp</div>
         </div>
       </div>
     </div>
-    <button class="btn btn-primary" style="margin-top:10px;" onclick="printSection('sheet-cert')">Print certificate</button>`;
+    <div class="row" style="margin-top:12px;gap:8px;">
+      <button class="btn btn-primary" onclick="printSection('sheet-cert')">Print certificate</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('cert-preview').innerHTML=''">Clear preview</button>
+    </div>`;
   const box = document.getElementById('cert-preview');
-  if(box) box.innerHTML = html;
-  logAudit('Generated certificate', `${type} — ${p.name} (${p.id})`);
+  if(box){
+    box.innerHTML = html;
+    box.scrollIntoView({behavior:'smooth', block:'start'});
+  }
+  logAudit('Generated certificate', `${type} ${certNo} — ${p.name} (${p.id})`);
 }
+
 
 function reportsView(){
   state.reportRange = state.reportRange || 'month';
