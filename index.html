@@ -1280,6 +1280,23 @@ async function saveVisit(){
     if(!dv.newPatient.name || (!dv.newPatient.dob && !dv.newPatient.age) || !dv.newPatient.sex || !dv.newPatient.phone || !dv.newPatient.address){
       errEl.textContent = 'New patient needs name, date of birth (or age), sex, phone and address.'; return;
     }
+  } else if(dv.patientId){
+    // Existing patient linked to this visit — their record should already
+    // have these from registration. Skipped for a patient whose personal
+    // details were deliberately cleared (see "Clear personal details"),
+    // since blocking new visits for them would defeat that feature's point.
+    const existingPatient = state.data.patients.find(p=>p.id===dv.patientId);
+    if(existingPatient && !existingPatient.detailsRedacted){
+      if(!existingPatient.name || (!existingPatient.dob && !existingPatient.age) || !existingPatient.sex || !existingPatient.phone || !existingPatient.address){
+        errEl.textContent = `${existingPatient.name||'This patient'}'s record is missing some details (name, date of birth/age, sex, phone or address) — fill these in via "Edit details" on their patient page before saving a visit.`;
+        return;
+      }
+    }
+  }
+  if(document.getElementById('v-doctor') !== null){
+    if(!dv.vitals.bp || !dv.vitals.pulse || !dv.vitals.temp || !dv.vitals.weight){
+      errEl.textContent = 'BP, pulse, temperature and weight are all required before saving.'; return;
+    }
   }
   errEl.textContent = '';
 
@@ -1850,8 +1867,8 @@ function newPatientView(){
         <div class="field"><label>Sex *</label><select id="reg-sex"><option value="">Select</option><option>Male</option><option>Female</option><option>Other</option></select></div>
       </div>
       <p class="faint" style="margin:-8px 0 12px;">Enter a date of birth when known — it keeps age accurate automatically. Otherwise, enter an approximate age.</p>
-      <div class="field"><label>Phone *</label><input id="reg-phone" type="text" oninput="state.regDupeAcknowledged=false"></div>
       <div class="field"><label>Address *</label><textarea id="reg-address"></textarea></div>
+      <div class="field"><label>Phone *</label><input id="reg-phone" type="text" oninput="state.regDupeAcknowledged=false"></div>
       <div class="field"><label>Known allergies</label><input id="reg-allergies" type="text" placeholder="e.g. Penicillin, Sulfa — leave blank if none known"></div>
       <div id="reg-error" class="error-text"></div>
       <div id="reg-dupe-warning"></div>
@@ -1878,22 +1895,23 @@ function patientView(patientId){
         ${['Male','Female','Other'].map(s=>`<option ${p.sex===s?'selected':''}>${s}</option>`).join('')}
       </select></div>
     </div>
+    <div class="field"><label>Address *</label><textarea id="ep-address">${esc(p.address)}</textarea></div>
     <div class="row">
       <div class="field"><label>Phone *</label><input id="ep-phone" value="${esc(p.phone)}"></div>
     </div>
-    <div class="field"><label>Address *</label><textarea id="ep-address">${esc(p.address)}</textarea></div>
     <div class="field"><label>Known allergies</label><input id="ep-allergies" value="${esc(p.allergies)}" placeholder="e.g. Penicillin, Sulfa — leave blank if none known"></div>
     <div id="ep-error" class="error-text"></div>
     <div class="row"><button class="btn btn-primary" onclick="saveEditPatient('${p.id}')">Save</button><button class="btn btn-ghost" onclick="cancelEditPatient()">Cancel</button></div>
   ` : `
     ${p.detailsRedacted ? `<div class="banner" style="background:var(--danger-tint);color:var(--danger);margin-bottom:10px;"><strong>Personal details removed</strong>${p.redactedAt?' on '+fmtDate(p.redactedAt.slice(0,10)):''} — visit history below is preserved.</div>` : ''}
     <div class="row" style="margin-bottom:4px;">
+      <div><span class="faint">Patient ID</span><div><span class="pill">${p.id}</span></div></div>
       <div><span class="faint">Age / Sex</span><div>${esc(displayAge(p))} / ${esc(p.sex)}${p.dob?` <span class="faint">(DOB ${fmtDate(p.dob)})</span>`:''}</div>
         ${p.dob && ageFromDob(p.dob) ? `<div class="faint" style="margin-top:2px;">${esc(ageFromDob(p.dob).full)} old</div>` : ''}</div>
-      <div><span class="faint">Phone</span><div>${esc(p.phone)||'—'}</div></div>
       <div><span class="faint">Registered</span><div>${fmtDate(p.registeredDate)}</div></div>
     </div>
     <div><span class="faint">Address</span><div>${esc(p.address)||'—'}</div></div>
+    <div style="margin-top:8px;"><span class="faint">Phone</span><div>${esc(p.phone)||'—'}</div></div>
     ${p.allergies ? `<div class="banner" style="background:var(--danger-tint);color:var(--danger);margin-top:10px;"><strong>⚠ Allergies:</strong> ${esc(p.allergies)}</div>` : ''}
     <button class="btn btn-sm" style="margin-top:12px;" onclick="startEditPatient()">Edit details</button>
   `;
@@ -2663,8 +2681,8 @@ function newVisitView(){
           </select></div>
         </div>
         <div class="row">
-          <div class="field"><label>Phone *</label><input id="np-phone" value="${esc(np.phone)}"></div>
           <div class="field"><label>Address *</label><input id="np-address" value="${esc(np.address||'')}"></div>
+          <div class="field"><label>Phone *</label><input id="np-phone" value="${esc(np.phone)}"></div>
         </div>
         <div class="field"><label>Known allergies</label><input id="np-allergies" value="${esc(np.allergies||'')}" placeholder="leave blank if none known"></div>
       </div>`;
@@ -2846,10 +2864,13 @@ function visitPrintView(patientId, visitId){
         <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${ci.phone}</div></div>
       <div class="sheet-title">OPD CARD</div>
       <div class="patient-strip">
-        <span><strong>${esc(p.name)}</strong> (${p.id}) — ${esc(displayAge(p))}/${esc(p.sex)}${p.phone?' · '+esc(p.phone):''}</span>
+        <span><strong>${esc(p.name)}</strong> <span class="pill">${p.id}</span></span>
         <span>${fmtDate(v.date)} ${v.time||''}</span>
       </div>
+      <div class="sheet-section"><span class="lbl">Age</span><div>${esc(displayAge(p))||'—'}</div></div>
+      <div class="sheet-section"><span class="lbl">Sex</span><div>${esc(p.sex)||'—'}</div></div>
       <div class="sheet-section"><span class="lbl">Address</span><div>${esc(p.address)||'—'}</div></div>
+      <div class="sheet-section"><span class="lbl">Phone</span><div>${esc(p.phone)||'—'}</div></div>
       <div class="sheet-section"><span class="lbl">Vitals</span><div>BP ${esc(v.vitals.bp)||'—'} · Pulse ${esc(v.vitals.pulse)||'—'} · Temp ${esc(v.vitals.temp)||'—'} · Weight ${esc(v.vitals.weight)||'—'}</div></div>
       <div class="sheet-section"><span class="lbl">Chief complaints</span><div>${esc(v.complaints)||'—'}</div></div>
       <div class="sheet-section"><span class="lbl">Examination</span><div>${esc(v.examination)||'—'}</div></div>
@@ -2866,7 +2887,7 @@ function visitPrintView(patientId, visitId){
         <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${ci.phone}</div></div>
       <div class="sheet-title">INVESTIGATION REQUEST</div>
       <div class="patient-strip">
-        <span><strong>${esc(p.name)}</strong> (${p.id}) — ${esc(displayAge(p))}/${esc(p.sex)}</span>
+        <span><strong>${esc(p.name)}</strong> <span class="pill">${p.id}</span> — ${esc(displayAge(p))}, ${esc(p.sex)}</span>
         <span>${fmtDate(v.date)}</span>
       </div>
       ${v.diagnosis?`<div class="sheet-section"><span class="lbl">Clinical diagnosis</span><div>${esc(v.diagnosis)}</div></div>`:''}
