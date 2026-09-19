@@ -430,7 +430,7 @@ let state = {
 
 function defaultData(){
   return {
-    clinicInfo: { name: 'Male Madeshwara Clinic', shortName: 'MMC', address: '', phone: '' },
+    clinicInfo: { name: 'Male Madeshwara Clinic', shortName: 'MMC', address: '', phone: '', logoDataUrl: '' },
     nextPatientSeq: 1,
     nextCertSeq: 1,
     nextTokenSeq: 1,
@@ -1059,6 +1059,7 @@ async function saveNewPatient(){
   const phone = document.getElementById('reg-phone').value.trim();
   const address = document.getElementById('reg-address').value.trim();
   const allergies = document.getElementById('reg-allergies').value.trim();
+  const chronicConditions = document.getElementById('reg-chronic').value.trim();
   const err = document.getElementById('reg-error');
   if(!name || (!dob && !age) || !sex || !phone || !address){
     err.textContent = 'Name, date of birth (or age), sex, phone and address are all required.'; return;
@@ -1073,7 +1074,7 @@ async function saveNewPatient(){
     }
   }
   const patient = {
-    id: newPatientId(), name, dob: dob||'', age, sex, phone, address, allergies,
+    id: newPatientId(), name, dob: dob||'', age, sex, phone, address, allergies, chronicConditions,
     registeredDate: todayStr(), visits: [], growthRecords: [], vaccinations: []
   };
   state.data.patients.push(patient);
@@ -1094,12 +1095,13 @@ async function saveEditPatient(patientId){
   const phone = document.getElementById('ep-phone').value.trim();
   const address = document.getElementById('ep-address').value.trim();
   const allergies = document.getElementById('ep-allergies').value.trim();
+  const chronicConditions = document.getElementById('ep-chronic').value.trim();
   const err = document.getElementById('ep-error');
   if(!name || (!dob && !age) || !sex || !phone || !address){
     if(err) err.textContent = 'Name, date of birth (or age), sex, phone and address are all required.';
     return;
   }
-  p.name = name; p.dob = dob||''; p.age = age; p.sex = sex; p.phone = phone; p.address = address; p.allergies = allergies;
+  p.name = name; p.dob = dob||''; p.age = age; p.sex = sex; p.phone = phone; p.address = address; p.allergies = allergies; p.chronicConditions = chronicConditions;
   if(p.detailsRedacted){ p.detailsRedacted = false; p.redactedAt = ''; }
   logAudit('Edited patient', `${name} (${p.id})`);
   state.ui.editingPatient = false;
@@ -1649,6 +1651,7 @@ async function saveVisit(){
     dv.newPatient.phone = document.getElementById('np-phone').value.trim();
     dv.newPatient.address = document.getElementById('np-address').value.trim();
     dv.newPatient.allergies = document.getElementById('np-allergies') ? document.getElementById('np-allergies').value.trim() : '';
+    dv.newPatient.chronicConditions = document.getElementById('np-chronic') ? document.getElementById('np-chronic').value.trim() : '';
     if(!dv.newPatient.name || (!dv.newPatient.dob && !dv.newPatient.age) || !dv.newPatient.sex || !dv.newPatient.phone || !dv.newPatient.address){
       errEl.textContent = 'New patient needs name, date of birth (or age), sex, phone and address.'; return;
     }
@@ -1670,13 +1673,24 @@ async function saveVisit(){
       errEl.textContent = 'BP, pulse, temperature and weight are all required before saving.'; return;
     }
   }
+  // Hard safety gate on top of the inline hint shown while typing: if any
+  // prescribed medicine matches a listed allergy, require the doctor to
+  // explicitly confirm before it can be saved, rather than something that
+  // can just be scrolled past.
+  const rxAllergyConflicts = (dv.prescriptions||[])
+    .map(r=>({medicine:r.medicine, hit: r.medicine ? allergyMatch(r.medicine) : null}))
+    .filter(x=>x.hit);
+  if(rxAllergyConflicts.length){
+    const list = rxAllergyConflicts.map(c=>`${c.medicine} (matches listed allergy "${c.hit}")`).join('; ');
+    if(!confirm(`⚠ This prescription includes: ${list}.\n\nSave anyway?`)) return;
+  }
   errEl.textContent = '';
 
   let patient;
   if(dv.newPatient){
     patient = {
       id: newPatientId(), name: dv.newPatient.name, dob: dv.newPatient.dob||'', age: dv.newPatient.age, sex: dv.newPatient.sex,
-      phone: dv.newPatient.phone, address: dv.newPatient.address, allergies: dv.newPatient.allergies||'',
+      phone: dv.newPatient.phone, address: dv.newPatient.address, allergies: dv.newPatient.allergies||'', chronicConditions: dv.newPatient.chronicConditions||'',
       registeredDate: todayStr(), visits: [], growthRecords: [], vaccinations: []
     };
     state.data.patients.push(patient);
@@ -1743,6 +1757,40 @@ async function saveClinicInfo(){
   logAudit('Updated clinic info', state.data.clinicInfo.name);
   await saveData();
   render();
+}
+function uploadClinicLogo(file){
+  const msg = document.getElementById('logo-upload-msg');
+  if(!file) return;
+  if(!file.type || !file.type.startsWith('image/')){
+    if(msg) msg.textContent = 'Please choose an image file.';
+    return;
+  }
+  if(msg) msg.textContent = 'Uploading…';
+  const reader = new FileReader();
+  reader.onload = async () => {
+    state.data.clinicInfo.logoDataUrl = reader.result;
+    logAudit('Updated clinic logo', file.name);
+    const ok = await saveData();
+    const input = document.getElementById('logo-file-input');
+    if(input) input.value = '';
+    if(!ok){ if(msg) msg.textContent = state.saveError || 'Could not save — try again.'; return; }
+    render();
+  };
+  reader.onerror = () => { if(msg) msg.textContent = "Couldn't read that file — try again."; };
+  reader.readAsDataURL(file);
+}
+async function removeClinicLogo(){
+  if(!confirm('Remove the clinic logo from printouts?')) return;
+  state.data.clinicInfo.logoDataUrl = '';
+  logAudit('Removed clinic logo', '');
+  await saveData();
+  render();
+}
+// Used at the top of every printed letterhead — empty string if no logo uploaded.
+function logoImgHTML(ci){
+  return ci && ci.logoDataUrl
+    ? `<img src="${ci.logoDataUrl}" alt="" style="max-height:50px;max-width:170px;margin:0 auto 6px;display:block;">`
+    : '';
 }
 
 function downloadTextFile(filename, text, mime){
@@ -2329,6 +2377,7 @@ function newPatientView(){
       <div class="field"><label>Address *</label><textarea id="reg-address"></textarea></div>
       <div class="field"><label>Phone *</label><input id="reg-phone" type="text" oninput="state.regDupeAcknowledged=false"></div>
       <div class="field"><label>Known allergies</label><input id="reg-allergies" type="text" placeholder="e.g. Penicillin, Sulfa — leave blank if none known"></div>
+      <div class="field"><label>Chronic illness / conditions</label><input id="reg-chronic" type="text" placeholder="e.g. Diabetes, Hypertension — leave blank if none known"></div>
       <div id="reg-error" class="error-text"></div>
       <div id="reg-dupe-warning"></div>
       <div class="row" style="margin-top:6px;">
@@ -2359,6 +2408,7 @@ function patientView(patientId){
       <div class="field"><label>Phone *</label><input id="ep-phone" value="${esc(p.phone)}"></div>
     </div>
     <div class="field"><label>Known allergies</label><input id="ep-allergies" value="${esc(p.allergies)}" placeholder="e.g. Penicillin, Sulfa — leave blank if none known"></div>
+    <div class="field"><label>Chronic illness / conditions</label><input id="ep-chronic" value="${esc(p.chronicConditions||'')}" placeholder="e.g. Diabetes, Hypertension — leave blank if none known"></div>
     <div id="ep-error" class="error-text"></div>
     <div class="row"><button class="btn btn-primary" onclick="saveEditPatient('${p.id}')">Save</button><button class="btn btn-ghost" onclick="cancelEditPatient()">Cancel</button></div>
   ` : `
@@ -2372,6 +2422,7 @@ function patientView(patientId){
     <div><span class="faint">Address</span><div>${esc(p.address)||'—'}</div></div>
     <div style="margin-top:8px;"><span class="faint">Phone</span><div>${esc(p.phone)||'—'}</div></div>
     ${p.allergies ? `<div class="banner" style="background:var(--danger-tint);color:var(--danger);margin-top:10px;"><strong>⚠ Allergies:</strong> ${esc(p.allergies)}</div>` : ''}
+    ${p.chronicConditions ? `<div class="banner" style="background:var(--accent-tint);color:var(--accent);margin-top:10px;"><strong>Chronic illness / conditions:</strong> ${esc(p.chronicConditions)}</div>` : ''}
     <button class="btn btn-sm" style="margin-top:12px;" onclick="startEditPatient()">Edit details</button>
   `;
 
@@ -3064,6 +3115,72 @@ function qualCheckHTML(i, key, options, current){
     }).join('')}
   </div>`;
 }
+// A clean, printable lab report from whatever results have actually been
+// entered — separate from the request sheet (which lists what was asked
+// for) and the on-screen entry form (which is for typing values in).
+function investigationResultsSheetHTML(p, v, ci){
+  const withResults = (v.investigations||[]).filter(r =>
+    (r.components && Object.values(r.components).some(x=>String(x||'').trim())) || (r.result||'').trim()
+  );
+  if(!withResults.length) return '';
+  const ageY = patientAgeYearsForBmi(p);
+  const sex = p.sex || '';
+  const testBlocks = withResults.map(r=>{
+    const panel = getLabPanel(r.test);
+    const qual = getLabQualitative(r.test);
+    if(panel){
+      const rows = panel.map(pm=>{
+        const val = (r.components||{})[pm.key];
+        if(val==null || String(val).trim()==='') return '';
+        const ref = typeof pm.ref==='function' ? pm.ref(ageY, sex) : (pm.ref||'—');
+        return `<tr><td style="padding:3px 6px;">${esc(pm.label)}</td><td style="padding:3px 6px;"><strong>${esc(val)}</strong></td><td style="padding:3px 6px;">${esc(pm.unit||'')}</td><td style="padding:3px 6px;">${esc(ref)}</td></tr>`;
+      }).filter(Boolean).join('');
+      if(!rows) return '';
+      return `<div class="sheet-section" style="margin-top:12px;">
+        <div class="lbl" style="font-size:13px;font-weight:700;margin-bottom:4px;">${esc(r.test)}</div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead><tr style="border-bottom:1px solid #999;">
+            <th style="text-align:left;padding:3px 6px;">Parameter</th><th style="text-align:left;padding:3px 6px;">Result</th>
+            <th style="text-align:left;padding:3px 6px;">Unit</th><th style="text-align:left;padding:3px 6px;">Reference range</th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        ${r.notes?`<div class="faint" style="margin-top:4px;">${esc(r.notes)}</div>`:''}
+      </div>`;
+    }
+    if(qual){
+      const rows = qual.map(q=>{
+        const val = (r.components||{})[q.key];
+        if(val==null || String(val).trim()==='') return '';
+        return `<tr><td style="padding:3px 6px;">${esc(q.label)}</td><td style="padding:3px 6px;"><strong>${esc(val)}</strong></td></tr>`;
+      }).filter(Boolean).join('');
+      if(!rows) return '';
+      return `<div class="sheet-section" style="margin-top:12px;">
+        <div class="lbl" style="font-size:13px;font-weight:700;margin-bottom:4px;">${esc(r.test)}</div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px;"><tbody>${rows}</tbody></table>
+        ${r.notes?`<div class="faint" style="margin-top:4px;">${esc(r.notes)}</div>`:''}
+      </div>`;
+    }
+    return `<div class="sheet-section" style="margin-top:12px;">
+      <span class="lbl">${esc(r.test)}</span><div>${esc(r.result)||'—'}</div>
+      ${r.notes?`<div class="faint" style="margin-top:2px;">${esc(r.notes)}</div>`:''}
+    </div>`;
+  }).filter(Boolean).join('');
+  if(!testBlocks) return '';
+
+  return `
+    <div class="print-sheet" id="sheet-inv-results">
+      <div class="letterhead">${logoImgHTML(ci)}<div class="clinic-name">${esc(ci.name)}</div>
+        <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${ci.phone}</div></div>
+      <div class="sheet-title">LABORATORY REPORT</div>
+      <div class="patient-strip">
+        <span><strong>${esc(p.name)}</strong> <span class="pill">${p.id}</span> — ${esc(displayAge(p))}, ${esc(p.sex)}</span>
+        <span>${fmtDate(v.date)}</span>
+      </div>
+      ${testBlocks}
+      <div class="sheet-section" style="margin-top:20px;"><span class="lbl">Reported by</span><div>${esc(v.doctorName)||'—'}</div></div>
+    </div>`;
+}
 function invResultEntryHTML(patient, investigations){
   const ageY = patientAgeYearsForBmi(patient);
   const sex = patient.sex || '';
@@ -3622,6 +3739,7 @@ function newVisitView(){
           <div class="field"><label>Phone *</label><input id="np-phone" value="${esc(np.phone)}"></div>
         </div>
         <div class="field"><label>Known allergies</label><input id="np-allergies" value="${esc(np.allergies||'')}" placeholder="leave blank if none known"></div>
+        <div class="field"><label>Chronic illness / conditions</label><input id="np-chronic" value="${esc(np.chronicConditions||'')}" placeholder="leave blank if none known"></div>
       </div>`;
   } else {
     patientBlock = `
@@ -3658,6 +3776,8 @@ function newVisitView(){
   const allergyPatient = dv.patientId ? state.data.patients.find(p=>p.id===dv.patientId) : null;
   const allergyBanner = (allergyPatient && allergyPatient.allergies)
     ? `<div class="banner" style="background:var(--danger-tint);color:var(--danger);"><strong>⚠ Known allergies:</strong> ${esc(allergyPatient.allergies)}</div>` : '';
+  const chronicBanner = (allergyPatient && allergyPatient.chronicConditions)
+    ? `<div class="banner" style="background:var(--accent-tint);color:var(--accent);margin-top:6px;"><strong>Chronic illness / conditions:</strong> ${esc(allergyPatient.chronicConditions)}</div>` : '';
   const pedNote = (allergyPatient && isPediatricPatient(allergyPatient))
     ? `<div class="banner banner-info"><strong>Pediatric patient</strong> — ${esc(opdAgeDisplay(allergyPatient))}. Dose suggestions appear under each medicine when weight is on file. <button class="btn btn-ghost btn-sm" onclick="state.pedLinkedPatientId='${allergyPatient.id}';go('pediatrics')">Pediatrics tools</button></div>` : '';
 
@@ -3667,6 +3787,7 @@ function newVisitView(){
     <div class="page-head"><h1>${dv.editingVisitId ? 'Continue Consultation' : 'New OPD Visit'}${allergyPatient && isPediatricPatient(allergyPatient)?' — Pediatric':''}</h1></div>
     ${dv.editingVisitId ? `<div class="banner banner-info">Continuing a visit checked in earlier — patient details are already filled in.</div>` : ''}
     ${allergyBanner}
+    ${chronicBanner}
     ${pedNote}
     ${patientBlock}
     ${prevSummary}
@@ -3801,6 +3922,37 @@ function visitPrintView(patientId, visitId){
         }).join('')}
       </div>` : '';
 
+  const rxOnlySheet = v.prescriptions.length ? `
+    <div class="print-sheet" id="sheet-rx-only">
+      <div class="letterhead">${logoImgHTML(ci)}
+        <div class="clinic-name">${esc(ci.name)}</div>
+        <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${esc(ci.phone||'')}</div>
+        ${v.doctorName ? `<div class="opd-doctor-top">${esc(v.doctorName)}${staffQualification(v.doctorName)?`<div class="opd-doctor-qual">${esc(staffQualification(v.doctorName))}</div>`:''}</div>` : ''}
+      </div>
+      <div class="sheet-title">PRESCRIPTION</div>
+      <div class="patient-strip">
+        <span><strong>${esc(p.name)}</strong> <span class="pill">${p.id}</span> — ${esc(displayAge(p))}, ${esc(p.sex)}</span>
+        <span>${fmtDate(v.date)}${v.time?' · '+esc(v.time):''}</span>
+      </div>
+      ${v.diagnosis ? `<div class="sheet-section"><span class="lbl">Diagnosis</span><div>${esc(v.diagnosis)}</div></div>` : ''}
+      <div style="margin-top:10px;">
+        ${v.prescriptions.map((r,i)=>{
+          const days = daysLabel(r.duration);
+          const qty = computeQuantityLabel(r.medicine, r.frequency, r.duration);
+          return `
+          <div class="rx-line"><span class="n">${i+1}.</span>
+            <span><strong>${esc(r.medicine)}</strong>${r.dosage?' '+esc(r.dosage):''}
+            ${r.frequency?' — '+esc(r.frequency):''}${days?' × '+esc(days):''}${r.instructions?' ('+esc(r.instructions)+')':''}
+            ${qty?`<br><span class="faint">${esc(qty)}</span>`:''}</span></div>`;
+        }).join('')}
+      </div>
+      ${v.followUpDate ? `<div class="opd-followup"><span class="opd-k">Follow-up date</span><span class="opd-v"><strong>${fmtDate(v.followUpDate)}</strong></span></div>` : ''}
+      <div class="opd-sign">
+        <div class="opd-sign-space"></div>
+        <div class="opd-sign-label">Signature</div>
+      </div>
+    </div>` : '';
+
   // OPD card + prescription are one combined, printable sheet: patient
   // details and consultation notes on top (filled in by the receptionist
   // / doctor), prescription at the bottom.
@@ -3811,7 +3963,7 @@ function visitPrintView(patientId, visitId){
 
   const opdSheet = `
     <div class="print-sheet opd-card" id="sheet-opd">
-      <div class="letterhead">
+      <div class="letterhead">${logoImgHTML(ci)}
         <div class="clinic-name">${esc(ci.name)}</div>
         <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${esc(ci.phone||'')}</div>
         ${v.doctorName ? `<div class="opd-doctor-top">${esc(v.doctorName)}${staffQualification(v.doctorName)?`<div class="opd-doctor-qual">${esc(staffQualification(v.doctorName))}</div>`:''}</div>` : ''}
@@ -3827,6 +3979,8 @@ function visitPrintView(patientId, visitId){
         <div class="opd-demo-row"><span class="opd-k">Date &amp; time</span><span class="opd-v">${fmtDate(v.date)}${v.time?' · '+esc(v.time):''}</span></div>
         ${v.token!=null?`<div class="opd-demo-row"><span class="opd-k">Token</span><span class="opd-v"><strong style="font-size:18px;">#${v.token}</strong></span></div>`:''}
         <div class="opd-demo-row"><span class="opd-k">Sex</span><span class="opd-v">${esc(p.sex)||'—'}</span></div>
+        ${p.allergies ? `<div class="opd-demo-row"><span class="opd-k">⚠ Allergies</span><span class="opd-v"><strong>${esc(p.allergies)}</strong></span></div>` : ''}
+        ${p.chronicConditions ? `<div class="opd-demo-row"><span class="opd-k">Chronic illness</span><span class="opd-v">${esc(p.chronicConditions)}</span></div>` : ''}
       </div>
 
       <div class="opd-vitals" style="grid-template-columns:repeat(auto-fit,minmax(70px,1fr));">
@@ -3862,7 +4016,7 @@ function visitPrintView(patientId, visitId){
 
   const invSheet = v.investigations.length ? `
     <div class="print-sheet" id="sheet-inv">
-      <div class="letterhead"><div class="clinic-name">${esc(ci.name)}</div>
+      <div class="letterhead">${logoImgHTML(ci)}<div class="clinic-name">${esc(ci.name)}</div>
         <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${ci.phone}</div></div>
       <div class="sheet-title">INVESTIGATION REQUEST</div>
       <div class="patient-strip">
@@ -3887,6 +4041,8 @@ function visitPrintView(patientId, visitId){
       <span id="results-saved-msg" class="faint" style="margin-left:8px;"></span>
     </div>` : '';
 
+  const invResultsSheet = investigationResultsSheetHTML(p, v, ci);
+
   return `
     <div class="page-head">
       <div><h1>Visit summary</h1><p class="muted">${esc(p.name)} (${p.id}) — ${fmtDate(v.date)}</p></div>
@@ -3894,13 +4050,17 @@ function visitPrintView(patientId, visitId){
     </div>
     <div class="row" style="margin-bottom:18px;flex-wrap:wrap;gap:8px;">
       <button class="btn btn-primary" onclick="printSection('sheet-opd')">Print OPD card${v.prescriptions.length?' + prescription':''}</button>
+      ${v.prescriptions.length?`<button class="btn" onclick="printSection('sheet-rx-only')">Print prescription only</button>`:''}
       ${v.investigations.length?`<button class="btn" onclick="printSection('sheet-inv')">Print investigation form</button>`:''}
+      ${invResultsSheet?`<button class="btn" onclick="printSection('sheet-inv-results')">Print lab report</button>`:''}
       <button class="btn" onclick="state.certPatientId='${p.id}';state.certType='sick';go('certificates')">Medical certificate</button>
       <button class="btn btn-ghost" onclick="go('newVisit',{patientId:'${p.id}',editVisitId:'${v.id}'})">Edit this visit</button>
     </div>
     ${resultsCard}
     ${opdSheet}
+    ${rxOnlySheet}
     ${invSheet}
+    ${invResultsSheet}
   `;
 }
 async function saveInvestigationResults(patientId, visitId){
@@ -4454,7 +4614,7 @@ function billingDetailView(patientId, visitId){
   const total = billingTotal(b);
   const receiptSheet = `
     <div class="print-sheet" id="sheet-receipt">
-      <div class="letterhead"><div class="clinic-name">${esc(ci.name)}</div>
+      <div class="letterhead">${logoImgHTML(ci)}<div class="clinic-name">${esc(ci.name)}</div>
         <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${ci.phone}</div></div>
       <div class="sheet-title">RECEIPT</div>
       <div class="patient-strip">
@@ -4907,7 +5067,7 @@ function renderCertificatePreview(type){
 
   const html = `
     <div class="print-sheet opd-card cert-sheet" id="sheet-cert">
-      <div class="letterhead">
+      <div class="letterhead">${logoImgHTML(ci)}
         <div class="clinic-name">${esc(ci.name)}</div>
         <div class="clinic-meta">${esc(ci.address||'')}${ci.address&&ci.phone?' · ':''}${esc(ci.phone||'')}</div>
       </div>
@@ -4961,7 +5121,7 @@ function reportsView(){
   const ci = state.data.clinicInfo;
   const reportSheet = `
     <div class="print-sheet" id="sheet-report" style="max-width:680px;">
-      <div class="letterhead"><div class="clinic-name">${esc(ci.name)}</div>
+      <div class="letterhead">${logoImgHTML(ci)}<div class="clinic-name">${esc(ci.name)}</div>
         <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${ci.phone}</div></div>
       <div class="sheet-title">CLINIC REPORT — ${esc(periodLabel.toUpperCase())}</div>
       <div class="sheet-section"><span class="lbl">Visits</span><div>${stats.visitCount}</div></div>
@@ -5103,6 +5263,20 @@ function settingsView(){
       <div class="field"><label>Address (shown on printouts)</label><input id="ci-address" value="${esc(ci.address)}"></div>
       <div class="field"><label>Phone (shown on printouts)</label><input id="ci-phone" value="${esc(ci.phone)}"></div>
       <button class="btn btn-primary" onclick="saveClinicInfo()">Save</button>
+    </div>
+
+    <div class="card" style="margin-bottom:18px;max-width:520px;">
+      <h2 style="margin-bottom:6px;">Clinic logo</h2>
+      <p class="muted" style="font-size:12.5px;">Shown on the letterhead of every printout — OPD card, prescription, investigation forms and lab reports. A square image works best; keep the file small (under ~300KB) since it's stored with the clinic's data.</p>
+      ${ci.logoDataUrl ? `
+        <div style="margin-bottom:10px;"><img src="${ci.logoDataUrl}" alt="Clinic logo" style="max-width:120px;max-height:120px;border:1px solid var(--border);border-radius:8px;padding:4px;"></div>
+        <button class="btn btn-ghost btn-sm" onclick="removeClinicLogo()">Remove logo</button>
+      ` : `<p class="muted" style="margin-bottom:10px;">No logo uploaded yet — printouts show the clinic name as text only.</p>`}
+      <div style="margin-top:10px;">
+        <input type="file" id="logo-file-input" accept="image/*" style="display:none;" onchange="uploadClinicLogo(this.files[0])">
+        <button class="btn btn-sm" onclick="document.getElementById('logo-file-input').click()">${ci.logoDataUrl?'Replace logo':'Upload logo'}</button>
+      </div>
+      <p id="logo-upload-msg" class="faint" style="margin-top:6px;"></p>
     </div>
 
     <div class="card" style="margin-bottom:18px;max-width:520px;">
