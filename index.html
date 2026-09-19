@@ -144,17 +144,118 @@
   .auth-brand .brand-mark{margin:0 auto 10px auto;width:44px;height:44px;font-size:18px;}
 
   /* ---- Print sheets ---- */
-  .print-sheet{border:1px dashed var(--line);border-radius:8px;padding:22px;background:#fff;margin-bottom:16px;max-width:560px;}
-  .sheet-divider{border-top:1px dashed var(--line);margin:18px 0;}
-  .letterhead{text-align:center;border-bottom:2px solid var(--primary-dark);padding-bottom:10px;margin-bottom:14px;}
-  .letterhead .clinic-name{font-family:'Source Serif 4',serif;font-size:20px;font-weight:700;color:var(--primary-dark);}
-  .letterhead .clinic-meta{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
-  .sheet-title{font-size:11px;font-weight:700;letter-spacing:0.04em;color:var(--accent);margin-bottom:8px;}
-  .patient-strip{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:12px;border-bottom:1px solid var(--line);padding-bottom:8px;flex-wrap:wrap;gap:6px;}
+  .print-sheet{
+    border:1px solid var(--line-strong, #C8D0DC);border-radius:12px;
+    padding:0;background:#fff;margin-bottom:20px;max-width:580px;
+    overflow:hidden;box-shadow:0 2px 12px rgba(26,39,68,0.06);
+  }
+  .print-sheet .letterhead,
+  .print-sheet .opd-badge,
+  .print-sheet .opd-demo,
+  .print-sheet .opd-vitals,
+  .print-sheet .opd-block,
+  .print-sheet .opd-followup,
+  .print-sheet .opd-doctor,
+  .print-sheet .sheet-title,
+  .print-sheet .sheet-section,
+  .print-sheet .sheet-divider,
+  .print-sheet .patient-strip,
+  .print-sheet .rx-line{padding-left:22px;padding-right:22px;}
+  .sheet-divider{border-top:1px dashed var(--line);margin:14px 22px;}
+  .letterhead{
+    text-align:center;
+    background:linear-gradient(180deg, #F0F5F9 0%, #fff 100%);
+    border-bottom:3px solid var(--primary-dark, #1A2744);
+    padding:16px 22px 14px !important;margin-bottom:0;
+  }
+  .letterhead .clinic-name{
+    font-family:'Source Serif 4',serif;font-size:22px;font-weight:700;
+    color:var(--primary-dark, #1A2744);letter-spacing:-0.01em;
+  }
+  .letterhead .clinic-meta{font-size:11.5px;color:var(--ink-soft);margin-top:4px;}
+  .sheet-title{
+    font-size:11px;font-weight:700;letter-spacing:0.08em;color:var(--accent);
+    margin:12px 0 10px;text-transform:uppercase;
+  }
+  .patient-strip{
+    display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:14px;
+    border-bottom:1px solid var(--line);padding-bottom:10px;flex-wrap:wrap;gap:6px;
+  }
   .sheet-section{margin-bottom:10px;font-size:13px;}
-  .sheet-section .lbl{font-weight:700;color:var(--ink-soft);font-size:11px;text-transform:none;}
-  .rx-line{display:flex;gap:8px;padding:5px 0;border-bottom:1px dotted var(--line);font-size:13px;}
-  .rx-line .n{font-weight:700;color:var(--primary-dark);width:16px;flex-shrink:0;}
+  .sheet-section .lbl{
+    font-weight:700;color:var(--ink-soft);font-size:11px;
+    text-transform:uppercase;letter-spacing:0.03em;
+  }
+  .rx-line{display:flex;gap:8px;padding:7px 0;border-bottom:1px dotted var(--line);font-size:13.5px;}
+  .rx-line .n{font-weight:700;color:var(--primary-dark, #1A2744);width:18px;flex-shrink:0;}
+
+  /* ---- OPD card visual redesign ---- */
+  .opd-badge{
+    display:inline-block;margin:14px 22px 12px;
+    padding:5px 12px;border-radius:6px;
+    background:var(--primary, #1E4E6B);color:#fff;
+    font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;
+  }
+  .opd-demo{
+    margin:0 0 14px;border:1px solid var(--line);border-radius:8px;
+    margin-left:22px;margin-right:22px;overflow:hidden;
+  }
+  .opd-demo-row{
+    display:flex;gap:12px;padding:8px 12px;
+    border-bottom:1px solid var(--line);font-size:13.5px;
+    align-items:baseline;
+  }
+  .opd-demo-row:last-child{border-bottom:none;}
+  .opd-demo-row:nth-child(odd){background:#FAFBFC;}
+  .opd-k{
+    flex:0 0 110px;font-size:11px;font-weight:700;color:var(--ink-soft);
+    text-transform:uppercase;letter-spacing:0.03em;
+  }
+  .opd-v{flex:1;color:var(--ink);line-height:1.4;}
+  .opd-vitals{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:8px;
+    margin:0 22px 16px;
+  }
+  .opd-vital{
+    background:var(--primary-tint, #E8F1F6);border-radius:8px;
+    padding:10px 8px;text-align:center;border:1px solid rgba(30,78,107,0.1);
+  }
+  .opd-vital-lbl{
+    display:block;font-size:10px;font-weight:700;color:var(--ink-soft);
+    text-transform:uppercase;letter-spacing:0.04em;margin-bottom:3px;
+  }
+  .opd-vital-val{font-size:14px;font-weight:700;color:var(--primary-dark, #1A2744);}
+  .opd-block{margin:0 22px 12px;}
+  .opd-block-title{
+    font-size:11px;font-weight:700;color:var(--accent, #D4A017);
+    text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;
+  }
+  .opd-block-body{font-size:13.5px;line-height:1.5;color:var(--ink);white-space:pre-wrap;}
+  .opd-complaints .opd-complaint{
+    padding:4px 0 4px 10px;border-left:3px solid var(--primary, #1E4E6B);
+    margin-bottom:4px;font-weight:500;
+  }
+  .opd-dx{font-size:15px;font-weight:600;color:var(--primary-dark, #1A2744);}
+  .opd-followup{
+    display:flex;gap:12px;align-items:baseline;
+    margin:10px 22px;padding:10px 12px;
+    background:var(--accent-tint, #FBF3DC);border-radius:8px;
+    border:1px solid rgba(212,160,23,0.25);font-size:13.5px;
+  }
+  .opd-doctor{
+    display:flex;gap:12px;align-items:baseline;
+    margin:14px 22px 18px;padding-top:12px;
+    border-top:1px solid var(--line);font-size:13.5px;
+  }
+  .opd-card .sheet-title{margin-left:22px;margin-right:22px;}
+  .opd-card .rx-line{margin-left:0;margin-right:0;}
+  .opd-card .sheet-divider{margin-left:22px;margin-right:22px;}
+  @media print{
+    .opd-vital{border:1px solid #ccc;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .opd-badge,.opd-demo-row:nth-child(odd),.opd-followup,.letterhead{
+      -webkit-print-color-adjust:exact;print-color-adjust:exact;
+    }
+  }
 
   @media print{
     body *{visibility:hidden;}
@@ -326,6 +427,20 @@ function updateAgePreview(inputEl, previewId){
 function displayAge(p){
   if(p && p.dob){ const a = ageFromDob(p.dob); if(a) return a.display; }
   return (p && p.age) || '';
+}
+// Formats chief complaints for the OPD card: each item gets a "C/O " prefix.
+// "Fever × 3days, Cough" → "C/O Fever × 3days\nC/O Cough"
+function formatComplaintsForOpd(raw){
+  if(!raw || !String(raw).trim()) return '—';
+  return String(raw).split(/[,;\n]+/).map(s=>s.trim()).filter(Boolean).map(s=>{
+    // Avoid double-prefixing if doctor already typed C/O
+    if(/^c\/?o\b/i.test(s)) return s.replace(/^c\/?o\.?\s*/i, 'C/O ');
+    return 'C/O ' + s;
+  }).join('\n');
+}
+function normalizeComplaintsInput(raw){
+  // Store without forcing C/O in the form — formatting is applied on the card.
+  return (raw||'').trim();
 }
 function newPatientId(){
   const seq = state.data.nextPatientSeq;
@@ -2847,7 +2962,7 @@ function newVisitView(){
         </div>
       </div>
       <div class="field"><label>Chief complaints</label>
-        <textarea id="v-complaints" oninput="onComplaintsInput(this)">${esc(dv.complaints)}</textarea>
+        <textarea id="v-complaints" oninput="onComplaintsInput(this)" placeholder="e.g. Fever × 3 days, Cough × 2 days — shown as C/O on the OPD card">${esc(dv.complaints)}</textarea>
         <div class="chip-row" id="complaints-chips">${chipRowHTML(chipsFor(dv.complaints, COMPLAINT_TERMS), 'insertComplaintChip')}</div>
       </div>
       <div class="field"><label>Examination findings</label><textarea id="v-exam">${esc(dv.examination)}</textarea></div>
@@ -2916,6 +3031,7 @@ function insertComplaintChip(el){
   const text = ta.value;
   const lastComma = text.lastIndexOf(',');
   const base = lastComma===-1 ? '' : text.slice(0,lastComma+1)+' ';
+  // Chips insert the complaint term; OPD card adds "C/O " when printing.
   ta.value = base + val + ', ';
   state.draftVisit.complaints = ta.value;
   ta.focus();
@@ -2966,26 +3082,52 @@ function visitPrintView(patientId, visitId){
   // OPD card + prescription are one combined, printable sheet: patient
   // details and consultation notes on top (filled in by the receptionist
   // / doctor), prescription at the bottom.
+  const formattedComplaints = formatComplaintsForOpd(v.complaints);
+  const complaintsHtml = formattedComplaints === '—'
+    ? '—'
+    : formattedComplaints.split('\n').map(line=>`<div class="opd-complaint">${esc(line)}</div>`).join('');
+
   const opdSheet = `
-    <div class="print-sheet" id="sheet-opd">
-      <div class="letterhead"><div class="clinic-name">${esc(ci.name)}</div>
-        <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${ci.phone}</div></div>
-      <div class="sheet-title">OPD CARD${isPediatricPatient(p)?' — PEDIATRIC':''}</div>
-      <div class="sheet-section"><span class="lbl">Unique ID</span><div><strong>${esc(p.id)}</strong></div></div>
-      <div class="sheet-section"><span class="lbl">Name</span><div><strong>${esc(p.name)}</strong></div></div>
-      <div class="sheet-section"><span class="lbl">Age</span><div>${esc(opdAgeDisplay(p))}</div></div>
-      <div class="sheet-section"><span class="lbl">Address</span><div>${esc(p.address)||'—'}</div></div>
-      <div class="sheet-section"><span class="lbl">Phone</span><div>${esc(p.phone)||'—'}</div></div>
-      <div class="sheet-section"><span class="lbl">Date &amp; time of visit</span><div>${fmtDate(v.date)}${v.time?' · '+esc(v.time):''}</div></div>
-      <div class="sheet-divider"></div>
-      <div class="sheet-section"><span class="lbl">Sex</span><div>${esc(p.sex)||'—'}</div></div>
-      <div class="sheet-section"><span class="lbl">Vitals</span><div>BP ${esc(v.vitals.bp)||'—'} · Pulse ${esc(v.vitals.pulse)||'—'} · Temp ${esc(v.vitals.temp)||'—'} · Weight ${esc(v.vitals.weight)||'—'}</div></div>
-      <div class="sheet-section"><span class="lbl">Chief complaints</span><div>${esc(v.complaints)||'—'}</div></div>
-      <div class="sheet-section"><span class="lbl">Examination</span><div>${esc(v.examination)||'—'}</div></div>
-      <div class="sheet-section"><span class="lbl">Diagnosis</span><div>${esc(v.diagnosis)||'—'}</div></div>
-      <div class="sheet-section"><span class="lbl">Notes</span><div>${esc(v.notes)||'—'}</div></div>
-      ${v.referredTo ? `<div class="sheet-section"><span class="lbl">Referred to</span><div>${esc(v.referredTo)}${v.referralReason?' — '+esc(v.referralReason):''}</div></div>` : ''}
-      <div class="sheet-section" style="margin-top:14px;"><span class="lbl">Attending doctor</span><div>${esc(v.doctorName)||'—'}</div></div>
+    <div class="print-sheet opd-card" id="sheet-opd">
+      <div class="letterhead">
+        <div class="clinic-name">${esc(ci.name)}</div>
+        <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${esc(ci.phone||'')}</div>
+      </div>
+      <div class="opd-badge">${isPediatricPatient(p)?'PEDIATRIC OPD CARD':'OPD CARD'}</div>
+
+      <div class="opd-demo">
+        <div class="opd-demo-row"><span class="opd-k">Unique ID</span><span class="opd-v"><strong>${esc(p.id)}</strong></span></div>
+        <div class="opd-demo-row"><span class="opd-k">Name</span><span class="opd-v"><strong>${esc(p.name)}</strong></span></div>
+        <div class="opd-demo-row"><span class="opd-k">Age</span><span class="opd-v">${esc(opdAgeDisplay(p))}</span></div>
+        <div class="opd-demo-row"><span class="opd-k">Address</span><span class="opd-v">${esc(p.address)||'—'}</span></div>
+        <div class="opd-demo-row"><span class="opd-k">Phone</span><span class="opd-v">${esc(p.phone)||'—'}</span></div>
+        <div class="opd-demo-row"><span class="opd-k">Date &amp; time</span><span class="opd-v">${fmtDate(v.date)}${v.time?' · '+esc(v.time):''}</span></div>
+        <div class="opd-demo-row"><span class="opd-k">Sex</span><span class="opd-v">${esc(p.sex)||'—'}</span></div>
+      </div>
+
+      <div class="opd-vitals">
+        <div class="opd-vital"><span class="opd-vital-lbl">BP</span><span class="opd-vital-val">${esc(v.vitals.bp)||'—'}</span></div>
+        <div class="opd-vital"><span class="opd-vital-lbl">Pulse</span><span class="opd-vital-val">${esc(v.vitals.pulse)||'—'}</span></div>
+        <div class="opd-vital"><span class="opd-vital-lbl">Temp</span><span class="opd-vital-val">${esc(v.vitals.temp)||'—'}</span></div>
+        <div class="opd-vital"><span class="opd-vital-lbl">Weight</span><span class="opd-vital-val">${esc(v.vitals.weight)||'—'}</span></div>
+      </div>
+
+      <div class="opd-block">
+        <div class="opd-block-title">Chief complaints</div>
+        <div class="opd-block-body opd-complaints">${complaintsHtml}</div>
+      </div>
+      <div class="opd-block">
+        <div class="opd-block-title">Examination</div>
+        <div class="opd-block-body">${esc(v.examination)||'—'}</div>
+      </div>
+      <div class="opd-block">
+        <div class="opd-block-title">Diagnosis</div>
+        <div class="opd-block-body opd-dx">${esc(v.diagnosis)||'—'}</div>
+      </div>
+      ${v.notes ? `<div class="opd-block"><div class="opd-block-title">Notes</div><div class="opd-block-body">${esc(v.notes)}</div></div>` : ''}
+      ${v.followUpDate ? `<div class="opd-followup"><span class="opd-k">Follow-up date</span><span class="opd-v"><strong>${fmtDate(v.followUpDate)}</strong></span></div>` : ''}
+      ${v.referredTo ? `<div class="opd-block"><div class="opd-block-title">Referred to</div><div class="opd-block-body">${esc(v.referredTo)}${v.referralReason?' — '+esc(v.referralReason):''}</div></div>` : ''}
+      <div class="opd-doctor"><span class="opd-k">Attending doctor</span><span class="opd-v">${esc(v.doctorName)||'—'}</span></div>
       ${rxBlock}
     </div>`;
 
