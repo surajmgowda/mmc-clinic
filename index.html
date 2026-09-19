@@ -311,6 +311,8 @@ function defaultData(){
   return {
     clinicInfo: { name: 'Male Madeshwara Clinic', shortName: 'MMC', address: '', phone: '' },
     nextPatientSeq: 1,
+    nextTokenSeq: 1,
+    tokenDate: '', // resets token counter each calendar day
     patients: [],
     staff: [],
     customMedicines: [], // clinic-added medicines: {name, dosages:[...]}
@@ -438,6 +440,28 @@ function formatComplaintsForOpd(raw){
     return 'C/O ' + s;
   }).join('\n');
 }
+
+function calcBMI(weightKg, heightCm){
+  const w = parseFloat(weightKg), h = parseFloat(heightCm);
+  if(!w || !h || h <= 0) return null;
+  const m = h / 100;
+  const bmi = w / (m * m);
+  let label = '';
+  if(bmi < 18.5) label = 'Underweight';
+  else if(bmi < 25) label = 'Normal';
+  else if(bmi < 30) label = 'Overweight';
+  else label = 'Obese';
+  return { value: Math.round(bmi * 10) / 10, label };
+}
+function updateBmiPreview(){
+  const w = document.getElementById('v-weight');
+  const h = document.getElementById('v-height');
+  const el = document.getElementById('v-bmi-preview');
+  if(!el) return;
+  const r = calcBMI(w && w.value, h && h.value);
+  el.textContent = r ? `BMI: ${r.value} (${r.label})` : '';
+}
+
 function normalizeComplaintsInput(raw){
   // Store without forcing C/O in the form — formatting is applied on the card.
   return (raw||'').trim();
@@ -448,6 +472,18 @@ function newPatientId(){
   return 'MMC' + String(seq).padStart(4,'0');
 }
 function newVisitId(){ return 'V' + Date.now().toString(36).toUpperCase(); }
+// Token number for waiting-room queue (resets each calendar day)
+function nextTokenNumber(){
+  const today = todayStr();
+  if(state.data.tokenDate !== today){
+    state.data.tokenDate = today;
+    state.data.nextTokenSeq = 1;
+  }
+  const n = state.data.nextTokenSeq || 1;
+  state.data.nextTokenSeq = n + 1;
+  return n;
+}
+
 
 /* ============================= STORAGE (server API) ============================= */
 let dataVersion = 0;
@@ -1140,7 +1176,7 @@ function initDraftVisit(patientId, existingVisit){
       newPatient: null,
       editingVisitId: existingVisit.id,
       doctorName: existingVisit.doctorName || state.session.staffName || '',
-      vitals: { bp:'', pulse:'', temp:'', weight:'', ...(existingVisit.vitals||{}) },
+      vitals: { bp:'', pulse:'', temp:'', weight:'', height:'', ...(existingVisit.vitals||{}) },
       complaints: existingVisit.complaints||'', examination: existingVisit.examination||'',
       diagnosis: existingVisit.diagnosis||'', notes: existingVisit.notes||'',
       followUpDate: existingVisit.followUpDate||'',
@@ -1157,7 +1193,7 @@ function initDraftVisit(patientId, existingVisit){
       newPatient: null,
       editingVisitId: null,
       doctorName: state.session.staffName || '',
-      vitals: {bp:'',pulse:'',temp:'',weight:''},
+      vitals: {bp:'',pulse:'',temp:'',weight:'',height:''},
       complaints:'', examination:'', diagnosis:'', notes:'', followUpDate:'', assignedDoctor:'',
       referredTo:'', referralReason:'',
       prescriptions: [{medicine:'',dosage:'',frequency:'',duration:'',instructions:''}],
@@ -1209,7 +1245,7 @@ function snapshotVisitFormFields(){
     savedAt: Date.now(),
     patientId: dv.patientId, newPatient: dv.newPatient, editingVisitId: dv.editingVisitId,
     doctorName: val('v-doctor'),
-    vitals: { bp: val('v-bp'), pulse: val('v-pulse'), temp: val('v-temp'), weight: val('v-weight') },
+    vitals: { bp: val('v-bp'), pulse: val('v-pulse'), temp: val('v-temp'), weight: val('v-weight'), height: val('v-height') },
     complaints: val('v-complaints'), examination: val('v-exam'),
     diagnosis: val('v-diagnosis'), notes: val('v-notes'), followUpDate: val('v-followup'),
     referredTo: val('v-referred-to'), referralReason: val('v-referral-reason'),
@@ -1399,6 +1435,7 @@ async function saveVisit(){
     dv.vitals.pulse = val('v-pulse');
     dv.vitals.temp = val('v-temp');
     dv.vitals.weight = val('v-weight');
+    if(document.getElementById('v-height')) dv.vitals.height = val('v-height');
   }
   if(document.getElementById('v-assigned-doctor') !== null){
     dv.assignedDoctor = val('v-assigned-doctor');
@@ -1492,7 +1529,7 @@ async function saveVisit(){
     visit.status = status;
   } else {
     visit = {
-      id: newVisitId(), date: todayStr(), time: nowTimeStr(),
+      id: newVisitId(), token: nextTokenNumber(), date: todayStr(), time: nowTimeStr(),
       doctorName: dv.doctorName, vitals: dv.vitals,
       complaints: dv.complaints, examination: dv.examination, diagnosis: dv.diagnosis, notes: dv.notes,
       followUpDate: dv.followUpDate, assignedDoctor: dv.assignedDoctor||'',
@@ -1529,6 +1566,41 @@ async function saveClinicInfo(){
   await saveData();
   render();
 }
+
+function downloadTextFile(filename, text, mime){
+  const blob = new Blob([text], {type: mime||'text/plain'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+function csvEscape(s){
+  const t = String(s==null?'':s);
+  if(/[",\n]/.test(t)) return '"'+t.replace(/"/g,'""')+'"';
+  return t;
+}
+function exportPatientsCSV(){
+  const rows = [['ID','Name','DOB','Age','Sex','Phone','Address','Allergies','Registered']];
+  (state.data.patients||[]).forEach(p=>{
+    rows.push([p.id,p.name,p.dob||'',displayAge(p),p.sex||'',p.phone||'',p.address||'',p.allergies||'',p.registeredDate||'']);
+  });
+  const csv = rows.map(r=>r.map(csvEscape).join(',')).join('\n');
+  downloadTextFile('MMC-patients-'+todayStr()+'.csv', csv, 'text/csv');
+  logAudit('Exported patients CSV', rows.length-1+' patients');
+}
+function exportVisitsCSV(){
+  const rows = [['PatientID','PatientName','VisitID','Token','Date','Time','Doctor','Diagnosis','Complaints','Status','FollowUp']];
+  (state.data.patients||[]).forEach(p=>{
+    (p.visits||[]).forEach(v=>{
+      rows.push([p.id,p.name,v.id,v.token!=null?v.token:'',v.date||'',v.time||'',v.doctorName||'',v.diagnosis||'',v.complaints||'',visitStatus(v),v.followUpDate||'']);
+    });
+  });
+  const csv = rows.map(r=>r.map(csvEscape).join(',')).join('\n');
+  downloadTextFile('MMC-visits-'+todayStr()+'.csv', csv, 'text/csv');
+  logAudit('Exported visits CSV', rows.length-1+' visits');
+}
+
 function downloadBackup(){
   const blob = new Blob([JSON.stringify(state.data, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -1705,6 +1777,7 @@ function shellView(){
   ];
   if(isDoctor()) items.push(['pediatrics','Pediatrics']);
   items.push(['billing','Billing']);
+  items.push(['certificates','Certificates']);
   items.push(['reports','Reports']);
   items.push(['settings','Settings']);
   const nav = items.map(([r,label])=>
@@ -1744,6 +1817,7 @@ function routeContent(){
     case 'pediatrics': return pediatricsView();
     case 'billing': return billingView();
     case 'billingDetail': return billingDetailView(state.routeParams.patientId, state.routeParams.visitId);
+    case 'certificates': return certificatesView();
     case 'reports': return reportsView();
     case 'mergePatients': return mergePatientsView();
     case 'auditLog': return auditLogView();
@@ -1778,8 +1852,15 @@ function dashboardView(){
       <td>${esc(visit.doctorName)}</td>
     </tr>`).join('');
 
+  // Queue sorted by token (then time) so the board matches the waiting room
+  waitingVisits.sort((a,b)=>{
+    const ta = a.visit.token||9999, tb = b.visit.token||9999;
+    if(ta!==tb) return ta-tb;
+    return (a.visit.time||'').localeCompare(b.visit.time||'');
+  });
   const waitingRows = waitingVisits.map(({patient,visit})=>`
     <tr>
+      <td style="font-size:20px;font-weight:700;color:var(--primary-dark);width:56px;">${visit.token!=null?visit.token:'—'}</td>
       <td>${esc(patient.name)} <span class="pill">${patient.id}</span>${visit.assignedDoctor?` <span class="faint">for ${esc(visit.assignedDoctor)}</span>`:''}</td>
       <td>${fmtDate(visit.date)} ${visit.time||''}</td>
       <td>${showClinical ? (esc(visit.complaints)||'<span class="faint">—</span>') : '<span class="faint">—</span>'}</td>
@@ -1821,7 +1902,7 @@ function dashboardView(){
     </div>
     <div class="card" style="margin-bottom:18px;">
       <h2 style="margin-bottom:10px;">Waiting for doctor</h2>
-      ${waitingVisits.length ? `<table><thead><tr><th>Patient</th><th>Registered</th><th>Complaints</th><th></th></tr></thead><tbody>${waitingRows}</tbody></table>`
+      ${waitingVisits.length ? `<table><thead><tr><th>Token</th><th>Patient</th><th>Registered</th><th>Complaints</th><th></th></tr></thead><tbody>${waitingRows}</tbody></table>`
         : `<p class="muted">No patients waiting right now.</p>`}
     </div>
     ${followUpCard}
@@ -2100,7 +2181,10 @@ function patientView(patientId){
   return `
     <div class="page-head">
       <div><h1>${esc(p.name)} <span class="pill">${p.id}</span></h1></div>
-      <button class="btn btn-accent" onclick="go('newVisit',{patientId:'${p.id}'})">+ New OPD Visit</button>
+      <div class="row" style="gap:8px;">
+        <button class="btn btn-accent" onclick="go('newVisit',{patientId:'${p.id}'})">+ New OPD Visit</button>
+        <button class="btn" onclick="state.certPatientId='${p.id}';state.certType='sick';go('certificates')">Certificate</button>
+      </div>
     </div>
     ${pedBanner}
     <div class="card" style="margin-bottom:18px;">${infoBlock}</div>
@@ -2878,6 +2962,48 @@ function invRowsHTML(){
     </div>`).join('');
 }
 
+
+function previousVisitSummaryHTML(patient, editingVisitId){
+  if(!patient || !isDoctor()) return '';
+  const visits = (patient.visits||[]).slice().sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
+  // Prefer last completed visit that is not the one currently being edited
+  const prev = visits.find(v => v.id !== editingVisitId && visitStatus(v)==='completed')
+            || visits.find(v => v.id !== editingVisitId);
+  if(!prev) return `<div class="card" style="margin-bottom:14px;"><p class="muted" style="margin:0;">No previous visits on record for this patient.</p></div>`;
+  const rx = (prev.prescriptions||[]).filter(r=>r.medicine).slice(0,4);
+  const rxLine = rx.length
+    ? rx.map(r=>esc(r.medicine)+(r.dosage?' '+esc(r.dosage):'')+(r.frequency?' · '+esc(r.frequency):'')).join('; ')
+    : '—';
+  return `
+    <div class="card" style="margin-bottom:14px;border-left:4px solid var(--primary);">
+      <div class="rx-row-head" style="margin-bottom:8px;">
+        <h3 style="margin:0;">Previous visit — ${fmtDate(prev.date)}${prev.time?' · '+esc(prev.time):''}</h3>
+        <button class="btn btn-ghost btn-sm" onclick="go('visitPrint',{patientId:'${patient.id}',visitId:'${prev.id}'})">Open full</button>
+      </div>
+      <div class="row" style="gap:18px;flex-wrap:wrap;font-size:13px;">
+        <div><span class="faint">Diagnosis</span><div><strong>${esc(prev.diagnosis)||'—'}</strong></div></div>
+        <div><span class="faint">Complaints</span><div>${esc(prev.complaints)||'—'}</div></div>
+        <div><span class="faint">Vitals</span><div>BP ${esc(prev.vitals&&prev.vitals.bp)||'—'} · Wt ${esc(prev.vitals&&prev.vitals.weight)||'—'}${prev.vitals&&prev.vitals.height?' · Ht '+esc(prev.vitals.height):''}</div></div>
+        <div><span class="faint">Doctor</span><div>${esc(prev.doctorName)||'—'}</div></div>
+      </div>
+      <div style="margin-top:8px;"><span class="faint">Last Rx</span><div>${rxLine}</div></div>
+      ${prev.followUpDate?`<div class="faint" style="margin-top:6px;">Follow-up was set for ${fmtDate(prev.followUpDate)}</div>`:''}
+      <div class="row" style="margin-top:10px;gap:8px;">
+        <button class="btn btn-sm" onclick="copyLastPrescription('${patient.id}','${prev.id}')">Copy last prescription</button>
+      </div>
+    </div>`;
+}
+function copyLastPrescription(patientId, visitId){
+  const p = state.data.patients.find(x=>x.id===patientId);
+  const v = p && (p.visits||[]).find(x=>x.id===visitId);
+  if(!v || !state.draftVisit) return;
+  const rx = (v.prescriptions||[]).filter(r=>r.medicine).map(r=>({...r}));
+  if(!rx.length){ alert('No medicines on the previous prescription.'); return; }
+  state.draftVisit.prescriptions = rx;
+  // Keep form fields in sync if already painted
+  render();
+}
+
 function newVisitView(){
   const dv = state.draftVisit;
   let patientBlock;
@@ -2944,12 +3070,15 @@ function newVisitView(){
   const pedNote = (allergyPatient && isPediatricPatient(allergyPatient))
     ? `<div class="banner banner-info"><strong>Pediatric patient</strong> — ${esc(opdAgeDisplay(allergyPatient))}. Dose suggestions appear under each medicine when weight is on file. <button class="btn btn-ghost btn-sm" onclick="state.pedLinkedPatientId='${allergyPatient.id}';go('pediatrics')">Pediatrics tools</button></div>` : '';
 
+  const prevSummary = previousVisitSummaryHTML(allergyPatient, dv.editingVisitId);
+
   return `
     <div class="page-head"><h1>${dv.editingVisitId ? 'Continue Consultation' : 'New OPD Visit'}${allergyPatient && isPediatricPatient(allergyPatient)?' — Pediatric':''}</h1></div>
     ${dv.editingVisitId ? `<div class="banner banner-info">Continuing a visit checked in earlier — patient details are already filled in.</div>` : ''}
     ${allergyBanner}
     ${pedNote}
     ${patientBlock}
+    ${prevSummary}
     <div class="card stack">
       <div class="field"><label>Attending doctor</label><input id="v-doctor" value="${esc(dv.doctorName)}"></div>
       <div>
@@ -2958,8 +3087,10 @@ function newVisitView(){
           <div class="field"><label>BP</label><input id="v-bp" placeholder="120/80" value="${esc(dv.vitals.bp)}"></div>
           <div class="field"><label>Pulse</label><input id="v-pulse" placeholder="bpm" value="${esc(dv.vitals.pulse)}"></div>
           <div class="field"><label>Temp</label><input id="v-temp" placeholder="°F" value="${esc(dv.vitals.temp)}"></div>
-          <div class="field"><label>Weight</label><input id="v-weight" placeholder="kg" value="${esc(dv.vitals.weight)}"></div>
+          <div class="field"><label>Weight</label><input id="v-weight" placeholder="kg" value="${esc(dv.vitals.weight)}" oninput="updateBmiPreview()"></div>
+          <div class="field"><label>Height</label><input id="v-height" placeholder="cm" value="${esc(dv.vitals.height||'')}" oninput="updateBmiPreview()"></div>
         </div>
+        <div id="v-bmi-preview" class="faint" style="margin-top:4px;">${(()=>{ const r=calcBMI(dv.vitals.weight, dv.vitals.height); return r?`BMI: ${r.value} (${r.label})`:''; })()}</div>
       </div>
       <div class="field"><label>Chief complaints</label>
         <textarea id="v-complaints" oninput="onComplaintsInput(this)" placeholder="e.g. Fever × 3 days, Cough × 2 days — shown as C/O on the OPD card">${esc(dv.complaints)}</textarea>
@@ -3102,14 +3233,17 @@ function visitPrintView(patientId, visitId){
         <div class="opd-demo-row"><span class="opd-k">Address</span><span class="opd-v">${esc(p.address)||'—'}</span></div>
         <div class="opd-demo-row"><span class="opd-k">Phone</span><span class="opd-v">${esc(p.phone)||'—'}</span></div>
         <div class="opd-demo-row"><span class="opd-k">Date &amp; time</span><span class="opd-v">${fmtDate(v.date)}${v.time?' · '+esc(v.time):''}</span></div>
+        ${v.token!=null?`<div class="opd-demo-row"><span class="opd-k">Token</span><span class="opd-v"><strong style="font-size:18px;">#${v.token}</strong></span></div>`:''}
         <div class="opd-demo-row"><span class="opd-k">Sex</span><span class="opd-v">${esc(p.sex)||'—'}</span></div>
       </div>
 
-      <div class="opd-vitals">
+      <div class="opd-vitals" style="grid-template-columns:repeat(auto-fit,minmax(70px,1fr));">
         <div class="opd-vital"><span class="opd-vital-lbl">BP</span><span class="opd-vital-val">${esc(v.vitals.bp)||'—'}</span></div>
         <div class="opd-vital"><span class="opd-vital-lbl">Pulse</span><span class="opd-vital-val">${esc(v.vitals.pulse)||'—'}</span></div>
         <div class="opd-vital"><span class="opd-vital-lbl">Temp</span><span class="opd-vital-val">${esc(v.vitals.temp)||'—'}</span></div>
-        <div class="opd-vital"><span class="opd-vital-lbl">Weight</span><span class="opd-vital-val">${esc(v.vitals.weight)||'—'}</span></div>
+        <div class="opd-vital"><span class="opd-vital-lbl">Weight</span><span class="opd-vital-val">${esc(v.vitals.weight)||'—'}${v.vitals.weight?' kg':''}</span></div>
+        <div class="opd-vital"><span class="opd-vital-lbl">Height</span><span class="opd-vital-val">${esc(v.vitals.height)||'—'}${v.vitals.height?' cm':''}</span></div>
+        <div class="opd-vital"><span class="opd-vital-lbl">BMI</span><span class="opd-vital-val">${(()=>{ const r=calcBMI(v.vitals.weight,v.vitals.height); return r?r.value+' ('+r.label+')':'—'; })()}</span></div>
       </div>
 
       <div class="opd-block">
@@ -3284,17 +3418,21 @@ function patientAgeMonths(p){
   if(m) return parseInt(m[1],10)*12;
   return null;
 }
+// Normalize vaccine names for exact matching only (so "Rotavirus-1" ≠ "Rotavirus-2").
+function normalizeVaccineName(s){
+  return String(s||'').toLowerCase().replace(/\s+/g,' ').trim();
+}
 function vaccinationStatusForPatient(p){
   const ageM = patientAgeMonths(p);
-  const given = new Set((p.vaccinations||[]).map(v=>(v.vaccine||'').toLowerCase().trim()));
+  // Exact normalized names only — never match dose 1 to dose 2 via shared root.
+  const given = new Set((p.vaccinations||[]).map(v=>normalizeVaccineName(v.vaccine)));
   const items = [];
   IMMUNIZATION_SCHEDULE.forEach((row, idx)=>{
     const band = IMMUNIZATION_AGE_MONTHS[idx] || {minM:0, maxM:999};
     const vaccines = row.vaccines.split(',').map(s=>s.trim()).filter(Boolean);
     vaccines.forEach(vac=>{
-      const key = vac.toLowerCase();
-      // Fuzzy: treat given if any recorded vaccine name shares a significant token
-      const isGiven = [...given].some(g => g===key || g.includes(key.split(/[\/\-]/)[0]) || key.includes(g.split(/[\/\-]/)[0]));
+      const key = normalizeVaccineName(vac);
+      const isGiven = given.has(key);
       let status = 'future';
       if(isGiven) status = 'given';
       else if(ageM != null){
@@ -3807,6 +3945,149 @@ function computeReportStats(from, to){
   return {visitCount, revenue, paidRevenue, unpaidRevenue, newPatients, doctorRows};
 }
 function setReportRange(r){ state.reportRange = r; render(); }
+
+/* ============================= MEDICAL CERTIFICATES ============================= */
+function certificatesView(){
+  const q = (state.search||'').trim().toLowerCase();
+  const linked = state.certPatientId ? state.data.patients.find(p=>p.id===state.certPatientId) : null;
+  let searchBlock = '';
+  if(!linked){
+    const list = q ? state.data.patients.filter(p=>
+      p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || (p.phone||'').includes(q)
+    ).slice(0,8) : [];
+    searchBlock = `
+      <div class="card" style="margin-bottom:18px;max-width:520px;">
+        <h2 style="margin-bottom:10px;">Select patient</h2>
+        <div class="search-wrap"><input type="text" placeholder="Search by name, ID or phone" value="${esc(state.search||'')}" oninput="state.search=this.value;render()"></div>
+        <div style="margin-top:10px;">
+          ${list.map(p=>`<div class="rx-row" style="cursor:pointer;" onclick="state.certPatientId='${p.id}';state.search='';render()">
+            <strong>${esc(p.name)}</strong> <span class="pill">${p.id}</span>
+            <div class="faint">${esc(opdAgeDisplay(p))} / ${esc(p.sex)}</div>
+          </div>`).join('') || (q?`<p class="faint">No matches.</p>`:`<p class="faint">Type to search patients.</p>`)}
+        </div>
+      </div>`;
+  } else {
+    searchBlock = `<div class="banner banner-info" style="margin-bottom:14px;">
+      Certificate for <strong>${esc(linked.name)}</strong> (${linked.id}) — ${esc(opdAgeDisplay(linked))}
+      <button class="btn btn-ghost btn-sm" style="margin-left:8px;" onclick="state.certPatientId=null;render()">Change patient</button>
+    </div>`;
+  }
+
+  const types = [
+    ['sick','Sick leave / Medical leave'],
+    ['fitness','Fitness certificate'],
+    ['school','School / College medical certificate']
+  ];
+  const type = state.certType || 'sick';
+  const typeNav = types.map(([k,l])=>
+    `<button class="btn btn-sm ${type===k?'btn-primary':''}" onclick="state.certType='${k}';render()">${l}</button>`
+  ).join(' ');
+
+  let form = '';
+  if(linked){
+    const ci = state.data.clinicInfo;
+    const today = todayStr();
+    if(type==='sick'){
+      form = `
+        <div class="card" style="margin-bottom:16px;max-width:560px;">
+          <h2 style="margin-bottom:10px;">Sick leave certificate</h2>
+          <div class="row">
+            <div class="field"><label>From date</label><input id="cert-from" type="date" value="${today}"></div>
+            <div class="field"><label>To date</label><input id="cert-to" type="date" value="${today}"></div>
+          </div>
+          <div class="field"><label>Diagnosis / reason</label><input id="cert-reason" placeholder="e.g. Acute febrile illness"></div>
+          <div class="field"><label>Advice</label><input id="cert-advice" value="Rest and medication as prescribed"></div>
+          <div class="field"><label>Doctor name</label><input id="cert-doctor" value="${esc(state.session.staffName||'')}"></div>
+          <button class="btn btn-primary" onclick="renderCertificatePreview('sick')">Generate &amp; print</button>
+        </div>`;
+    } else if(type==='fitness'){
+      form = `
+        <div class="card" style="margin-bottom:16px;max-width:560px;">
+          <h2 style="margin-bottom:10px;">Fitness certificate</h2>
+          <div class="field"><label>Purpose</label><input id="cert-purpose" placeholder="e.g. Employment / Sports / Travel"></div>
+          <div class="field"><label>Findings</label><textarea id="cert-findings">Examined and found medically fit.</textarea></div>
+          <div class="field"><label>Doctor name</label><input id="cert-doctor" value="${esc(state.session.staffName||'')}"></div>
+          <button class="btn btn-primary" onclick="renderCertificatePreview('fitness')">Generate &amp; print</button>
+        </div>`;
+    } else {
+      form = `
+        <div class="card" style="margin-bottom:16px;max-width:560px;">
+          <h2 style="margin-bottom:10px;">School / College medical certificate</h2>
+          <div class="field"><label>Institution</label><input id="cert-school" placeholder="School / college name"></div>
+          <div class="field"><label>Purpose</label><input id="cert-purpose" value="Medical fitness for attendance"></div>
+          <div class="field"><label>Findings</label><textarea id="cert-findings">Examined and found fit to attend school/college.</textarea></div>
+          <div class="field"><label>Doctor name</label><input id="cert-doctor" value="${esc(state.session.staffName||'')}"></div>
+          <button class="btn btn-primary" onclick="renderCertificatePreview('school')">Generate &amp; print</button>
+        </div>`;
+    }
+  }
+
+  return `
+    <div class="page-head"><h1>Medical certificates</h1></div>
+    ${searchBlock}
+    ${linked?`<div class="row" style="margin-bottom:14px;flex-wrap:wrap;gap:8px;">${typeNav}</div>`:''}
+    ${form}
+    <div id="cert-preview"></div>`;
+}
+
+function renderCertificatePreview(type){
+  const p = state.data.patients.find(x=>x.id===state.certPatientId);
+  if(!p) return;
+  const ci = state.data.clinicInfo;
+  const doctor = (document.getElementById('cert-doctor')||{}).value || state.session.staffName || '';
+  const today = fmtDate(todayStr());
+  let body = '';
+  if(type==='sick'){
+    const from = fmtDate((document.getElementById('cert-from')||{}).value||'');
+    const to = fmtDate((document.getElementById('cert-to')||{}).value||'');
+    const reason = (document.getElementById('cert-reason')||{}).value||'—';
+    const advice = (document.getElementById('cert-advice')||{}).value||'';
+    body = `
+      <p>This is to certify that <strong>${esc(p.name)}</strong> (ID: ${esc(p.id)}), aged ${esc(opdAgeDisplay(p))}, ${esc(p.sex||'')}, residing at ${esc(p.address)||'—'}, was under my care from <strong>${from}</strong> to <strong>${to}</strong>.</p>
+      <p><strong>Diagnosis / reason:</strong> ${esc(reason)}</p>
+      ${advice?`<p><strong>Advice:</strong> ${esc(advice)}</p>`:''}
+      <p>He/She is advised medical leave for the above period.</p>`;
+  } else if(type==='fitness'){
+    const purpose = (document.getElementById('cert-purpose')||{}).value||'—';
+    const findings = (document.getElementById('cert-findings')||{}).value||'';
+    body = `
+      <p>This is to certify that <strong>${esc(p.name)}</strong> (ID: ${esc(p.id)}), aged ${esc(opdAgeDisplay(p))}, ${esc(p.sex||'')}, has been examined by me on <strong>${today}</strong>.</p>
+      <p><strong>Purpose:</strong> ${esc(purpose)}</p>
+      <p>${esc(findings)}</p>`;
+  } else {
+    const school = (document.getElementById('cert-school')||{}).value||'—';
+    const purpose = (document.getElementById('cert-purpose')||{}).value||'';
+    const findings = (document.getElementById('cert-findings')||{}).value||'';
+    body = `
+      <p>This is to certify that <strong>${esc(p.name)}</strong> (ID: ${esc(p.id)}), aged ${esc(opdAgeDisplay(p))}, ${esc(p.sex||'')}, is a student of <strong>${esc(school)}</strong>.</p>
+      <p>He/She was examined on <strong>${today}</strong>.</p>
+      <p><strong>Purpose:</strong> ${esc(purpose)}</p>
+      <p>${esc(findings)}</p>`;
+  }
+  const titles = {sick:'MEDICAL LEAVE CERTIFICATE', fitness:'FITNESS CERTIFICATE', school:'SCHOOL / COLLEGE MEDICAL CERTIFICATE'};
+  const html = `
+    <div class="print-sheet opd-card" id="sheet-cert">
+      <div class="letterhead">
+        <div class="clinic-name">${esc(ci.name)}</div>
+        <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${esc(ci.phone||'')}</div>
+      </div>
+      <div class="opd-badge">${titles[type]||'CERTIFICATE'}</div>
+      <div style="padding:8px 22px 22px;font-size:14px;line-height:1.65;">
+        ${body}
+        <div style="margin-top:36px;display:flex;justify-content:space-between;">
+          <div><span class="faint">Date</span><div>${today}</div></div>
+          <div style="text-align:right;"><span class="faint">Doctor</span><div><strong>${esc(doctor)}</strong></div>
+            <div class="faint" style="margin-top:24px;">Signature &amp; stamp</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-primary" style="margin-top:10px;" onclick="printSection('sheet-cert')">Print certificate</button>`;
+  const box = document.getElementById('cert-preview');
+  if(box) box.innerHTML = html;
+  logAudit('Generated certificate', `${type} — ${p.name} (${p.id})`);
+}
+
 function reportsView(){
   state.reportRange = state.reportRange || 'month';
   const range = reportDateRange(state.reportRange);
@@ -3935,9 +4216,13 @@ function settingsView(){
     </div>
 
     <div class="card" style="margin-bottom:18px;max-width:520px;">
-      <h2 style="margin-bottom:6px;">Backup</h2>
+      <h2 style="margin-bottom:6px;">Backup &amp; export</h2>
       <p class="muted" style="font-size:12.5px;">Downloads every patient, visit, and staff record as a single JSON file — keep a copy somewhere safe periodically, especially before any database change.</p>
-      <button class="btn btn-sm" onclick="downloadBackup()">⬇ Download backup (JSON)</button>
+      <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+        <button class="btn btn-sm" onclick="downloadBackup()">⬇ Full backup (JSON)</button>
+        <button class="btn btn-sm" onclick="exportPatientsCSV()">⬇ Patients list (CSV)</button>
+        <button class="btn btn-sm" onclick="exportVisitsCSV()">⬇ Visits list (CSV)</button>
+      </div>
       <div class="sheet-divider"></div>
       <p class="muted" style="font-size:12.5px;">Restoring replaces <strong>everything</strong> currently in the system with the contents of the backup file — use this to recover from an accidental "Erase all clinic data", a corrupted save, or to move records onto a new server.</p>
       <input type="file" id="restore-file-input" accept="application/json" style="display:none;" onchange="restoreBackup(this.files[0])">
