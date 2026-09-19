@@ -251,6 +251,10 @@
     margin-top:8px;font-size:13.5px;font-weight:600;
     color:var(--primary-dark, #1A2744);letter-spacing:0.01em;
   }
+  .opd-doctor-qual{
+    font-size:12px;font-weight:500;color:var(--ink-soft);
+    margin-top:2px;letter-spacing:0.02em;
+  }
   .opd-sign{
     margin:24px 22px 18px;
     display:flex;flex-direction:column;align-items:flex-end;
@@ -670,6 +674,16 @@ function currentStaffRole(){
   return s ? s.role : null;
 }
 function isDoctor(){ return currentStaffRole()==='Doctor'; }
+
+function staffByName(name){
+  if(!name || !state.data || !state.data.staff) return null;
+  return state.data.staff.find(s=>s.name===name) || null;
+}
+function staffQualification(name){
+  const s = staffByName(name);
+  return (s && s.qualification) ? s.qualification : '';
+}
+
 
 // A visit a receptionist saved without a diagnosis yet is "waiting" for a
 // doctor to continue it. Older records with no explicit status fall back
@@ -1663,11 +1677,22 @@ async function addStaff(){
   const name = document.getElementById('st-name').value.trim();
   const role = document.getElementById('st-role').value;
   const pin = document.getElementById('st-pin').value.trim();
+  const qualification = (document.getElementById('st-qualification')||{}).value.trim() || '';
   const err = document.getElementById('st-error');
   if(!name || !/^\d{4}$/.test(pin)){ err.textContent = 'Enter a name and a 4-digit PIN.'; return; }
   if(state.data.staff.some(s=>s.name===name)){ err.textContent = 'That name is already registered.'; return; }
-  state.data.staff.push({name, role, pin: await hashPin(pin)});
-  logAudit('Added staff account', `${name} (${role})`);
+  state.data.staff.push({name, role, pin: await hashPin(pin), qualification});
+  logAudit('Added staff account', `${name} (${role})${qualification?' · '+qualification:''}`);
+  await saveData();
+  render();
+}
+async function editStaffQualification(name){
+  const s = state.data.staff.find(s=>s.name===name);
+  if(!s) return;
+  const entered = prompt(`Qualification / course for ${name} (e.g. M.B.B.S., M.D. Paediatrics):`, s.qualification || '');
+  if(entered === null) return;
+  s.qualification = entered.trim();
+  logAudit('Updated staff qualification', `${name}: ${s.qualification||'(cleared)'}`);
   await saveData();
   render();
 }
@@ -3238,7 +3263,7 @@ function visitPrintView(patientId, visitId){
       <div class="letterhead">
         <div class="clinic-name">${esc(ci.name)}</div>
         <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${esc(ci.phone||'')}</div>
-        ${v.doctorName ? `<div class="opd-doctor-top">${esc(v.doctorName)}</div>` : ''}
+        ${v.doctorName ? `<div class="opd-doctor-top">${esc(v.doctorName)}${staffQualification(v.doctorName)?`<div class="opd-doctor-qual">${esc(staffQualification(v.doctorName))}</div>`:''}</div>` : ''}
       </div>
       <div class="opd-badge">${isPediatricPatient(p)?'PEDIATRIC OPD CARD':'OPD CARD'}</div>
 
@@ -4096,6 +4121,7 @@ function renderCertificatePreview(type){
         <div style="margin-top:36px;display:flex;justify-content:space-between;">
           <div><span class="faint">Date</span><div>${today}</div></div>
           <div style="text-align:right;"><span class="faint">Doctor</span><div><strong>${esc(doctor)}</strong></div>
+            ${staffQualification(doctor)?`<div class="faint">${esc(staffQualification(doctor))}</div>`:''}
             <div class="faint" style="margin-top:24px;">Signature &amp; stamp</div>
           </div>
         </div>
@@ -4209,8 +4235,13 @@ async function saveBilling(patientId, visitId){
 function settingsView(){
   const ci = state.data.clinicInfo;
   const staffRows = state.data.staff.map(s=>`
-    <tr><td>${esc(s.name)}</td><td>${esc(s.role)}</td><td>••••</td>
+    <tr>
+      <td>${esc(s.name)}</td>
+      <td>${esc(s.role)}</td>
+      <td>${esc(s.qualification)||'<span class="faint">—</span>'}</td>
+      <td>••••</td>
       <td style="white-space:nowrap;">
+        <button class="btn btn-ghost btn-sm" onclick="editStaffQualification('${esc(s.name)}')">Qualification</button>
         <button class="btn btn-ghost btn-sm" onclick="changeStaffRole('${esc(s.name)}')">Change role</button>
         <button class="btn btn-ghost btn-sm" onclick="resetStaffPin('${esc(s.name)}')">Reset PIN</button>
         ${s.name!==state.session.staffName?`<button class="btn btn-ghost btn-sm" onclick="removeStaff('${esc(s.name)}')">Remove</button>`:'<span class="faint">(you)</span>'}
@@ -4274,10 +4305,11 @@ function settingsView(){
 
     <div class="card" style="margin-bottom:18px;max-width:640px;">
       <h2 style="margin-bottom:12px;">Staff accounts</h2>
-      <table><thead><tr><th>Name</th><th>Role</th><th>PIN</th><th></th></tr></thead><tbody>${staffRows}</tbody></table>
+      <table><thead><tr><th>Name</th><th>Role</th><th>Qualification</th><th>PIN</th><th></th></tr></thead><tbody>${staffRows}</tbody></table>
       <div class="row" style="margin-top:14px;">
         <div class="field"><label>Name</label><input id="st-name"></div>
         <div class="field"><label>Role</label><select id="st-role"><option>Doctor</option><option>Receptionist</option><option>Staff</option></select></div>
+        <div class="field"><label>Qualification / course</label><input id="st-qualification" placeholder="e.g. M.B.B.S."></div>
         <div class="field"><label>4-digit PIN</label><input id="st-pin" inputmode="numeric" maxlength="4"></div>
       </div>
       <div id="st-error" class="error-text"></div>
