@@ -246,14 +246,38 @@ function ageFromDob(dob){
   let years = now.getFullYear() - b.getFullYear();
   let months = now.getMonth() - b.getMonth();
   let days = now.getDate() - b.getDate();
-  if(days < 0) months--;
+  if(days < 0){
+    months--;
+    // Borrow the number of days in the calendar month just before "now" —
+    // correctly handles 28/29/30/31-day months instead of assuming 30.
+    const prevMonthLastDay = new Date(now.getFullYear(), now.getMonth(), 0).getDate();
+    days += prevMonthLastDay;
+  }
   if(months < 0){ years--; months += 12; }
   const totalMonths = years*12 + months;
   let display;
   if(years >= 2) display = months ? `${years}y ${months}m` : `${years}y`;
   else if(totalMonths >= 1) display = `${totalMonths}m`;
   else display = `${Math.max(days,0)}d`;
-  return {years, months, totalMonths, display};
+  return {years, months, days, totalMonths, display, full: formatAgeYMD(years, months, days)};
+}
+// "23 years, 6 months, and 16 days" — full-precision exact age, e.g. for a
+// patient's profile where there's room, vs. the compact `display`/`full`
+// pairing above which fits list rows and print sheets.
+function formatAgeYMD(years, months, days){
+  const parts = [];
+  if(years > 0) parts.push(`${years} year${years===1?'':'s'}`);
+  if(months > 0) parts.push(`${months} month${months===1?'':'s'}`);
+  if(days > 0 || parts.length===0) parts.push(`${days} day${days===1?'':'s'}`);
+  if(parts.length === 1) return parts[0];
+  if(parts.length === 2) return parts.join(' and ');
+  return parts.slice(0,-1).join(', ') + ', and ' + parts[parts.length-1];
+}
+function updateAgePreview(inputEl, previewId){
+  const el = document.getElementById(previewId);
+  if(!el) return;
+  const a = ageFromDob(inputEl.value);
+  el.textContent = a ? `Age: ${a.full}` : '';
 }
 // Patients registered with a DOB get an always-current age; older records
 // that only have the legacy free-text age field fall back to that.
@@ -1036,10 +1060,25 @@ function snapshotVisitFormFields(){
     investigations: investigations.length ? investigations : undefined
   };
 }
+// True only if the doctor has actually typed/selected something worth
+// protecting — an empty or barely-touched form isn't worth remembering,
+// and remembering it anyway is exactly what caused the restore prompt to
+// appear on every visit to this page, even ones with nothing entered.
+function snapshotHasContent(snap){
+  if(!snap) return false;
+  if(snap.newPatient && (snap.newPatient.name || snap.newPatient.phone)) return true;
+  if(snap.complaints || snap.examination || snap.diagnosis || snap.notes) return true;
+  if(snap.followUpDate || snap.referredTo || snap.referralReason) return true;
+  const v = snap.vitals || {};
+  if(v.bp || v.pulse || v.temp || v.weight) return true;
+  if((snap.prescriptions||[]).some(r => r && r.medicine)) return true;
+  if((snap.investigations||[]).some(r => r && r.test)) return true;
+  return false;
+}
 function autosaveVisitDraft(){
   if(!state.data || !isDoctor() || state.route !== 'newVisit' || !state.draftVisit) return;
   const snap = snapshotVisitFormFields();
-  if(!snap) return;
+  if(!snapshotHasContent(snap)) return;
   try{
     localStorage.setItem(VISIT_DRAFT_KEY, JSON.stringify(snap));
     const ind = document.getElementById('draft-save-indicator');
@@ -1057,6 +1096,7 @@ function restoreVisitDraftIfAny(){
   let snap;
   try{ snap = JSON.parse(raw); } catch(e){ clearVisitDraftStorage(); return; }
   if(!snap || !snap.savedAt){ clearVisitDraftStorage(); return; }
+  if(!snapshotHasContent(snap)){ clearVisitDraftStorage(); return; } // leftover from before this check existed
   if(Date.now() - snap.savedAt > 24*60*60*1000){ clearVisitDraftStorage(); return; } // stale, don't offer
   const when = new Date(snap.savedAt).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
   if(!confirm(`An unsaved consultation draft was found from ${when} (likely from a dropped connection, or the tab closing before it was saved). Restore it into this form?`)){
@@ -1804,7 +1844,8 @@ function newPatientView(){
     <div class="card" style="max-width:520px;">
       <div class="row"><div class="field"><label>Full name *</label><input id="reg-name" type="text"></div></div>
       <div class="row">
-        <div class="field"><label>Date of birth</label><input id="reg-dob" type="date" max="${todayStr()}"></div>
+        <div class="field"><label>Date of birth</label><input id="reg-dob" type="date" max="${todayStr()}" oninput="updateAgePreview(this,'reg-age-preview')">
+          <div id="reg-age-preview" class="faint" style="margin-top:4px;"></div></div>
         <div class="field"><label>Age (if DOB unknown)</label><input id="reg-age" type="text" placeholder="e.g. 45"></div>
         <div class="field"><label>Sex *</label><select id="reg-sex"><option value="">Select</option><option>Male</option><option>Female</option><option>Other</option></select></div>
       </div>
@@ -1830,7 +1871,8 @@ function patientView(patientId){
       <div class="field"><label>Name *</label><input id="ep-name" value="${esc(p.name)}"></div>
     </div>
     <div class="row">
-      <div class="field"><label>Date of birth</label><input id="ep-dob" type="date" max="${todayStr()}" value="${esc(p.dob||'')}"></div>
+      <div class="field"><label>Date of birth</label><input id="ep-dob" type="date" max="${todayStr()}" value="${esc(p.dob||'')}" oninput="updateAgePreview(this,'ep-age-preview')">
+        <div id="ep-age-preview" class="faint" style="margin-top:4px;">${p.dob && ageFromDob(p.dob) ? 'Age: '+esc(ageFromDob(p.dob).full) : ''}</div></div>
       <div class="field"><label>Age (if DOB unknown)</label><input id="ep-age" value="${esc(p.age)}"></div>
       <div class="field"><label>Sex *</label><select id="ep-sex">
         ${['Male','Female','Other'].map(s=>`<option ${p.sex===s?'selected':''}>${s}</option>`).join('')}
@@ -1846,7 +1888,8 @@ function patientView(patientId){
   ` : `
     ${p.detailsRedacted ? `<div class="banner" style="background:var(--danger-tint);color:var(--danger);margin-bottom:10px;"><strong>Personal details removed</strong>${p.redactedAt?' on '+fmtDate(p.redactedAt.slice(0,10)):''} — visit history below is preserved.</div>` : ''}
     <div class="row" style="margin-bottom:4px;">
-      <div><span class="faint">Age / Sex</span><div>${esc(displayAge(p))} / ${esc(p.sex)}${p.dob?` <span class="faint">(DOB ${fmtDate(p.dob)})</span>`:''}</div></div>
+      <div><span class="faint">Age / Sex</span><div>${esc(displayAge(p))} / ${esc(p.sex)}${p.dob?` <span class="faint">(DOB ${fmtDate(p.dob)})</span>`:''}</div>
+        ${p.dob && ageFromDob(p.dob) ? `<div class="faint" style="margin-top:2px;">${esc(ageFromDob(p.dob).full)} old</div>` : ''}</div>
       <div><span class="faint">Phone</span><div>${esc(p.phone)||'—'}</div></div>
       <div><span class="faint">Registered</span><div>${fmtDate(p.registeredDate)}</div></div>
     </div>
@@ -2611,7 +2654,8 @@ function newVisitView(){
         <div class="rx-row-head"><h3>Register new patient</h3><button class="btn btn-ghost btn-sm" onclick="toggleNewPatientInVisit()">Cancel</button></div>
         <div class="row"><div class="field"><label>Full name *</label><input id="np-name" value="${esc(np.name)}"></div></div>
         <div class="row">
-          <div class="field"><label>Date of birth</label><input id="np-dob" type="date" max="${todayStr()}" value="${esc(np.dob||'')}"></div>
+          <div class="field"><label>Date of birth</label><input id="np-dob" type="date" max="${todayStr()}" value="${esc(np.dob||'')}" oninput="updateAgePreview(this,'np-age-preview')">
+            <div id="np-age-preview" class="faint" style="margin-top:4px;">${np.dob && ageFromDob(np.dob) ? 'Age: '+esc(ageFromDob(np.dob).full) : ''}</div></div>
           <div class="field"><label>Age (if DOB unknown)</label><input id="np-age" value="${esc(np.age)}"></div>
           <div class="field"><label>Sex *</label><select id="np-sex">
             <option value="">Select</option>
