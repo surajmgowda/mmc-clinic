@@ -293,6 +293,52 @@
     width:160px;text-align:center;font-size:11px;font-weight:600;
     color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.04em;
   }
+  .inv-group{margin-bottom:14px;}
+  .inv-group-title{
+    font-size:11.5px;font-weight:700;color:var(--ink-soft);
+    text-transform:uppercase;letter-spacing:0.04em;margin-bottom:8px;
+  }
+  .inv-check-grid{
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px;
+  }
+  .inv-check{
+    display:flex;align-items:center;gap:10px;padding:10px 12px;
+    border:1.5px solid var(--line);border-radius:8px;background:var(--surface);
+    cursor:pointer;font-size:13px;line-height:1.35;user-select:none;
+    transition:background 120ms ease, border-color 120ms ease;
+  }
+  .inv-check:hover{border-color:var(--primary-mid, var(--primary));background:var(--primary-tint);}
+  .inv-check-on{
+    border-color:var(--primary);background:var(--primary-tint);
+    font-weight:600;color:var(--primary-dark);
+  }
+  .inv-check input[type="checkbox"]{
+    width:18px;height:18px;flex-shrink:0;margin:0;
+    accent-color:var(--primary);cursor:pointer;
+  }
+  .lab-panel{border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px;background:var(--surface);}
+  .lab-panel h3{margin:0 0 10px;font-size:15px;}
+  .lab-param-grid{display:grid;grid-template-columns:1.2fr 0.7fr 0.5fr 1fr;gap:6px 10px;align-items:center;font-size:13px;}
+  .lab-param-grid .lab-head{font-size:11px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.03em;padding-bottom:4px;border-bottom:1px solid var(--line);}
+  .lab-param-grid input{width:100%;padding:6px 8px;border:1.5px solid var(--line);border-radius:6px;font-size:13px;}
+  .lab-ref{color:var(--ink-soft);font-size:12px;}
+  .lab-unit{color:var(--ink-faint);font-size:12px;}
+  @media (max-width:640px){
+    .lab-param-grid{grid-template-columns:1fr 1fr;gap:4px 8px;}
+    .lab-param-grid .lab-head:nth-child(n){display:none;}
+  }
+  .inv-selected{
+    background:var(--primary-tint);border:1px solid rgba(30,78,107,0.12);
+    border-radius:10px;padding:12px 14px;margin-bottom:14px;
+  }
+  .inv-selected-row{
+    display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap;
+  }
+  .inv-selected-row input[type="text"]{
+    flex:1;min-width:140px;padding:6px 10px;border:1.5px solid var(--line);
+    border-radius:6px;font-size:13px;
+  }
+
   .cert-meta{
     display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;
     padding:0 22px 12px;font-size:13px;border-bottom:1px solid var(--line);
@@ -1331,7 +1377,7 @@ function initDraftVisit(patientId, existingVisit){
       complaints:'', examination:'', diagnosis:'', notes:'', followUpDate:'', assignedDoctor:'',
       referredTo:'', referralReason:'',
       prescriptions: [{medicine:'',dosage:'',frequency:'',duration:'',instructions:''}],
-      investigations: [{test:'',notes:''}]
+      investigations: []
     };
   }
   state.visitError = '';
@@ -1367,14 +1413,10 @@ function snapshotVisitFormFields(){
       instructions: row.querySelector('[data-f="instructions"]')?.value || ''
     };
   });
-  const investigations = [];
-  document.querySelectorAll('[data-inv-idx]').forEach(row=>{
-    const i = Number(row.getAttribute('data-inv-idx'));
-    investigations[i] = {
-      test: row.querySelector('[data-f="test"]')?.value || '',
-      notes: row.querySelector('[data-f="notes"]')?.value || ''
-    };
-  });
+  // Investigations are kept in state via the checklist; still merge any DOM notes if present
+  const investigations = (state.draftVisit.investigations||[])
+    .filter(r=>r && r.test)
+    .map(r=>({test: r.test, notes: r.notes||''}));
   return {
     savedAt: Date.now(),
     patientId: dv.patientId, newPatient: dv.newPatient, editingVisitId: dv.editingVisitId,
@@ -1475,13 +1517,14 @@ function removeRxRow(i){
   document.getElementById('rx-rows').innerHTML = rxRowsHTML();
 }
 function addInvRow(){
-  state.draftVisit.investigations.push({test:'',notes:''});
-  document.getElementById('inv-rows').innerHTML = invRowsHTML();
+  // Legacy — checklist uses toggleInvCheck / addCustomInv
+  const box = document.getElementById('inv-rows');
+  if(box) box.innerHTML = invRowsHTML();
 }
 function removeInvRow(i){
-  state.draftVisit.investigations.splice(i,1);
-  if(state.draftVisit.investigations.length===0) state.draftVisit.investigations.push({test:'',notes:''});
-  document.getElementById('inv-rows').innerHTML = invRowsHTML();
+  if(state.draftVisit.investigations[i]) state.draftVisit.investigations.splice(i,1);
+  const box = document.getElementById('inv-rows');
+  if(box) box.innerHTML = invRowsHTML();
 }
 
 /* ============================= PRESCRIPTION TEMPLATES ============================= */
@@ -1499,7 +1542,7 @@ function applyRxTemplate(){
   dv.prescriptions = (rxIsBlank ? [] : dv.prescriptions).concat((t.prescriptions||[]).map(r=>({...r})));
   dv.investigations = (invIsBlank ? [] : dv.investigations).concat((t.investigations||[]).map(r=>({...r})));
   if(!dv.prescriptions.length) dv.prescriptions = [{medicine:'',dosage:'',frequency:'',duration:'',instructions:''}];
-  if(!dv.investigations.length) dv.investigations = [{test:'',notes:''}];
+  dv.investigations = (dv.investigations||[]).filter(r=>r && r.test);
   document.getElementById('rx-rows').innerHTML = rxRowsHTML();
   document.getElementById('inv-rows').innerHTML = invRowsHTML();
 }
@@ -1516,13 +1559,8 @@ async function saveCurrentAsTemplate(){
       instructions: row.querySelector('[data-f="instructions"]').value.trim()
     };
   });
-  document.querySelectorAll('[data-inv-idx]').forEach(row=>{
-    const i = Number(row.getAttribute('data-inv-idx'));
-    dv.investigations[i] = {
-      test: row.querySelector('[data-f="test"]').value.trim(),
-      notes: row.querySelector('[data-f="notes"]').value.trim()
-    };
-  });
+  // Checklist keeps investigations in state; ensure notes from selected rows are current
+  dv.investigations = (dv.investigations||[]).filter(r=>r && r.test).map(r=>({test:r.test, notes:(r.notes||'').trim()}));
   const prescriptions = dv.prescriptions.filter(r=>r.medicine);
   const investigations = dv.investigations.filter(r=>r.test);
   if(!prescriptions.length && !investigations.length){
@@ -1585,13 +1623,8 @@ async function saveVisit(){
       instructions: row.querySelector('[data-f="instructions"]').value.trim()
     };
   });
-  document.querySelectorAll('[data-inv-idx]').forEach(row=>{
-    const i = Number(row.getAttribute('data-inv-idx'));
-    dv.investigations[i] = {
-      test: row.querySelector('[data-f="test"]').value.trim(),
-      notes: row.querySelector('[data-f="notes"]').value.trim()
-    };
-  });
+  // Checklist keeps investigations in state; ensure notes from selected rows are current
+  dv.investigations = (dv.investigations||[]).filter(r=>r && r.test).map(r=>({test:r.test, notes:(r.notes||'').trim()}));
 
   const errEl = document.getElementById('visit-error');
   if(!dv.patientId && !dv.newPatient){
@@ -2769,21 +2802,225 @@ const FREQUENCY_OPTIONS = [
   'STAT (immediately)','HS (at bedtime)'
 ];
 
-const INVESTIGATION_DB = [
-  'Complete Blood Count (CBC)','Random Blood Sugar (RBS)','Fasting Blood Sugar (FBS)',
-  'Post-Prandial Blood Sugar (PPBS)','HbA1c','Liver Function Test (LFT)',
-  'Renal Function Test (RFT)','Blood Urea','Serum Creatinine','Lipid Profile',
-  'Serum Electrolytes','Urine Routine & Microscopy','Stool Routine',
-  'Thyroid Profile (T3/T4/TSH)','ECG','Chest X-Ray','X-Ray (specify site)',
-  'USG Abdomen','USG Pelvis','2D Echo','Widal Test','Dengue NS1 Antigen',
-  'Dengue IgM/IgG','Malaria Parasite (MP) Smear','Typhidot','HIV Test',
-  'HBsAg','HCV','VDRL','CRP','ESR','Blood Grouping & Rh Typing',
-  'Serum Bilirubin (Total/Direct)','Serum Uric Acid','Sputum for AFB',
-  'Mantoux Test','Urine Pregnancy Test','Peripheral Smear','PT/INR',
-  'Serum Amylase/Lipase','Vitamin D3 Level','Vitamin B12 Level',
-  'Serum Calcium','Culture & Sensitivity (Urine)','Culture & Sensitivity (Blood)',
-  'COVID-19 RT-PCR / Antigen'
+const INVESTIGATION_GROUPS = [
+  {name:'Blood / biochemistry', tests:[
+    'Complete Blood Count (CBC)','Random Blood Sugar (RBS)','Fasting Blood Sugar (FBS)',
+    'Post-Prandial Blood Sugar (PPBS)','HbA1c','Liver Function Test (LFT)',
+    'Renal Function Test (RFT)','Blood Urea','Serum Creatinine','Lipid Profile',
+    'Serum Electrolytes','Thyroid Profile (T3/T4/TSH)','Serum Bilirubin (Total/Direct)',
+    'Serum Uric Acid','CRP','ESR','Blood Grouping & Rh Typing','Peripheral Smear',
+    'PT/INR','Serum Amylase/Lipase','Vitamin D3 Level','Vitamin B12 Level','Serum Calcium'
+  ]},
+  {name:'Urine / stool', tests:[
+    'Urine Routine & Microscopy','Stool Routine','Urine Pregnancy Test',
+    'Culture & Sensitivity (Urine)'
+  ]},
+  {name:'Infectious disease', tests:[
+    'Widal Test','Dengue NS1 Antigen','Dengue IgM/IgG','Malaria Parasite (MP) Smear',
+    'Typhidot','HIV Test','HBsAg','HCV','VDRL','Sputum for AFB','Mantoux Test',
+    'Culture & Sensitivity (Blood)','COVID-19 RT-PCR / Antigen'
+  ]},
+  {name:'Imaging / cardiac', tests:[
+    'ECG','Chest X-Ray','X-Ray (specify site)','USG Abdomen','USG Pelvis','2D Echo'
+  ]}
 ];
+const INVESTIGATION_DB = INVESTIGATION_GROUPS.flatMap(g=>g.tests);
+
+// Structured lab result panels — components, units, and approximate Indian
+// clinical reference ranges by age/sex (screening values; labs vary).
+const LAB_PANELS = {
+  'Complete Blood Count (CBC)': [
+    {key:'Hb', label:'Hemoglobin (Hb)', unit:'g/dL',
+      ref:(age,sex)=>{
+        if(age!=null && age<12) return age<5 ? '11.0 – 14.0' : '11.5 – 15.5';
+        return sex==='Female' ? '12.0 – 15.0' : '13.0 – 17.0';
+      }},
+    {key:'RBC', label:'RBC count', unit:'×10⁶/µL',
+      ref:(age,sex)=> sex==='Female' ? '4.0 – 5.2' : '4.5 – 5.5'},
+    {key:'HCT', label:'Hematocrit (PCV)', unit:'%',
+      ref:(age,sex)=> sex==='Female' ? '36 – 46' : '40 – 50'},
+    {key:'MCV', label:'MCV', unit:'fL', ref:()=>'80 – 100'},
+    {key:'MCH', label:'MCH', unit:'pg', ref:()=>'27 – 33'},
+    {key:'MCHC', label:'MCHC', unit:'g/dL', ref:()=>'32 – 36'},
+    {key:'WBC', label:'WBC (TLC)', unit:'/µL',
+      ref:(age)=> age!=null && age<12 ? '4,500 – 13,500' : '4,000 – 11,000'},
+    {key:'Neutrophils', label:'Neutrophils', unit:'%', ref:()=>'40 – 70'},
+    {key:'Lymphocytes', label:'Lymphocytes', unit:'%',
+      ref:(age)=> age!=null && age<12 ? '30 – 55' : '20 – 40'},
+    {key:'Eosinophils', label:'Eosinophils', unit:'%', ref:()=>'1 – 6'},
+    {key:'Monocytes', label:'Monocytes', unit:'%', ref:()=>'2 – 10'},
+    {key:'Platelets', label:'Platelet count', unit:'/µL', ref:()=>'1,50,000 – 4,50,000'},
+    {key:'RDW', label:'RDW', unit:'%', ref:()=>'11.5 – 14.5'}
+  ],
+  'Liver Function Test (LFT)': [
+    {key:'TBili', label:'Total bilirubin', unit:'mg/dL', ref:()=>'0.2 – 1.2'},
+    {key:'DBili', label:'Direct bilirubin', unit:'mg/dL', ref:()=>'0.0 – 0.3'},
+    {key:'IBili', label:'Indirect bilirubin', unit:'mg/dL', ref:()=>'0.2 – 0.9'},
+    {key:'AST', label:'AST (SGOT)', unit:'U/L', ref:()=>'5 – 40'},
+    {key:'ALT', label:'ALT (SGPT)', unit:'U/L', ref:()=>'5 – 40'},
+    {key:'ALP', label:'Alkaline phosphatase', unit:'U/L',
+      ref:(age)=> age!=null && age<18 ? '50 – 400 (age-dependent)' : '40 – 129'},
+    {key:'Protein', label:'Total protein', unit:'g/dL', ref:()=>'6.0 – 8.3'},
+    {key:'Albumin', label:'Albumin', unit:'g/dL', ref:()=>'3.5 – 5.0'},
+    {key:'Globulin', label:'Globulin', unit:'g/dL', ref:()=>'2.0 – 3.5'},
+    {key:'AG', label:'A/G ratio', unit:'', ref:()=>'1.0 – 2.2'}
+  ],
+  'Renal Function Test (RFT)': [
+    {key:'Urea', label:'Blood urea', unit:'mg/dL', ref:()=>'15 – 40'},
+    {key:'BUN', label:'BUN', unit:'mg/dL', ref:()=>'7 – 20'},
+    {key:'Creatinine', label:'Serum creatinine', unit:'mg/dL',
+      ref:(age,sex)=> sex==='Female' ? '0.5 – 1.1' : '0.7 – 1.3'},
+    {key:'UricAcid', label:'Serum uric acid', unit:'mg/dL',
+      ref:(age,sex)=> sex==='Female' ? '2.5 – 6.0' : '3.5 – 7.2'},
+    {key:'Na', label:'Sodium (Na⁺)', unit:'mEq/L', ref:()=>'135 – 145'},
+    {key:'K', label:'Potassium (K⁺)', unit:'mEq/L', ref:()=>'3.5 – 5.0'},
+    {key:'Cl', label:'Chloride (Cl⁻)', unit:'mEq/L', ref:()=>'98 – 107'}
+  ],
+  'Blood Urea': [
+    {key:'Urea', label:'Blood urea', unit:'mg/dL', ref:()=>'15 – 40'}
+  ],
+  'Serum Creatinine': [
+    {key:'Creatinine', label:'Serum creatinine', unit:'mg/dL',
+      ref:(age,sex)=> sex==='Female' ? '0.5 – 1.1' : '0.7 – 1.3'}
+  ],
+  'Serum Uric Acid': [
+    {key:'UricAcid', label:'Serum uric acid', unit:'mg/dL',
+      ref:(age,sex)=> sex==='Female' ? '2.5 – 6.0' : '3.5 – 7.2'}
+  ],
+  'Serum Electrolytes': [
+    {key:'Na', label:'Sodium (Na⁺)', unit:'mEq/L', ref:()=>'135 – 145'},
+    {key:'K', label:'Potassium (K⁺)', unit:'mEq/L', ref:()=>'3.5 – 5.0'},
+    {key:'Cl', label:'Chloride (Cl⁻)', unit:'mEq/L', ref:()=>'98 – 107'},
+    {key:'HCO3', label:'Bicarbonate', unit:'mEq/L', ref:()=>'22 – 28'}
+  ],
+  'Thyroid Profile (T3/T4/TSH)': [
+    {key:'T3', label:'Total T3', unit:'ng/dL', ref:()=>'80 – 200'},
+    {key:'T4', label:'Total T4', unit:'µg/dL', ref:()=>'5.0 – 12.0'},
+    {key:'FT3', label:'Free T3', unit:'pg/mL', ref:()=>'2.3 – 4.2'},
+    {key:'FT4', label:'Free T4', unit:'ng/dL', ref:()=>'0.8 – 1.8'},
+    {key:'TSH', label:'TSH', unit:'mIU/L',
+      ref:(age)=> age!=null && age<1 ? '0.5 – 5.0 (age-dependent)' : '0.4 – 4.5'}
+  ],
+  'Lipid Profile': [
+    {key:'TChol', label:'Total cholesterol', unit:'mg/dL', ref:()=>'< 200 (desirable)'},
+    {key:'HDL', label:'HDL cholesterol', unit:'mg/dL',
+      ref:(age,sex)=> sex==='Female' ? '> 50' : '> 40'},
+    {key:'LDL', label:'LDL cholesterol', unit:'mg/dL', ref:()=>'< 100 (optimal)'},
+    {key:'VLDL', label:'VLDL', unit:'mg/dL', ref:()=>'5 – 40'},
+    {key:'TG', label:'Triglycerides', unit:'mg/dL', ref:()=>'< 150'}
+  ],
+  'Random Blood Sugar (RBS)': [
+    {key:'RBS', label:'Random blood sugar', unit:'mg/dL', ref:()=>'70 – 140'}
+  ],
+  'Fasting Blood Sugar (FBS)': [
+    {key:'FBS', label:'Fasting blood sugar', unit:'mg/dL', ref:()=>'70 – 100'}
+  ],
+  'Post-Prandial Blood Sugar (PPBS)': [
+    {key:'PPBS', label:'Post-prandial BS (2 hr)', unit:'mg/dL', ref:()=>'< 140'}
+  ],
+  'HbA1c': [
+    {key:'HbA1c', label:'HbA1c', unit:'%', ref:()=>'< 5.7 (non-diabetic)'}
+  ],
+  'Urine Routine & Microscopy': [
+    {key:'Colour', label:'Colour', unit:'', ref:()=>'Pale yellow'},
+    {key:'Appearance', label:'Appearance', unit:'', ref:()=>'Clear'},
+    {key:'pH', label:'pH', unit:'', ref:()=>'4.5 – 8.0'},
+    {key:'SpGravity', label:'Specific gravity', unit:'', ref:()=>'1.005 – 1.030'},
+    {key:'Protein', label:'Protein', unit:'', ref:()=>'Nil / Negative'},
+    {key:'Sugar', label:'Sugar', unit:'', ref:()=>'Nil / Negative'},
+    {key:'Ketones', label:'Ketones', unit:'', ref:()=>'Nil'},
+    {key:'Blood', label:'Blood', unit:'', ref:()=>'Nil'},
+    {key:'RBC', label:'RBC / HPF', unit:'', ref:()=>'0 – 2'},
+    {key:'WBC', label:'WBC / HPF', unit:'', ref:()=>'0 – 5'},
+    {key:'Epithelial', label:'Epithelial cells', unit:'', ref:()=>'Occasional'},
+    {key:'Casts', label:'Casts', unit:'', ref:()=>'Nil'}
+  ],
+  'CRP': [
+    {key:'CRP', label:'C-Reactive Protein', unit:'mg/L', ref:()=>'< 5 (or lab-specific)'}
+  ],
+  'ESR': [
+    {key:'ESR', label:'ESR (Westergren)', unit:'mm/hr',
+      ref:(age,sex)=> sex==='Female' ? '0 – 20' : '0 – 15'}
+  ],
+  'Serum Calcium': [
+    {key:'Calcium', label:'Serum calcium', unit:'mg/dL', ref:()=>'8.5 – 10.5'}
+  ],
+  'Vitamin D3 Level': [
+    {key:'VitD', label:'25-OH Vitamin D', unit:'ng/mL', ref:()=>'30 – 100 (sufficient)'}
+  ],
+  'Vitamin B12 Level': [
+    {key:'B12', label:'Vitamin B12', unit:'pg/mL', ref:()=>'200 – 900'}
+  ],
+  'PT/INR': [
+    {key:'PT', label:'Prothrombin time', unit:'sec', ref:()=>'11 – 13.5'},
+    {key:'INR', label:'INR', unit:'', ref:()=>'0.8 – 1.2'},
+    {key:'ISI', label:'ISI', unit:'', ref:()=>'—'}
+  ],
+  'Blood Grouping & Rh Typing': [
+    {key:'ABO', label:'ABO group', unit:'', ref:()=>'A / B / AB / O'},
+    {key:'Rh', label:'Rh typing', unit:'', ref:()=>'Positive / Negative'}
+  ],
+  'Serum Bilirubin (Total/Direct)': [
+    {key:'TBili', label:'Total bilirubin', unit:'mg/dL', ref:()=>'0.2 – 1.2'},
+    {key:'DBili', label:'Direct bilirubin', unit:'mg/dL', ref:()=>'0.0 – 0.3'},
+    {key:'IBili', label:'Indirect bilirubin', unit:'mg/dL', ref:()=>'0.2 – 0.9'}
+  ]
+};
+function getLabPanel(testName){
+  if(!testName) return null;
+  if(LAB_PANELS[testName]) return LAB_PANELS[testName];
+  // Fuzzy match common short names
+  const n = testName.toLowerCase();
+  if(n.includes('cbc') || n.includes('complete blood')) return LAB_PANELS['Complete Blood Count (CBC)'];
+  if(n.includes('lft') || n.includes('liver')) return LAB_PANELS['Liver Function Test (LFT)'];
+  if(n.includes('rft') || n.includes('renal') || n.includes('kft')) return LAB_PANELS['Renal Function Test (RFT)'];
+  if(n.includes('thyroid') || n.includes('t3') || n.includes('tsh')) return LAB_PANELS['Thyroid Profile (T3/T4/TSH)'];
+  if(n.includes('lipid')) return LAB_PANELS['Lipid Profile'];
+  return null;
+}
+function formatComponentsResult(components, panel){
+  if(!components || !panel) return '';
+  return panel.map(p=>{
+    const v = components[p.key];
+    if(v==null || String(v).trim()==='') return null;
+    return `${p.label}: ${String(v).trim()}${p.unit?' '+p.unit:''}`;
+  }).filter(Boolean).join('; ');
+}
+function invResultEntryHTML(patient, investigations){
+  const ageY = patientAgeYearsForBmi(patient);
+  const sex = patient.sex || '';
+  return investigations.map((r,i)=>{
+    const panel = getLabPanel(r.test);
+    const comps = r.components || {};
+    if(panel){
+      const rows = panel.map(p=>{
+        const ref = typeof p.ref==='function' ? p.ref(ageY, sex) : (p.ref||'—');
+        return `<div>${esc(p.label)}</div>
+          <input data-lab-idx="${i}" data-lab-key="${esc(p.key)}" value="${esc(comps[p.key]||'')}" placeholder="Value">
+          <div class="lab-unit">${esc(p.unit||'')}</div>
+          <div class="lab-ref">${esc(ref)}</div>`;
+      }).join('');
+      return `<div class="lab-panel">
+        <h3>${esc(r.test)}${r.notes?` <span class="faint">— ${esc(r.notes)}</span>`:''}</h3>
+        <div class="lab-param-grid">
+          <div class="lab-head">Parameter</div><div class="lab-head">Result</div>
+          <div class="lab-head">Unit</div><div class="lab-head">Reference</div>
+          ${rows}
+        </div>
+        <div class="field" style="margin-top:10px;margin-bottom:0;"><label>Additional notes</label>
+          <input data-result-idx="${i}" value="${esc(r.result||'')}" placeholder="Free-text notes or summary">
+        </div>
+      </div>`;
+    }
+    return `<div class="lab-panel">
+      <h3>${esc(r.test)}${r.notes?` <span class="faint">— ${esc(r.notes)}</span>`:''}</h3>
+      <div class="field" style="margin-bottom:0;"><label>Result</label>
+        <input data-result-idx="${i}" value="${esc(r.result||'')}" placeholder="Enter result when available">
+      </div>
+    </div>`;
+  }).join('');
+}
+
 
 /* ============================= PEDIATRICS REFERENCE DATA ============================= */
 // WHO Child Growth Standards, birth to 5 years — L/M/S (Box-Cox) parameters per
@@ -3127,23 +3364,100 @@ async function saveMedicineToLibrary(i, btn){
   setTimeout(()=>{ if(btn) btn.textContent = '+ Save this medicine to my list'; }, 1800);
 }
 
+function selectedInvTests(){
+  return (state.draftVisit.investigations||[]).filter(r=>r && r.test).map(r=>r.test);
+}
+function isInvSelected(test){
+  return selectedInvTests().includes(test);
+}
+function toggleInvCheck(test){
+  if(!state.draftVisit.investigations) state.draftVisit.investigations = [];
+  const list = state.draftVisit.investigations;
+  const idx = list.findIndex(r=>r.test===test);
+  if(idx >= 0) list.splice(idx,1);
+  else list.push({test, notes:''});
+  // Drop empty placeholder rows
+  state.draftVisit.investigations = list.filter(r=>r.test);
+  const box = document.getElementById('inv-rows');
+  if(box) box.innerHTML = invRowsHTML();
+}
+function setInvNotes(test, notes){
+  const r = (state.draftVisit.investigations||[]).find(x=>x.test===test);
+  if(r) r.notes = notes;
+}
+function addCustomInv(){
+  const el = document.getElementById('inv-custom');
+  if(!el) return;
+  const test = el.value.trim();
+  if(!test) return;
+  if(!state.draftVisit.investigations) state.draftVisit.investigations = [];
+  if(!isInvSelected(test)) state.draftVisit.investigations.push({test, notes:''});
+  state.draftVisit.investigations = state.draftVisit.investigations.filter(r=>r.test);
+  el.value = '';
+  const box = document.getElementById('inv-rows');
+  if(box) box.innerHTML = invRowsHTML();
+}
+function clearAllInv(){
+  state.draftVisit.investigations = [];
+  const box = document.getElementById('inv-rows');
+  if(box) box.innerHTML = invRowsHTML();
+}
 function invRowsHTML(){
-  return state.draftVisit.investigations.map((r,i)=>`
-    <div class="inv-row" data-inv-idx="${i}">
-      <div class="rx-row-head"><span class="idx">TEST ${i+1}</span>
-        <button class="btn btn-ghost btn-sm" onclick="removeInvRow(${i})">Remove</button></div>
-      <div class="row">
-        <div class="field" style="flex:2;"><label>Test / Investigation</label>
-          <select onchange="pickInvTest(${i},this.value)">
-            <option value="">Select…</option>
-            ${INVESTIGATION_DB.map(t=>`<option value="${esc(t)}" ${r.test===t?'selected':''}>${esc(t)}</option>`).join('')}
-          </select>
-          <input data-f="test" type="text" placeholder="or type a test name" value="${esc(r.test)}"
-            oninput="state.draftVisit.investigations[${i}].test=this.value">
-        </div>
-        <div class="field" style="flex:2;"><label>Clinical notes</label><input data-f="notes" value="${esc(r.notes)}"></div>
+  const selected = selectedInvTests();
+  const selectedSet = new Set(selected);
+  // Custom tests not in the standard list
+  const custom = (state.draftVisit.investigations||[]).filter(r=>r.test && !INVESTIGATION_DB.includes(r.test));
+
+  const groupsHtml = INVESTIGATION_GROUPS.map(g=>{
+    const items = g.tests.map(t=>{
+      const checked = selectedSet.has(t);
+      return `<label class="inv-check ${checked?'inv-check-on':''}">
+        <input type="checkbox" ${checked?'checked':''} onchange="toggleInvCheck(${JSON.stringify(t)})">
+        <span>${esc(t)}</span>
+      </label>`;
+    }).join('');
+    return `<div class="inv-group">
+      <div class="inv-group-title">${esc(g.name)}</div>
+      <div class="inv-check-grid">${items}</div>
+    </div>`;
+  }).join('');
+
+  const customHtml = custom.length ? `
+    <div class="inv-group">
+      <div class="inv-group-title">Other / custom</div>
+      <div class="inv-check-grid">
+        ${custom.map(r=>`<label class="inv-check inv-check-on">
+          <input type="checkbox" checked onchange="toggleInvCheck(${JSON.stringify(r.test)})">
+          <span>${esc(r.test)}</span>
+        </label>`).join('')}
       </div>
-    </div>`).join('');
+    </div>` : '';
+
+  const selectedPanel = selected.length ? `
+    <div class="inv-selected">
+      <div class="rx-row-head" style="margin-bottom:8px;">
+        <strong>${selected.length} selected</strong>
+        <button type="button" class="btn btn-ghost btn-sm" onclick="clearAllInv()">Clear all</button>
+      </div>
+      ${(state.draftVisit.investigations||[]).filter(r=>r.test).map(r=>`
+        <div class="inv-selected-row">
+          <span class="pill">${esc(r.test)}</span>
+          <input type="text" placeholder="Clinical note (optional)" value="${esc(r.notes||'')}"
+            oninput="setInvNotes(${JSON.stringify(r.test)}, this.value)">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="toggleInvCheck(${JSON.stringify(r.test)})">✕</button>
+        </div>`).join('')}
+    </div>` : `<p class="faint" style="margin:8px 0 12px;">Tick the tests needed below — selected ones appear here.</p>`;
+
+  return `
+    ${selectedPanel}
+    ${groupsHtml}
+    ${customHtml}
+    <div class="row" style="margin-top:12px;align-items:flex-end;">
+      <div class="field" style="flex:2;margin-bottom:0;"><label>Add custom test</label>
+        <input id="inv-custom" type="text" placeholder="Type a test not in the list" onkeydown="if(event.key==='Enter'){event.preventDefault();addCustomInv();}">
+      </div>
+      <button type="button" class="btn btn-sm" onclick="addCustomInv()">+ Add</button>
+    </div>`;
 }
 
 
@@ -3310,7 +3624,7 @@ function newVisitView(){
       </div>
 
       <div>
-        <div class="rx-row-head"><h3>Investigations</h3><button class="btn btn-sm" onclick="addInvRow()">+ Add test</button></div>
+        <div class="rx-row-head"><h3>Investigations</h3><span class="faint">Checklist — tick all that apply</span></div>
         <div id="inv-rows">${invRowsHTML()}</div>
       </div>
 
@@ -3464,21 +3778,22 @@ function visitPrintView(patientId, visitId){
       </div>
       ${v.diagnosis?`<div class="sheet-section"><span class="lbl">Clinical diagnosis</span><div>${esc(v.diagnosis)}</div></div>`:''}
       <div style="margin-top:10px;">
-        ${v.investigations.map((r,i)=>`
-          <div class="rx-line"><span class="n">${i+1}.</span>
-            <span><strong>${esc(r.test)}</strong>${r.notes?` — ${esc(r.notes)}`:''}</span></div>`).join('')}
+        ${v.investigations.map((r,i)=>{
+          const panel = getLabPanel(r.test);
+          const paramHint = panel ? `<div class="faint" style="margin:4px 0 8px 26px;">${panel.map(p=>esc(p.label)+(p.unit?' ('+esc(p.unit)+')':'')).join(' · ')}</div>` : '';
+          return `<div class="rx-line"><span class="n">${i+1}.</span>
+            <span><strong>${esc(r.test)}</strong>${r.notes?` — ${esc(r.notes)}`:''}</span></div>${paramHint}`;
+        }).join('')}
       </div>
       <div class="sheet-section" style="margin-top:24px;"><span class="lbl">Requested by</span><div>${esc(v.doctorName)||'—'}</div></div>
     </div>` : '';
 
   const resultsCard = v.investigations.length ? `
-    <div class="card" style="margin-bottom:16px;max-width:560px;">
-      <h2 style="margin-bottom:10px;">Investigation results</h2>
-      ${v.investigations.map((r,i)=>`
-        <div class="field"><label>${esc(r.test)}</label>
-          <input data-result-idx="${i}" value="${esc(r.result||'')}" placeholder="Enter result when available">
-        </div>`).join('')}
-      <button class="btn btn-sm" onclick="saveInvestigationResults('${p.id}','${v.id}')">Save results</button>
+    <div class="card" style="margin-bottom:16px;max-width:720px;">
+      <h2 style="margin-bottom:4px;">Investigation results</h2>
+      <p class="faint" style="margin-bottom:12px;">Structured panels show standard parameters with units and approximate Indian reference ranges by age/sex. Confirm against your lab’s ranges.</p>
+      ${invResultEntryHTML(p, v.investigations)}
+      <button class="btn btn-primary btn-sm" onclick="saveInvestigationResults('${p.id}','${v.id}')">Save results</button>
       <span id="results-saved-msg" class="faint" style="margin-left:8px;"></span>
     </div>` : '';
 
@@ -3502,9 +3817,31 @@ async function saveInvestigationResults(patientId, visitId){
   const p = state.data.patients.find(p=>p.id===patientId);
   const v = p && (p.visits||[]).find(v=>v.id===visitId);
   if(!v) return;
+  // Free-text / notes field
   document.querySelectorAll('[data-result-idx]').forEach(el=>{
     const i = Number(el.getAttribute('data-result-idx'));
     if(v.investigations[i]) v.investigations[i].result = el.value.trim();
+  });
+  // Structured component values
+  document.querySelectorAll('[data-lab-idx]').forEach(el=>{
+    const i = Number(el.getAttribute('data-lab-idx'));
+    const key = el.getAttribute('data-lab-key');
+    if(!v.investigations[i]) return;
+    if(!v.investigations[i].components) v.investigations[i].components = {};
+    v.investigations[i].components[key] = el.value.trim();
+  });
+  // Build a readable summary string from components for print/export
+  v.investigations.forEach(r=>{
+    const panel = getLabPanel(r.test);
+    if(panel && r.components){
+      const summary = formatComponentsResult(r.components, panel);
+      if(summary){
+        // Keep free-text notes if any; prefer structured summary as primary result text
+        r.result = r.result && !r.result.includes(':')
+          ? summary + (r.result ? ' | ' + r.result : '')
+          : (summary || r.result || '');
+      }
+    }
   });
   logAudit('Saved investigation results', `${p.name} (${p.id}) — ${fmtDate(v.date)}`);
   const ok = await saveData();
