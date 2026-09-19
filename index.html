@@ -3871,12 +3871,9 @@ function visitPrintView(patientId, visitId){
       </div>
       ${v.diagnosis?`<div class="sheet-section"><span class="lbl">Clinical diagnosis</span><div>${esc(v.diagnosis)}</div></div>`:''}
       <div style="margin-top:10px;">
-        ${v.investigations.map((r,i)=>{
-          const panel = getLabPanel(r.test);
-          const paramHint = panel ? `<div class="faint" style="margin:4px 0 8px 26px;">${panel.map(p=>esc(p.label)+(p.unit?' ('+esc(p.unit)+')':'')).join(' · ')}</div>` : '';
-          return `<div class="rx-line"><span class="n">${i+1}.</span>
-            <span><strong>${esc(r.test)}</strong>${r.notes?` — ${esc(r.notes)}`:''}</span></div>${paramHint}`;
-        }).join('')}
+        ${v.investigations.map((r,i)=>`
+          <div class="rx-line"><span class="n">${i+1}.</span>
+            <span><strong>${esc(r.test)}</strong>${r.notes?` — ${esc(r.notes)}`:''}</span></div>`).join('')}
       </div>
       <div class="sheet-section" style="margin-top:24px;"><span class="lbl">Requested by</span><div>${esc(v.doctorName)||'—'}</div></div>
     </div>` : '';
