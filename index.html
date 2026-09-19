@@ -109,6 +109,35 @@
 
   .pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11.5px;font-weight:600;background:var(--primary-tint);color:var(--primary-dark);}
 
+  /* ---- Empty states ---- */
+  .empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:34px 16px;gap:6px;}
+  .empty-state .empty-icon{font-size:26px;line-height:1;margin-bottom:6px;opacity:0.85;}
+  .empty-state .empty-title{font-weight:600;color:var(--ink);font-size:14px;}
+  .empty-state .empty-sub{color:var(--ink-faint);font-size:12.5px;max-width:360px;}
+  .empty-state .empty-action{margin-top:10px;}
+
+  /* ---- Autosave / draft indicator ---- */
+  .draft-indicator{
+    display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:99px;
+    background:var(--teal-tint);color:#1B6E63;font-size:12.5px;font-weight:600;
+    border:1px solid rgba(42,157,143,0.25);transition:background var(--transition),color var(--transition);
+  }
+  .draft-indicator.draft-idle{background:var(--bg);color:var(--ink-faint);border-color:var(--line);font-weight:500;}
+  .draft-indicator .draft-dot{
+    width:8px;height:8px;border-radius:99px;background:#2A9D8F;flex-shrink:0;
+    animation:draft-pulse 1.6s ease-in-out infinite;
+  }
+  .draft-indicator.draft-idle .draft-dot{background:var(--ink-faint);animation:none;}
+  @keyframes draft-pulse{
+    0%{box-shadow:0 0 0 0 rgba(42,157,143,0.45);}
+    70%{box-shadow:0 0 0 6px rgba(42,157,143,0);}
+    100%{box-shadow:0 0 0 0 rgba(42,157,143,0);}
+  }
+  .draft-indicator-bar{
+    position:sticky;top:0;z-index:5;display:flex;justify-content:flex-end;
+    margin:-4px -2px 12px;padding:2px;
+  }
+
   /* ---- Shell layout ---- */
   .shell{display:flex;min-height:100vh;}
   .sidebar{
@@ -449,6 +478,16 @@ function esc(str){
   return String(str)
     .replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')
     .replaceAll('"','&quot;').replaceAll("'",'&#39;');
+}
+// Consistent empty-state block: icon + message + optional action button(s).
+// actionHtml can be a single <button> string or several concatenated.
+function emptyState(icon, title, sub, actionHtml){
+  return `<div class="empty-state">
+    <div class="empty-icon">${icon}</div>
+    <div class="empty-title">${title}</div>
+    ${sub ? `<div class="empty-sub">${sub}</div>` : ''}
+    ${actionHtml ? `<div class="empty-action">${actionHtml}</div>` : ''}
+  </div>`;
 }
 function todayStr(){ return new Date().toISOString().slice(0,10); }
 function nowTimeStr(){
@@ -1060,9 +1099,16 @@ async function saveNewPatient(){
   const address = document.getElementById('reg-address').value.trim();
   const allergies = document.getElementById('reg-allergies').value.trim();
   const chronicConditions = document.getElementById('reg-chronic').value.trim();
+  const bloodGroup = document.getElementById('reg-blood-group').value;
+  const emergencyContactName = document.getElementById('reg-emergency-name').value.trim();
+  const emergencyContactPhone = document.getElementById('reg-emergency-phone').value.trim();
+  const aadhaar = document.getElementById('reg-aadhaar').value.trim();
   const err = document.getElementById('reg-error');
   if(!name || (!dob && !age) || !sex || !phone || !address){
     err.textContent = 'Name, date of birth (or age), sex, phone and address are all required.'; return;
+  }
+  if(aadhaar && !/^\d{12}$/.test(aadhaar.replace(/\s/g,''))){
+    err.textContent = 'Aadhaar number should be 12 digits, or left blank.'; return;
   }
   err.textContent = '';
   if(!state.regDupeAcknowledged){
@@ -1075,7 +1121,9 @@ async function saveNewPatient(){
   }
   const patient = {
     id: newPatientId(), name, dob: dob||'', age, sex, phone, address, allergies, chronicConditions,
-    registeredDate: todayStr(), visits: [], growthRecords: [], vaccinations: []
+    bloodGroup, emergencyContactName, emergencyContactPhone, aadhaar: aadhaar.replace(/\s/g,''),
+    pastSurgeries: '', familyHistory: '',
+    registeredDate: todayStr(), visits: [], growthRecords: [], vaccinations: [], certificates: []
   };
   state.data.patients.push(patient);
   logAudit('Registered patient', `${patient.name} (${patient.id})`);
@@ -1096,12 +1144,24 @@ async function saveEditPatient(patientId){
   const address = document.getElementById('ep-address').value.trim();
   const allergies = document.getElementById('ep-allergies').value.trim();
   const chronicConditions = document.getElementById('ep-chronic').value.trim();
+  const bloodGroup = document.getElementById('ep-blood-group').value;
+  const emergencyContactName = document.getElementById('ep-emergency-name').value.trim();
+  const emergencyContactPhone = document.getElementById('ep-emergency-phone').value.trim();
+  const aadhaar = document.getElementById('ep-aadhaar').value.trim();
+  const pastSurgeries = document.getElementById('ep-surgeries').value.trim();
+  const familyHistory = document.getElementById('ep-family-history').value.trim();
   const err = document.getElementById('ep-error');
   if(!name || (!dob && !age) || !sex || !phone || !address){
     if(err) err.textContent = 'Name, date of birth (or age), sex, phone and address are all required.';
     return;
   }
+  if(aadhaar && !/^\d{12}$/.test(aadhaar.replace(/\s/g,''))){
+    if(err) err.textContent = 'Aadhaar number should be 12 digits, or left blank.';
+    return;
+  }
   p.name = name; p.dob = dob||''; p.age = age; p.sex = sex; p.phone = phone; p.address = address; p.allergies = allergies; p.chronicConditions = chronicConditions;
+  p.bloodGroup = bloodGroup; p.emergencyContactName = emergencyContactName; p.emergencyContactPhone = emergencyContactPhone;
+  p.aadhaar = aadhaar.replace(/\s/g,''); p.pastSurgeries = pastSurgeries; p.familyHistory = familyHistory;
   if(p.detailsRedacted){ p.detailsRedacted = false; p.redactedAt = ''; }
   logAudit('Edited patient', `${name} (${p.id})`);
   state.ui.editingPatient = false;
@@ -1170,7 +1230,8 @@ function appointmentsView(){
       <p class="muted" style="margin-bottom:10px;">${fmtDate(date)}${isToday?' — today':''} · ${list.length} booked</p>
       ${list.length
         ? `<table><thead><tr><th>Time</th><th>Patient</th><th>Doctor</th><th>Notes</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
-        : `<p class="muted">No appointments booked for this day.</p>`}
+        : emptyState('📅', 'No appointments booked for this day', isToday ? 'Book a slot to hold a patient\'s place for today.' : 'Book a slot to hold a patient\'s place on this date.',
+            `<button class="btn btn-accent btn-sm" onclick="go('newAppointment')">+ Book appointment</button>`)}
     </div>`;
 }
 
@@ -1457,15 +1518,30 @@ function snapshotHasContent(snap){
   if((snap.investigations||[]).some(r => r && r.test)) return true;
   return false;
 }
+// Updates every draft-indicator element on the page (there are two: one
+// pinned near the top of the form so it's seen without scrolling, one near
+// the Save button). Both share the same markup so this stays in sync.
+function setDraftIndicator(active, text){
+  document.querySelectorAll('.js-draft-indicator').forEach(ind=>{
+    ind.classList.toggle('draft-idle', !active);
+    const label = ind.querySelector('.draft-label');
+    if(label) label.textContent = text;
+  });
+}
 function autosaveVisitDraft(){
   if(!state.data || !isDoctor() || state.route !== 'newVisit' || !state.draftVisit) return;
   const snap = snapshotVisitFormFields();
-  if(!snapshotHasContent(snap)) return;
+  if(!snapshotHasContent(snap)){
+    setDraftIndicator(false, 'Nothing to autosave yet — start typing');
+    return;
+  }
   try{
     localStorage.setItem(VISIT_DRAFT_KEY, JSON.stringify(snap));
-    const ind = document.getElementById('draft-save-indicator');
-    if(ind) ind.textContent = `Draft saved on this device at ${new Date(snap.savedAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`;
-  } catch(e){ /* storage unavailable (e.g. private mode) — nothing we can do locally */ }
+    const when = new Date(snap.savedAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    setDraftIndicator(true, `Draft saved on this device at ${when}`);
+  } catch(e){
+    setDraftIndicator(false, 'Autosave unavailable in this browser mode');
+  }
 }
 function clearVisitDraftStorage(){
   try{ localStorage.removeItem(VISIT_DRAFT_KEY); } catch(e){}
@@ -1499,6 +1575,13 @@ function restoreVisitDraftIfAny(){
   if(snap.referralReason) dv.referralReason = snap.referralReason;
   if(snap.prescriptions && snap.prescriptions.length) dv.prescriptions = snap.prescriptions.map(r=>({medicine:'',dosage:'',frequency:'',duration:'',instructions:'',...r}));
   if(snap.investigations && snap.investigations.length) dv.investigations = snap.investigations.map(r=>({test:'',notes:'',...r}));
+}
+// A small pill with a pulsing dot — reused at the top of the OPD form (so
+// it's visible without scrolling) and again near the Save button. Both
+// copies are kept in sync by setDraftIndicator() via the js-draft-indicator
+// class, so this markup must stay identical wherever it's used.
+function draftIndicatorHTML(){
+  return `<span class="draft-indicator draft-idle js-draft-indicator"><span class="draft-dot"></span><span class="draft-label">Autosaves as you work</span></span>`;
 }
 function cancelVisitFlow(){
   clearVisitDraftStorage();
@@ -2152,7 +2235,7 @@ function dashboardView(){
     <div class="card" style="margin-bottom:18px;">
       <h2 style="margin-bottom:10px;">Follow-ups due</h2>
       ${followUps.length ? `<table><thead><tr><th>Patient</th><th>Due</th><th>Diagnosis</th><th></th></tr></thead><tbody>${followUpRows}</tbody></table>`
-        : `<p class="muted">No follow-ups due.</p>`}
+        : emptyState('✅', 'No follow-ups due', 'Follow-up dates set during a visit will surface here when they\'re due.')}
     </div>` : '';
 
   return `
@@ -2172,7 +2255,8 @@ function dashboardView(){
     <div class="card" style="margin-bottom:18px;">
       <h2 style="margin-bottom:10px;">Waiting for doctor</h2>
       ${waitingVisits.length ? `<table><thead><tr><th>Token</th><th>Patient</th><th>Registered</th><th>Complaints</th><th></th></tr></thead><tbody>${waitingRows}</tbody></table>`
-        : `<p class="muted">No patients waiting right now.</p>`}
+        : emptyState('🪑', 'No waiting patients', 'Check in a patient to add them to today\'s queue.',
+            `<button class="btn btn-accent btn-sm" onclick="go('newVisit')">+ New OPD Visit</button>`)}
     </div>
     ${followUpCard}
     <div class="card">
@@ -2184,7 +2268,9 @@ function dashboardView(){
         </div>` : ''}
       </div>
       ${shownTodaysVisits.length ? `<table><thead><tr><th>Time</th><th>Patient</th><th>Diagnosis</th><th>Doctor</th></tr></thead><tbody>${rows}</tbody></table>`
-        : `<p class="muted">${myVisitsOnly ? 'No visits of yours recorded yet today.' : 'No visits recorded yet today.'}</p>`}
+        : emptyState('📋', myVisitsOnly ? 'No visits of yours recorded yet today' : 'No visits recorded yet today',
+            myVisitsOnly ? 'Visits you attend today will show up here.' : 'Once a patient is checked in and seen, their visit appears here.',
+            `<button class="btn btn-accent btn-sm" onclick="go('newVisit')">+ New OPD Visit</button>`)}
     </div>`;
 }
 function toggleDashboardMineOnly(v){ state.dashboardMineOnly = v; render(); }
@@ -2199,7 +2285,14 @@ async function markFollowUpDone(patientId, visitId){
 
 function patientsTableHTML(){
   const list = filteredPatients();
-  if(list.length===0) return `<p class="muted" style="padding:8px 0;">No patients match your search.</p>`;
+  if(list.length===0){
+    const hasSearch = (state.search||'').trim().length>0;
+    return hasSearch
+      ? emptyState('🔍', 'No patients match your search', 'Try a different name, ID or phone number.',
+          `<button class="btn btn-sm" onclick="state.search='';render()">Clear search</button>`)
+      : emptyState('🗂️', 'No patients registered yet', 'Register your first patient to start building records.',
+          `<button class="btn btn-accent btn-sm" onclick="go('newPatient')">+ New Patient</button>`);
+  }
   const rows = list.map(p=>{
     const lv = lastVisitDate(p);
     return `<tr class="clickable" onclick="go('patient',{patientId:'${p.id}'})">
@@ -2362,6 +2455,7 @@ async function performMerge(){
   go('patient', {patientId: a.id});
 }
 
+const BLOOD_GROUPS = ['A+','A-','B+','B-','AB+','AB-','O+','O-','Unknown'];
 function newPatientView(){
   return `
     <div class="page-head"><h1>Register new patient</h1></div>
@@ -2375,7 +2469,16 @@ function newPatientView(){
       </div>
       <p class="faint" style="margin:-8px 0 12px;">Enter a date of birth when known — it keeps age accurate automatically. Otherwise, enter an approximate age.</p>
       <div class="field"><label>Address *</label><textarea id="reg-address"></textarea></div>
-      <div class="field"><label>Phone *</label><input id="reg-phone" type="text" oninput="state.regDupeAcknowledged=false"></div>
+      <div class="row">
+        <div class="field"><label>Phone *</label><input id="reg-phone" type="text" oninput="state.regDupeAcknowledged=false"></div>
+        <div class="field"><label>Blood group</label><select id="reg-blood-group"><option value="">Not recorded</option>${BLOOD_GROUPS.map(b=>`<option>${b}</option>`).join('')}</select></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Emergency contact name</label><input id="reg-emergency-name" type="text" placeholder="e.g. spouse, parent"></div>
+        <div class="field"><label>Emergency contact phone</label><input id="reg-emergency-phone" type="text"></div>
+      </div>
+      <div class="field"><label>Aadhaar number (optional)</label><input id="reg-aadhaar" type="text" inputmode="numeric" maxlength="12" placeholder="12-digit number — leave blank if not needed">
+        <div class="faint" style="margin-top:4px;">Optional. This is sensitive personal data — only collect it if the clinic genuinely needs it, and only the last 4 digits are shown after saving.</div></div>
       <div class="field"><label>Known allergies</label><input id="reg-allergies" type="text" placeholder="e.g. Penicillin, Sulfa — leave blank if none known"></div>
       <div class="field"><label>Chronic illness / conditions</label><input id="reg-chronic" type="text" placeholder="e.g. Diabetes, Hypertension — leave blank if none known"></div>
       <div id="reg-error" class="error-text"></div>
@@ -2385,6 +2488,14 @@ function newPatientView(){
         <button class="btn btn-ghost" onclick="go('patients')">Cancel</button>
       </div>
     </div>`;
+}
+// Aadhaar (and similar ID numbers) are shown masked everywhere except the
+// edit form, where the full value is needed to correct typos.
+function maskAadhaar(a){
+  const digits = (a||'').replace(/\D/g,'');
+  if(!digits) return '';
+  const last4 = digits.slice(-4);
+  return 'XXXX XXXX ' + last4;
 }
 
 function patientView(patientId){
@@ -2406,9 +2517,18 @@ function patientView(patientId){
     <div class="field"><label>Address *</label><textarea id="ep-address">${esc(p.address)}</textarea></div>
     <div class="row">
       <div class="field"><label>Phone *</label><input id="ep-phone" value="${esc(p.phone)}"></div>
+      <div class="field"><label>Blood group</label><select id="ep-blood-group"><option value="">Not recorded</option>${BLOOD_GROUPS.map(b=>`<option ${p.bloodGroup===b?'selected':''}>${b}</option>`).join('')}</select></div>
     </div>
+    <div class="row">
+      <div class="field"><label>Emergency contact name</label><input id="ep-emergency-name" value="${esc(p.emergencyContactName||'')}"></div>
+      <div class="field"><label>Emergency contact phone</label><input id="ep-emergency-phone" value="${esc(p.emergencyContactPhone||'')}"></div>
+    </div>
+    <div class="field"><label>Aadhaar number (optional)</label><input id="ep-aadhaar" type="text" inputmode="numeric" maxlength="12" value="${esc(p.aadhaar||'')}" placeholder="12-digit number — leave blank if not needed">
+      <div class="faint" style="margin-top:4px;">Sensitive personal data — shown masked (last 4 digits) outside this edit form.</div></div>
     <div class="field"><label>Known allergies</label><input id="ep-allergies" value="${esc(p.allergies)}" placeholder="e.g. Penicillin, Sulfa — leave blank if none known"></div>
     <div class="field"><label>Chronic illness / conditions</label><input id="ep-chronic" value="${esc(p.chronicConditions||'')}" placeholder="e.g. Diabetes, Hypertension — leave blank if none known"></div>
+    <div class="field"><label>Past surgeries</label><textarea id="ep-surgeries" placeholder="e.g. Appendectomy (2019), C-section (2021) — leave blank if none">${esc(p.pastSurgeries||'')}</textarea></div>
+    <div class="field"><label>Family history</label><textarea id="ep-family-history" placeholder="e.g. Father — diabetes; Mother — hypertension — leave blank if none known">${esc(p.familyHistory||'')}</textarea></div>
     <div id="ep-error" class="error-text"></div>
     <div class="row"><button class="btn btn-primary" onclick="saveEditPatient('${p.id}')">Save</button><button class="btn btn-ghost" onclick="cancelEditPatient()">Cancel</button></div>
   ` : `
@@ -2420,9 +2540,17 @@ function patientView(patientId){
       <div><span class="faint">Registered</span><div>${fmtDate(p.registeredDate)}</div></div>
     </div>
     <div><span class="faint">Address</span><div>${esc(p.address)||'—'}</div></div>
-    <div style="margin-top:8px;"><span class="faint">Phone</span><div>${esc(p.phone)||'—'}</div></div>
+    <div class="row" style="margin-top:8px;">
+      <div><span class="faint">Phone</span><div>${esc(p.phone)||'—'}</div></div>
+      <div><span class="faint">Blood group</span><div>${esc(p.bloodGroup)||'<span class="faint">Not recorded</span>'}</div></div>
+    </div>
+    ${(p.emergencyContactName || p.emergencyContactPhone) ? `
+    <div style="margin-top:8px;"><span class="faint">Emergency contact</span><div>${esc(p.emergencyContactName)||'<span class="faint">—</span>'}${p.emergencyContactPhone?' · '+esc(p.emergencyContactPhone):''}</div></div>` : ''}
+    ${p.aadhaar ? `<div style="margin-top:8px;"><span class="faint">Aadhaar</span><div>${esc(maskAadhaar(p.aadhaar))}</div></div>` : ''}
     ${p.allergies ? `<div class="banner" style="background:var(--danger-tint);color:var(--danger);margin-top:10px;"><strong>⚠ Allergies:</strong> ${esc(p.allergies)}</div>` : ''}
     ${p.chronicConditions ? `<div class="banner" style="background:var(--accent-tint);color:var(--accent);margin-top:10px;"><strong>Chronic illness / conditions:</strong> ${esc(p.chronicConditions)}</div>` : ''}
+    ${p.pastSurgeries ? `<div style="margin-top:10px;"><span class="faint">Past surgeries</span><div>${esc(p.pastSurgeries)}</div></div>` : ''}
+    ${p.familyHistory ? `<div style="margin-top:10px;"><span class="faint">Family history</span><div>${esc(p.familyHistory)}</div></div>` : ''}
     <button class="btn btn-sm" style="margin-top:12px;" onclick="startEditPatient()">Edit details</button>
   `;
 
@@ -2465,13 +2593,15 @@ function patientView(patientId){
     <div class="card" style="margin-bottom:18px;">
       <h2 style="margin-bottom:10px;">Visit history</h2>
       ${visits.length ? `<table><thead><tr><th>Date</th><th>Diagnosis</th><th>Doctor</th><th>Status</th><th></th></tr></thead><tbody>${visitRows}</tbody></table>`
-        : `<p class="muted">No visits recorded yet.</p>`}
+        : emptyState('🩺', 'No visits recorded yet', 'Start a new OPD visit to begin this patient\'s record.',
+            `<button class="btn btn-accent btn-sm" onclick="go('newVisit',{patientId:'${p.id}'})">+ New OPD Visit</button>`)}
     </div>
+    ${certificateHistoryHTML(p)}
     ${isDoctor() ? `
     <div class="card" style="border-color:var(--danger);">
       <h2 style="color:var(--danger);margin-bottom:6px;">Danger zone</h2>
       <div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border);">
-        <p class="muted" style="font-size:12.5px;">Clears this patient's name, date of birth/age, phone and address. Their visit history, prescriptions and billing stay on record under the same patient ID — only the personal/contact details are removed. Doesn't touch any other patient or any other data on the site.</p>
+        <p class="muted" style="font-size:12.5px;">Clears this patient's name, date of birth/age, phone, address, emergency contact and Aadhaar number. Their visit history, prescriptions and billing stay on record under the same patient ID — only the personal/contact details are removed. Doesn't touch any other patient or any other data on the site.</p>
         <button class="btn btn-danger btn-sm" onclick="clearPatientDetails('${p.id}')">Clear personal details</button>
       </div>
       <p class="muted" style="font-size:12.5px;">Permanently deletes this patient and their entire visit history. This cannot be undone.</p>
@@ -2512,11 +2642,12 @@ async function clearPatientDetails(patientId){
   const p = state.data.patients.find(p=>p.id===patientId);
   if(!p) return;
   const originalName = p.name;
-  const typed = prompt(`This clears ${p.name}'s name, date of birth/age, phone and address — their visit history, prescriptions and billing stay on record under patient ID ${p.id}.\n\nType the patient ID (${p.id}) to confirm.`);
+  const typed = prompt(`This clears ${p.name}'s name, date of birth/age, phone, address, emergency contact and Aadhaar number — their visit history, prescriptions and billing stay on record under patient ID ${p.id}.\n\nType the patient ID (${p.id}) to confirm.`);
   if(typed === null) return;
   if(typed.trim() !== p.id){ alert('That did not match — nothing was changed.'); return; }
   p.name = '[Details removed]';
   p.dob = ''; p.age = ''; p.phone = ''; p.address = '';
+  p.emergencyContactName = ''; p.emergencyContactPhone = ''; p.aadhaar = '';
   p.detailsRedacted = true;
   p.redactedAt = new Date().toISOString();
   logAudit('Cleared patient details', `${p.id} — was "${originalName}"`);
@@ -3784,7 +3915,10 @@ function newVisitView(){
   const prevSummary = previousVisitSummaryHTML(allergyPatient, dv.editingVisitId);
 
   return `
-    <div class="page-head"><h1>${dv.editingVisitId ? 'Continue Consultation' : 'New OPD Visit'}${allergyPatient && isPediatricPatient(allergyPatient)?' — Pediatric':''}</h1></div>
+    <div class="page-head">
+      <h1>${dv.editingVisitId ? 'Continue Consultation' : 'New OPD Visit'}${allergyPatient && isPediatricPatient(allergyPatient)?' — Pediatric':''}</h1>
+      ${draftIndicatorHTML()}
+    </div>
     ${dv.editingVisitId ? `<div class="banner banner-info">Continuing a visit checked in earlier — patient details are already filled in.</div>` : ''}
     ${allergyBanner}
     ${chronicBanner}
@@ -3843,11 +3977,11 @@ function newVisitView(){
       </div>
 
       <div id="visit-error" class="error-text"></div>
-      <div class="row">
+      <div class="row" style="align-items:center;">
         <button class="btn btn-primary" onclick="saveVisit()">Save visit</button>
         ${cancelBtn}
+        ${draftIndicatorHTML()}
       </div>
-      <p id="draft-save-indicator" class="faint" style="margin-top:8px;"></p>
     </div>`;
 }
 
@@ -4166,7 +4300,8 @@ function pediatricPatientsHTML(){
       <p class="muted" style="margin-bottom:10px;">${list.length} patient${list.length===1?'':'s'} under 16 years</p>
       ${list.length
         ? `<table><thead><tr><th>ID</th><th>Name</th><th>Age / Sex</th><th>Phone</th><th>Last visit</th><th>Vaccines</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
-        : `<p class="muted">No patients under 16 registered yet. Register a child (with date of birth or age under 16) and they will appear here for pediatric OPD.</p>`}
+        : emptyState('🧒', 'No pediatric patients yet', 'Register a child (with date of birth or age under 16) and they will appear here.',
+            `<button class="btn btn-accent btn-sm" onclick="go('newPatient')">+ New Patient</button>`)}
     </div>`;
 }
 
@@ -4585,7 +4720,10 @@ function billingView(){
       ${state.billingUnpaidOnly ? `<p class="muted" style="margin-bottom:10px;">${filtered.length} unpaid visit${filtered.length===1?'':'s'} · ₹${outstandingTotal.toFixed(0)} outstanding</p>` : ''}
       <div id="billing-table-container">
         ${shown.length ? `<table><thead><tr><th>Date</th><th>Patient</th><th>Total</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`
-          : `<p class="muted">${state.billingUnpaidOnly ? 'No unpaid visits — nice.' : 'No visits found.'}</p>`}
+          : state.billingUnpaidOnly
+            ? emptyState('🎉', 'No unpaid visits', 'Every visit that matches your search is fully paid.',
+                `<button class="btn btn-sm" onclick="toggleBillingUnpaidOnly()">Show all visits</button>`)
+            : emptyState('🧾', 'No visits found', q ? 'Try a different name or patient ID.' : 'Billing entries appear here once a visit is recorded.')}
       </div>
     </div>`;
 }
@@ -4779,9 +4917,11 @@ function certificatesView(){
         </div>
       </div>`;
   } else {
+    const priorCerts = (linked.certificates||[]);
     searchBlock = `<div class="banner banner-info" style="margin-bottom:14px;">
       Certificate for <strong>${esc(linked.name)}</strong> <span class="pill">${linked.id}</span> — ${esc(opdAgeDisplay(linked))} / ${esc(linked.sex)}
       <button class="btn btn-ghost btn-sm" style="margin-left:8px;" onclick="state.certPatientId=null;state.search='';render()">Change patient</button>
+      ${priorCerts.length ? `<button class="btn btn-ghost btn-sm" onclick="go('patient',{patientId:'${linked.id}'})">${priorCerts.length} issued previously — view history</button>` : ''}
     </div>`;
   }
 
@@ -4927,6 +5067,31 @@ function certificatesView(){
     <div id="cert-preview"></div>`;
 }
 
+const CERT_TYPE_LABELS = { sick:'Medical leave', fitness:'Fitness', school:'School / College', general:'General medical' };
+function certTypeLabel(type){ return CERT_TYPE_LABELS[type] || type; }
+// Certificate history card — shown on a patient's record so staff can see
+// every certificate issued for them (type, number, date, issuing doctor).
+function certificateHistoryHTML(p){
+  const certs = (p.certificates||[]).slice().sort((a,b)=> (b.issuedAt||'').localeCompare(a.issuedAt||''));
+  const body = certs.length
+    ? `<table><thead><tr><th>Date</th><th>Type</th><th>Certificate no.</th><th>Doctor</th></tr></thead><tbody>
+        ${certs.map(c=>`<tr>
+          <td>${fmtDate(c.date)}</td>
+          <td>${esc(certTypeLabel(c.type))}</td>
+          <td><span class="pill">${esc(c.certNo)}</span></td>
+          <td>${esc(c.doctor)||'<span class="faint">—</span>'}</td>
+        </tr>`).join('')}
+      </tbody></table>`
+    : emptyState('📜', 'No certificates issued yet', 'Certificates generated for this patient will be listed here.');
+  return `
+    <div class="card" style="margin-bottom:18px;">
+      <div class="rx-row-head" style="margin-bottom:10px;">
+        <h2>Certificate history</h2>
+        <button class="btn btn-sm" onclick="state.certPatientId='${p.id}';state.certType='sick';go('certificates')">+ Issue certificate</button>
+      </div>
+      ${body}
+    </div>`;
+}
 function certVal(id){
   const el = document.getElementById(id);
   return el ? el.value.trim() : '';
@@ -5063,6 +5228,8 @@ function renderCertificatePreview(type){
       ${remarks?`<p><strong>Remarks:</strong> ${esc(remarks)}</p>`:''}`;
   }
 
+  if(!p.certificates) p.certificates = [];
+  p.certificates.push({ type, certNo, date: certDateRaw, doctor, issuedAt: new Date().toISOString(), issuedBy: state.session.staffName||'' });
   saveData();
 
   const html = `
