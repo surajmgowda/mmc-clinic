@@ -247,6 +247,21 @@
     margin:14px 22px 18px;padding-top:12px;
     border-top:1px solid var(--line);font-size:13.5px;
   }
+  .opd-doctor-top{
+    margin-top:8px;font-size:13.5px;font-weight:600;
+    color:var(--primary-dark, #1A2744);letter-spacing:0.01em;
+  }
+  .opd-sign{
+    margin:24px 22px 18px;
+    display:flex;flex-direction:column;align-items:flex-end;
+  }
+  .opd-sign-space{
+    width:160px;min-height:52px;
+  }
+  .opd-sign-label{
+    width:160px;text-align:center;font-size:11px;font-weight:600;
+    color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.04em;
+  }
   .opd-card .sheet-title{margin-left:22px;margin-right:22px;}
   .opd-card .rx-line{margin-left:0;margin-right:0;}
   .opd-card .sheet-divider{margin-left:22px;margin-right:22px;}
@@ -3223,6 +3238,7 @@ function visitPrintView(patientId, visitId){
       <div class="letterhead">
         <div class="clinic-name">${esc(ci.name)}</div>
         <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${esc(ci.phone||'')}</div>
+        ${v.doctorName ? `<div class="opd-doctor-top">${esc(v.doctorName)}</div>` : ''}
       </div>
       <div class="opd-badge">${isPediatricPatient(p)?'PEDIATRIC OPD CARD':'OPD CARD'}</div>
 
@@ -3259,10 +3275,13 @@ function visitPrintView(patientId, visitId){
         <div class="opd-block-body opd-dx">${esc(v.diagnosis)||'—'}</div>
       </div>
       ${v.notes ? `<div class="opd-block"><div class="opd-block-title">Notes</div><div class="opd-block-body">${esc(v.notes)}</div></div>` : ''}
-      ${v.followUpDate ? `<div class="opd-followup"><span class="opd-k">Follow-up date</span><span class="opd-v"><strong>${fmtDate(v.followUpDate)}</strong></span></div>` : ''}
       ${v.referredTo ? `<div class="opd-block"><div class="opd-block-title">Referred to</div><div class="opd-block-body">${esc(v.referredTo)}${v.referralReason?' — '+esc(v.referralReason):''}</div></div>` : ''}
-      <div class="opd-doctor"><span class="opd-k">Attending doctor</span><span class="opd-v">${esc(v.doctorName)||'—'}</span></div>
       ${rxBlock}
+      ${v.followUpDate ? `<div class="opd-followup"><span class="opd-k">Follow-up date</span><span class="opd-v"><strong>${fmtDate(v.followUpDate)}</strong></span></div>` : ''}
+      <div class="opd-sign">
+        <div class="opd-sign-space"></div>
+        <div class="opd-sign-label">Signature</div>
+      </div>
     </div>`;
 
   const invSheet = v.investigations.length ? `
