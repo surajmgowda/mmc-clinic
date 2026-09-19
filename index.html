@@ -460,25 +460,63 @@ function formatComplaintsForOpd(raw){
   }).join('\n');
 }
 
-function calcBMI(weightKg, heightCm){
+// BMI classification:
+// Adults (≥16y): Consensus / WHO-Asian cut-offs widely used in India
+//   <18.5 Underweight · 18.5–22.9 Normal · 23–24.9 Overweight · ≥25 Obese
+// Pediatrics (<16y): IAP-oriented age-band screening (confirm with growth chart)
+function calcBMI(weightKg, heightCm, ageYears){
   const w = parseFloat(weightKg), h = parseFloat(heightCm);
   if(!w || !h || h <= 0) return null;
   const m = h / 100;
   const bmi = w / (m * m);
-  let label = '';
-  if(bmi < 18.5) label = 'Underweight';
-  else if(bmi < 25) label = 'Normal';
-  else if(bmi < 30) label = 'Overweight';
-  else label = 'Obese';
-  return { value: Math.round(bmi * 10) / 10, label };
+  const value = Math.round(bmi * 10) / 10;
+  const age = (ageYears != null && ageYears !== '') ? parseFloat(ageYears) : null;
+  const pediatric = age != null && !isNaN(age) && age < 16;
+
+  let label, standard;
+  if(pediatric){
+    standard = 'Indian pediatric (IAP-oriented)';
+    // Approximate age-banded screening thresholds for South Asian children
+    let uw, ow, ob;
+    if(age < 5){ uw = 14; ow = 17; ob = 19; }
+    else if(age < 11){ uw = 14.5; ow = 18; ob = 21; }
+    else { uw = 16; ow = 22; ob = 25; } // 11–15y approaches adult Asian cut-offs
+    if(bmi < uw) label = 'Underweight';
+    else if(bmi < ow) label = 'Normal';
+    else if(bmi < ob) label = 'Overweight';
+    else label = 'Obese';
+  } else {
+    standard = 'Indian adult (Asian cut-offs)';
+    if(bmi < 18.5) label = 'Underweight';
+    else if(bmi < 23) label = 'Normal';
+    else if(bmi < 25) label = 'Overweight';
+    else if(bmi < 30) label = 'Obese';
+    else label = 'Obese (class II)';
+  }
+  return { value, label, standard, pediatric: !!pediatric };
+}
+function patientAgeYearsForBmi(p){
+  if(!p) return null;
+  if(p.dob){
+    const a = ageFromDob(p.dob);
+    if(a) return a.years + (a.months||0)/12;
+  }
+  const m = String(p.age||'').match(/(\d+)/);
+  return m ? parseInt(m[1],10) : null;
 }
 function updateBmiPreview(){
   const w = document.getElementById('v-weight');
   const h = document.getElementById('v-height');
   const el = document.getElementById('v-bmi-preview');
   if(!el) return;
-  const r = calcBMI(w && w.value, h && h.value);
-  el.textContent = r ? `BMI: ${r.value} (${r.label})` : '';
+  let ageY = null;
+  if(state.draftVisit && state.draftVisit.patientId){
+    const p = state.data.patients.find(x=>x.id===state.draftVisit.patientId);
+    ageY = patientAgeYearsForBmi(p);
+  }
+  const r = calcBMI(w && w.value, h && h.value, ageY);
+  if(!r){ el.textContent = ''; return; }
+  el.textContent = `BMI: ${r.value} (${r.label}) · ${r.standard}`;
 }
 
 function normalizeComplaintsInput(raw){
@@ -2542,6 +2580,13 @@ function rxDoseHintHTML(medicineName, knownWt){
   }
   return `<strong>Suggested dose (${knownWt.value} kg):</strong> ${doseMg.toFixed(1)} mg per dose${capped?' (capped)':''}${vol?' — '+vol:''} · ${esc(d.freq)} <span class="faint">— confirm before prescribing</span>`;
 }
+function refreshAllRxDoseHints(){
+  if(!state.draftVisit || !state.draftVisit.prescriptions) return;
+  // Keep draft weight in sync so mostRecentPediatricWeight fallback still works mid-visit
+  const wEl = document.getElementById('v-weight');
+  if(wEl && state.draftVisit.vitals) state.draftVisit.vitals.weight = wEl.value;
+  state.draftVisit.prescriptions.forEach((_,i)=>updateRxDoseHint(i));
+}
 function updateRxDoseHint(i){
   const el = document.getElementById('rx-dose-hint-'+i);
   if(!el) return;
@@ -3180,10 +3225,10 @@ function newVisitView(){
           <div class="field"><label>BP</label><input id="v-bp" placeholder="120/80" value="${esc(dv.vitals.bp)}"></div>
           <div class="field"><label>Pulse</label><input id="v-pulse" placeholder="bpm" value="${esc(dv.vitals.pulse)}"></div>
           <div class="field"><label>Temp</label><input id="v-temp" placeholder="°F" value="${esc(dv.vitals.temp)}"></div>
-          <div class="field"><label>Weight</label><input id="v-weight" placeholder="kg" value="${esc(dv.vitals.weight)}" oninput="updateBmiPreview()"></div>
+          <div class="field"><label>Weight</label><input id="v-weight" placeholder="kg" value="${esc(dv.vitals.weight)}" oninput="updateBmiPreview();refreshAllRxDoseHints()"></div>
           <div class="field"><label>Height</label><input id="v-height" placeholder="cm" value="${esc(dv.vitals.height||'')}" oninput="updateBmiPreview()"></div>
         </div>
-        <div id="v-bmi-preview" class="faint" style="margin-top:4px;">${(()=>{ const r=calcBMI(dv.vitals.weight, dv.vitals.height); return r?`BMI: ${r.value} (${r.label})`:''; })()}</div>
+        <div id="v-bmi-preview" class="faint" style="margin-top:4px;">${(()=>{ const ap=dv.patientId&&state.data.patients.find(x=>x.id===dv.patientId); const r=calcBMI(dv.vitals.weight,dv.vitals.height,patientAgeYearsForBmi(ap)); return r?`BMI: ${r.value} (${r.label}) · ${r.standard}`:''; })()}</div>
       </div>
       <div class="field"><label>Chief complaints</label>
         <textarea id="v-complaints" oninput="onComplaintsInput(this)" placeholder="e.g. Fever × 3 days, Cough × 2 days — shown as C/O on the OPD card">${esc(dv.complaints)}</textarea>
@@ -3337,7 +3382,7 @@ function visitPrintView(patientId, visitId){
         <div class="opd-vital"><span class="opd-vital-lbl">Temp</span><span class="opd-vital-val">${esc(v.vitals.temp)||'—'}</span></div>
         <div class="opd-vital"><span class="opd-vital-lbl">Weight</span><span class="opd-vital-val">${esc(v.vitals.weight)||'—'}${v.vitals.weight?' kg':''}</span></div>
         <div class="opd-vital"><span class="opd-vital-lbl">Height</span><span class="opd-vital-val">${esc(v.vitals.height)||'—'}${v.vitals.height?' cm':''}</span></div>
-        <div class="opd-vital"><span class="opd-vital-lbl">BMI</span><span class="opd-vital-val">${(()=>{ const r=calcBMI(v.vitals.weight,v.vitals.height); return r?r.value+' ('+r.label+')':'—'; })()}</span></div>
+        <div class="opd-vital"><span class="opd-vital-lbl">BMI</span><span class="opd-vital-val">${(()=>{ const r=calcBMI(v.vitals.weight,v.vitals.height,patientAgeYearsForBmi(p)); return r?r.value+' ('+r.label+')':'—'; })()}</span></div>
       </div>
 
       <div class="opd-block">
@@ -3690,6 +3735,16 @@ async function saveGrowthToPatient(){
 // Most recent known weight for a linked child — prefers a saved growth
 // reading, falls back to the last visit's recorded vitals.
 function mostRecentPediatricWeight(p){
+  // Prefer weight typed in the current OPD form (live dose suggestions)
+  if(p && state.draftVisit && state.draftVisit.patientId===p.id){
+    const live = parseFloat(state.draftVisit.vitals && state.draftVisit.vitals.weight);
+    if(live && live > 0) return {value: live, source: 'current visit', date: todayStr()};
+    const wEl = document.getElementById('v-weight');
+    if(wEl){
+      const w = parseFloat(wEl.value);
+      if(w && w > 0) return {value: w, source: 'current visit', date: todayStr()};
+    }
+  }
   const gr = (p.growthRecords||[]).filter(r=>r.weight).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0];
   if(gr) return {value: gr.weight, source: 'a growth reading', date: gr.date};
   const vv = (p.visits||[]).filter(v=>v.vitals && v.vitals.weight).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0];
@@ -3712,9 +3767,9 @@ function doseCalcHTML(){
              <div id="growth-patient-results">${growthPatientResultsHTML()}</div>`}
       </div>
       <div class="row">
-        <div class="field"><label>Child's weight (kg)</label><input id="dc-weight" type="number" step="0.1" inputmode="decimal" value="${knownWeight?knownWeight.value:''}"></div>
+        <div class="field"><label>Child's weight (kg)</label><input id="dc-weight" type="number" step="0.1" inputmode="decimal" value="${knownWeight?knownWeight.value:''}" oninput="calcDose()" onchange="calcDose()"></div>
         <div class="field" style="flex:2;"><label>Medicine</label>
-          <select id="dc-drug">
+          <select id="dc-drug" onchange="calcDose()">
             <option value="">Select…</option>
             ${PEDIATRIC_DOSE_DB.map((d,i)=>`<option value="${i}">${esc(d.name)}</option>`).join('')}
           </select>
@@ -3722,17 +3777,25 @@ function doseCalcHTML(){
       </div>
       ${knownWeight ? `<p class="faint" style="margin:-6px 0 10px;">Weight pulled from ${knownWeight.source} on ${fmtDate(knownWeight.date)} — update it if the child's been weighed since.</p>`
         : linked ? `<p class="faint" style="margin:-6px 0 10px;">No recorded weight found for ${esc(linked.name)} yet — enter it manually.</p>` : ''}
+      <p class="faint" style="margin-bottom:8px;">Dose updates automatically when you change weight or medicine.</p>
       <button class="btn btn-primary" onclick="calcDose()">Calculate dose</button>
       <div id="dose-result" style="margin-top:14px;"></div>
     </div>`;
 }
 
 function calcDose(){
-  const weight = parseFloat(document.getElementById('dc-weight').value);
-  const idx = document.getElementById('dc-drug').value;
+  const weightEl = document.getElementById('dc-weight');
+  const drugEl = document.getElementById('dc-drug');
   const box = document.getElementById('dose-result');
-  if(!weight || idx===''){ box.innerHTML = `<p class="muted">Enter the child's weight and choose a medicine.</p>`; return; }
+  if(!box) return;
+  const weight = weightEl ? parseFloat(weightEl.value) : NaN;
+  const idx = drugEl ? drugEl.value : '';
+  if(!weight || weight <= 0 || idx===''){
+    box.innerHTML = `<p class="muted">Enter the child's weight and choose a medicine — result updates as you type.</p>`;
+    return;
+  }
   const d = PEDIATRIC_DOSE_DB[Number(idx)];
+  if(!d){ box.innerHTML = `<p class="error-text">Unknown medicine.</p>`; return; }
   let doseMg = weight * d.mgPerKg;
   let capped = false;
   if(d.maxMg && doseMg > d.maxMg){ doseMg = d.maxMg; capped = true; }
