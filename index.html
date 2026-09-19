@@ -322,6 +322,17 @@
   .lab-param-grid .lab-head{font-size:11px;font-weight:700;color:var(--ink-soft);text-transform:uppercase;letter-spacing:0.03em;padding-bottom:4px;border-bottom:1px solid var(--line);}
   .lab-param-grid input{width:100%;padding:6px 8px;border:1.5px solid var(--line);border-radius:6px;font-size:13px;}
   .lab-ref{color:var(--ink-soft);font-size:12px;}
+  .qual-row{margin-bottom:12px;}
+  .qual-label{font-size:13px;font-weight:600;margin-bottom:6px;color:var(--ink);}
+  .qual-opts{display:flex;flex-wrap:wrap;gap:8px;}
+  .qual-opt{
+    display:flex;align-items:center;gap:7px;padding:8px 12px;
+    border:1.5px solid var(--line);border-radius:8px;cursor:pointer;
+    font-size:13px;background:var(--surface);user-select:none;
+  }
+  .qual-opt input{width:16px;height:16px;accent-color:var(--primary);margin:0;cursor:pointer;}
+  .qual-opt-on{border-color:var(--primary);background:var(--primary-tint);font-weight:600;color:var(--primary-dark);}
+
   .lab-unit{color:var(--ink-faint);font-size:12px;}
   @media (max-width:640px){
     .lab-param-grid{grid-template-columns:1fr 1fr;gap:4px 8px;}
@@ -2966,10 +2977,64 @@ const LAB_PANELS = {
     {key:'IBili', label:'Indirect bilirubin', unit:'mg/dL', ref:()=>'0.2 – 0.9'}
   ]
 };
+const PN = ['Positive','Negative'];
+const RN = ['Reactive','Non-reactive'];
+const DN = ['Detected','Not detected'];
+const LAB_QUALITATIVE = {
+  'Dengue NS1 Antigen': [{key:'NS1', label:'Dengue NS1', options:PN}],
+  'Dengue IgM/IgG': [
+    {key:'IgM', label:'Dengue IgM', options:PN},
+    {key:'IgG', label:'Dengue IgG', options:PN}
+  ],
+  'Widal Test': [
+    {key:'Widal', label:'Widal (overall)', options:PN},
+    {key:'TO', label:'S. typhi O (TO)', options:['Negative','1:40','1:80','1:160','1:320','1:640']},
+    {key:'TH', label:'S. typhi H (TH)', options:['Negative','1:40','1:80','1:160','1:320','1:640']}
+  ],
+  'Malaria Parasite (MP) Smear': [
+    {key:'MP', label:'Malaria parasite', options:PN},
+    {key:'Species', label:'Species (if positive)', options:['—','P. falciparum','P. vivax','Mixed','Other']}
+  ],
+  'Typhidot': [{key:'Typhidot', label:'Typhidot', options:PN}],
+  'HIV Test': [{key:'HIV', label:'HIV', options:RN}],
+  'HBsAg': [{key:'HBsAg', label:'HBsAg', options:RN}],
+  'HCV': [{key:'HCV', label:'Anti-HCV', options:RN}],
+  'VDRL': [{key:'VDRL', label:'VDRL / RPR', options:RN}],
+  'Sputum for AFB': [{key:'AFB', label:'AFB smear', options:PN}],
+  'Mantoux Test': [
+    {key:'Mantoux', label:'Mantoux', options:PN},
+    {key:'Induration', label:'Induration', options:['< 5 mm','5–9 mm','10–14 mm','≥ 15 mm']}
+  ],
+  'Urine Pregnancy Test': [{key:'UPT', label:'Urine pregnancy test', options:PN}],
+  'COVID-19 RT-PCR / Antigen': [
+    {key:'COVID', label:'COVID-19', options:DN},
+    {key:'Method', label:'Method', options:['Antigen','RT-PCR','Not specified']}
+  ],
+  'Culture & Sensitivity (Urine)': [{key:'Growth', label:'Culture growth', options:['No growth','Growth present']}],
+  'Culture & Sensitivity (Blood)': [{key:'Growth', label:'Culture growth', options:['No growth','Growth present']}]
+};
+function getLabQualitative(testName){
+  if(!testName) return null;
+  if(LAB_QUALITATIVE[testName]) return LAB_QUALITATIVE[testName];
+  const n = testName.toLowerCase();
+  if(n.includes('dengue') && n.includes('ns1')) return LAB_QUALITATIVE['Dengue NS1 Antigen'];
+  if(n.includes('dengue')) return LAB_QUALITATIVE['Dengue IgM/IgG'];
+  if(n.includes('widal')) return LAB_QUALITATIVE['Widal Test'];
+  if(n.includes('malaria') || n.includes('mp smear')) return LAB_QUALITATIVE['Malaria Parasite (MP) Smear'];
+  if(n.includes('typhidot')) return LAB_QUALITATIVE['Typhidot'];
+  if(n.includes('hiv')) return LAB_QUALITATIVE['HIV Test'];
+  if(n.includes('hbsag') || n.includes('hepatitis b')) return LAB_QUALITATIVE['HBsAg'];
+  if(n.includes('hcv') || n.includes('hepatitis c')) return LAB_QUALITATIVE['HCV'];
+  if(n.includes('vdrl') || n.includes('rpr')) return LAB_QUALITATIVE['VDRL'];
+  if(n.includes('afb') || n.includes('sputum')) return LAB_QUALITATIVE['Sputum for AFB'];
+  if(n.includes('mantoux') || n.includes('tuberculin')) return LAB_QUALITATIVE['Mantoux Test'];
+  if(n.includes('pregnancy') || n.includes('upt')) return LAB_QUALITATIVE['Urine Pregnancy Test'];
+  if(n.includes('covid') || n.includes('rt-pcr') || n.includes('antigen')) return LAB_QUALITATIVE['COVID-19 RT-PCR / Antigen'];
+  return null;
+}
 function getLabPanel(testName){
   if(!testName) return null;
   if(LAB_PANELS[testName]) return LAB_PANELS[testName];
-  // Fuzzy match common short names
   const n = testName.toLowerCase();
   if(n.includes('cbc') || n.includes('complete blood')) return LAB_PANELS['Complete Blood Count (CBC)'];
   if(n.includes('lft') || n.includes('liver')) return LAB_PANELS['Liver Function Test (LFT)'];
@@ -2986,12 +3051,40 @@ function formatComponentsResult(components, panel){
     return `${p.label}: ${String(v).trim()}${p.unit?' '+p.unit:''}`;
   }).filter(Boolean).join('; ');
 }
+function qualCheckHTML(i, key, options, current){
+  return `<div class="qual-opts">
+    ${options.map(opt=>{
+      const on = current===opt;
+      return `<label class="qual-opt ${on?'qual-opt-on':''}">
+        <input type="radio" name="qual-${i}-${esc(key)}" value="${esc(opt)}" ${on?'checked':''}
+          data-lab-idx="${i}" data-lab-key="${esc(key)}"
+          onchange="this.closest('.qual-opts').querySelectorAll('.qual-opt').forEach(x=>x.classList.remove('qual-opt-on'));this.parentElement.classList.add('qual-opt-on');">
+        <span>${esc(opt)}</span>
+      </label>`;
+    }).join('')}
+  </div>`;
+}
 function invResultEntryHTML(patient, investigations){
   const ageY = patientAgeYearsForBmi(patient);
   const sex = patient.sex || '';
   return investigations.map((r,i)=>{
-    const panel = getLabPanel(r.test);
+    const qual = getLabQualitative(r.test);
     const comps = r.components || {};
+    if(qual){
+      const rows = qual.map(q=>`
+        <div class="qual-row">
+          <div class="qual-label">${esc(q.label)}</div>
+          ${qualCheckHTML(i, q.key, q.options, comps[q.key]||'')}
+        </div>`).join('');
+      return `<div class="lab-panel">
+        <h3>${esc(r.test)}${r.notes?` <span class="faint">— ${esc(r.notes)}</span>`:''}</h3>
+        ${rows}
+        <div class="field" style="margin-top:10px;margin-bottom:0;"><label>Additional notes</label>
+          <input data-result-idx="${i}" value="${esc(r.result||'')}" placeholder="Optional remarks">
+        </div>
+      </div>`;
+    }
+    const panel = getLabPanel(r.test);
     if(panel){
       const rows = panel.map(p=>{
         const ref = typeof p.ref==='function' ? p.ref(ageY, sex) : (p.ref||'—');
@@ -3833,13 +3926,16 @@ async function saveInvestigationResults(patientId, visitId){
   // Build a readable summary string from components for print/export
   v.investigations.forEach(r=>{
     const panel = getLabPanel(r.test);
-    if(panel && r.components){
-      const summary = formatComponentsResult(r.components, panel);
+    const qual = getLabQualitative(r.test);
+    const spec = panel || qual;
+    if(spec && r.components){
+      const summary = formatComponentsResult(r.components, spec);
       if(summary){
-        // Keep free-text notes if any; prefer structured summary as primary result text
-        r.result = r.result && !r.result.includes(':')
-          ? summary + (r.result ? ' | ' + r.result : '')
-          : (summary || r.result || '');
+        const notes = (r.result||'').trim();
+        // Don't duplicate if result already is the structured summary
+        r.result = notes && notes !== summary && !notes.startsWith(summary)
+          ? summary + (notes.includes(':') ? '' : ' | ' + notes)
+          : (summary || notes);
       }
     }
   });
