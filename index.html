@@ -479,6 +479,17 @@ function esc(str){
     .replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')
     .replaceAll('"','&quot;').replaceAll("'",'&#39;');
 }
+// For embedding a string as a quoted JS argument inside an onclick/onchange
+// HTML attribute that itself uses double quotes (onchange="fn(...)").
+// JSON.stringify() alone isn't safe there: it wraps the value in double
+// quotes, which prematurely closes the surrounding HTML attribute the
+// moment the value contains one (or is just any ordinary string, since the
+// wrapping quotes themselves collide) — the handler then silently never
+// fires. This HTML-escapes the JSON-stringified form so the browser decodes
+// it back to a valid JS string literal at parse time.
+function jsAttr(str){
+  return esc(JSON.stringify(str));
+}
 // Consistent empty-state block: icon + message + optional action button(s).
 // actionHtml can be a single <button> string or several concatenated.
 function emptyState(icon, title, sub, actionHtml){
@@ -1636,9 +1647,16 @@ function applyRxTemplate(){
   const rxIsBlank = dv.prescriptions.length===1 && !dv.prescriptions[0].medicine;
   const invIsBlank = dv.investigations.length===1 && !dv.investigations[0].test;
   dv.prescriptions = (rxIsBlank ? [] : dv.prescriptions).concat((t.prescriptions||[]).map(r=>({...r})));
-  dv.investigations = (invIsBlank ? [] : dv.investigations).concat((t.investigations||[]).map(r=>({...r})));
+  const mergedInv = (invIsBlank ? [] : dv.investigations).concat((t.investigations||[]).map(r=>({...r})));
+  const seenTests = new Set();
+  dv.investigations = mergedInv.filter(r=>{
+    if(!r || !r.test) return false;
+    const key = r.test.trim().toLowerCase();
+    if(!key || seenTests.has(key)) return false; // already have this one — keep the first (preserves any notes already typed)
+    seenTests.add(key);
+    return true;
+  });
   if(!dv.prescriptions.length) dv.prescriptions = [{medicine:'',dosage:'',frequency:'',duration:'',instructions:''}];
-  dv.investigations = (dv.investigations||[]).filter(r=>r && r.test);
   document.getElementById('rx-rows').innerHTML = rxRowsHTML();
   document.getElementById('inv-rows').innerHTML = invRowsHTML();
 }
@@ -3709,7 +3727,9 @@ function selectedInvTests(){
   return (state.draftVisit.investigations||[]).filter(r=>r && r.test).map(r=>r.test);
 }
 function isInvSelected(test){
-  return selectedInvTests().includes(test);
+  const norm = (test||'').trim().toLowerCase();
+  if(!norm) return false;
+  return selectedInvTests().some(t => (t||'').trim().toLowerCase() === norm);
 }
 function toggleInvCheck(test){
   if(!state.draftVisit.investigations) state.draftVisit.investigations = [];
@@ -3753,7 +3773,7 @@ function invRowsHTML(){
     const items = g.tests.map(t=>{
       const checked = selectedSet.has(t);
       return `<label class="inv-check ${checked?'inv-check-on':''}">
-        <input type="checkbox" ${checked?'checked':''} onchange="toggleInvCheck(${JSON.stringify(t)})">
+        <input type="checkbox" ${checked?'checked':''} onchange="toggleInvCheck(${jsAttr(t)})">
         <span>${esc(t)}</span>
       </label>`;
     }).join('');
@@ -3768,7 +3788,7 @@ function invRowsHTML(){
       <div class="inv-group-title">Other / custom</div>
       <div class="inv-check-grid">
         ${custom.map(r=>`<label class="inv-check inv-check-on">
-          <input type="checkbox" checked onchange="toggleInvCheck(${JSON.stringify(r.test)})">
+          <input type="checkbox" checked onchange="toggleInvCheck(${jsAttr(r.test)})">
           <span>${esc(r.test)}</span>
         </label>`).join('')}
       </div>
@@ -3784,8 +3804,8 @@ function invRowsHTML(){
         <div class="inv-selected-row">
           <span class="pill">${esc(r.test)}</span>
           <input type="text" placeholder="Clinical note (optional)" value="${esc(r.notes||'')}"
-            oninput="setInvNotes(${JSON.stringify(r.test)}, this.value)">
-          <button type="button" class="btn btn-ghost btn-sm" onclick="toggleInvCheck(${JSON.stringify(r.test)})">✕</button>
+            oninput="setInvNotes(${jsAttr(r.test)}, this.value)">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="toggleInvCheck(${jsAttr(r.test)})">✕</button>
         </div>`).join('')}
     </div>` : `<p class="faint" style="margin:8px 0 12px;">Tick the tests needed below — selected ones appear here.</p>`;
 
