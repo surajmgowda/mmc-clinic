@@ -228,7 +228,7 @@
     font-family:'Source Serif 4',serif;font-size:22px;font-weight:700;
     color:var(--primary-dark, #1A2744);letter-spacing:-0.01em;
   }
-  .letterhead .clinic-meta{font-size:11.5px;color:var(--ink-soft);margin-top:4px;}
+  .letterhead .clinic-meta{font-size:11.5px;color:var(--ink-soft);margin-top:4px;line-height:1.45;}
   .sheet-title{
     font-size:11px;font-weight:700;letter-spacing:0.08em;color:var(--accent);
     margin:12px 0 10px;text-transform:uppercase;
@@ -400,6 +400,96 @@
   .opd-card .sheet-title{margin-left:22px;margin-right:22px;}
   .opd-card .rx-line{margin-left:0;margin-right:0;}
   .opd-card .sheet-divider{margin-left:22px;margin-right:22px;}
+
+  /* ---- OPD / prescription / investigation card redesign (v2) ---- */
+  .opdx-card{position:relative;}
+  .opdx-card::before{
+    content:"";position:absolute;left:0;top:0;bottom:0;width:6px;
+    background:linear-gradient(180deg,var(--accent) 0%,var(--primary) 100%);
+  }
+  .opdx-inner{padding-left:6px;}
+  .opdx-head{
+    display:flex;align-items:center;gap:14px;
+    padding:18px 24px 16px;background:var(--primary-dark);color:#fff;
+  }
+  .opdx-brand{display:flex;align-items:center;gap:12px;}
+  .opdx-crest{
+    width:38px;height:38px;border-radius:50%;background:var(--accent);
+    display:flex;align-items:center;justify-content:center;flex-shrink:0;
+    font-family:'Source Serif 4',serif;font-weight:700;color:var(--primary-dark);font-size:15px;
+  }
+  .opdx-clinic-name{font-family:'Source Serif 4',serif;font-size:19px;font-weight:700;letter-spacing:0.01em;}
+  .opdx-clinic-meta{font-size:11px;color:rgba(255,255,255,0.72);margin-top:2px;line-height:1.4;}
+  .opdx-strip{
+    padding:10px 24px;background:var(--accent-tint);border-bottom:1px solid rgba(212,160,23,0.3);
+    font-size:11.5px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:var(--accent-dark);
+  }
+  .opdx-patient-band{padding:16px 24px 4px;}
+  .opdx-patient-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+  .opdx-patient-name{font-family:'Source Serif 4',serif;font-size:19px;font-weight:700;color:var(--primary-dark);}
+  .opdx-patient-id{font-size:11.5px;font-weight:700;color:var(--teal);background:var(--teal-tint);padding:3px 10px;border-radius:99px;}
+  .opdx-meta-grid{
+    display:grid;grid-template-columns:1fr 1fr;gap:8px 18px;
+    padding:12px 0 14px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+    margin-bottom:14px;
+  }
+  .opdx-meta-item{display:flex;flex-direction:column;gap:1px;}
+  .opdx-meta-k{font-size:10px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.05em;}
+  .opdx-meta-v{font-size:13.5px;color:var(--ink);font-weight:500;}
+  .opdx-alert-row{display:flex;gap:8px;flex-wrap:wrap;margin:0 24px 14px;}
+  .opdx-alert-chip{
+    font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:7px;
+    background:var(--danger-tint);color:var(--danger);border:1px solid rgba(196,69,54,0.25);
+  }
+  .opdx-alert-chip.chronic{background:var(--primary-tint);color:var(--primary-dark);border-color:rgba(30,78,107,0.2);}
+  .opdx-vitals-row{
+    display:grid;grid-template-columns:repeat(6,1fr);gap:0;
+    margin:0 24px 16px;border:1px solid var(--line);border-radius:10px;overflow:hidden;
+  }
+  .opdx-vital{padding:10px 6px;text-align:center;border-right:1px solid var(--line);}
+  .opdx-vital:last-child{border-right:none;}
+  .opdx-vital-lbl{display:block;font-size:9.5px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px;}
+  .opdx-vital-val{font-family:'Source Serif 4',serif;font-size:16px;font-weight:700;color:var(--primary-dark);}
+  .opdx-vital-unit{font-size:9.5px;color:var(--ink-faint);font-weight:500;}
+  .opdx-clinical{padding:0 24px;}
+  .opdx-c-block{display:flex;gap:12px;padding:11px 0;border-bottom:1px solid var(--line);}
+  .opdx-c-block:last-child{border-bottom:none;}
+  .opdx-c-icon{
+    width:26px;height:26px;border-radius:7px;background:var(--primary-tint);color:var(--primary);
+    flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;
+  }
+  .opdx-c-body{flex:1;min-width:0;}
+  .opdx-c-title{font-size:10.5px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;}
+  .opdx-c-text{font-size:13.5px;line-height:1.5;color:var(--ink);white-space:pre-wrap;}
+  .opdx-c-block.dx .opdx-c-icon{background:var(--accent-tint);color:var(--accent-dark);}
+  .opdx-c-block.dx .opdx-c-text{font-size:15.5px;font-weight:700;color:var(--primary-dark);}
+  .opdx-rx-card{margin:16px 24px 0;border:1px solid var(--line);border-radius:10px;overflow:hidden;}
+  .opdx-rx-head{padding:10px 14px;background:var(--primary-tint);}
+  .opdx-rx-head-title{font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--primary-dark);}
+  .opdx-rx-body{padding:4px 14px 8px;}
+  .opdx-rx-item{display:flex;gap:10px;padding:8px 0;border-bottom:1px dotted var(--line);font-size:13.5px;}
+  .opdx-rx-item:last-child{border-bottom:none;}
+  .opdx-rx-num{width:20px;flex-shrink:0;font-weight:700;color:var(--primary);}
+  .opdx-rx-med{font-weight:700;color:var(--ink);}
+  .opdx-rx-sub{color:var(--ink-soft);font-size:12.5px;margin-top:1px;}
+  .opdx-followup-band{
+    display:flex;justify-content:space-between;align-items:center;gap:10px;
+    margin:16px 24px;padding:11px 14px;background:var(--teal-tint);border-radius:9px;
+    border:1px solid rgba(42,157,143,0.3);
+  }
+  .opdx-followup-k{font-size:10.5px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:0.05em;}
+  .opdx-followup-v{font-family:'Source Serif 4',serif;font-size:15px;font-weight:700;color:var(--primary-dark);}
+  .opdx-foot{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;padding:18px 24px 22px;}
+  .opdx-doctor-block{font-size:12.5px;color:var(--ink-soft);}
+  .opdx-doctor-name{font-size:14px;font-weight:700;color:var(--primary-dark);}
+  .opdx-sign-box{width:150px;text-align:center;flex-shrink:0;}
+  .opdx-sign-line{border-bottom:1px solid var(--ink-faint);height:40px;margin-bottom:6px;}
+  .opdx-sign-lbl{font-size:10px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.05em;}
+  @media print{
+    .opdx-head,.opdx-strip,.opdx-crest,.opdx-alert-chip,.opdx-patient-id,.opdx-rx-head,.opdx-followup-band{
+      -webkit-print-color-adjust:exact;print-color-adjust:exact;
+    }
+  }
   @media print{
     .opd-vital{border:1px solid #ccc;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
     .opd-badge,.opd-demo-row:nth-child(odd),.opd-followup,.letterhead{
@@ -1893,6 +1983,39 @@ function logoImgHTML(ci){
     ? `<img src="${ci.logoDataUrl}" alt="" style="max-height:50px;max-width:170px;margin:0 auto 6px;display:block;">`
     : '';
 }
+// Redesigned letterhead mark: the clinic's uploaded logo if there is one,
+// otherwise a circular initials badge built from its short name.
+function letterheadCrestHTML(ci){
+  if(ci && ci.logoDataUrl){
+    return `<img src="${ci.logoDataUrl}" alt="" style="width:38px;height:38px;border-radius:50%;object-fit:cover;flex-shrink:0;">`;
+  }
+  const source = (ci && ci.shortName) ? ci.shortName : ((ci && ci.name) ? ci.name : '');
+  const initials = source.replace(/[^A-Za-z]/g,'').slice(0,2).toUpperCase() || '•';
+  return `<div class="opdx-crest">${esc(initials)}</div>`;
+}
+// Shared prescription list card used on both the combined OPD card and the
+// standalone "Prescription only" print sheet, so the two always match.
+function rxCardHTML(prescriptions){
+  if(!prescriptions || !prescriptions.length) return '';
+  return `<div class="opdx-rx-card">
+    <div class="opdx-rx-head"><span class="opdx-rx-head-title">Prescription</span></div>
+    <div class="opdx-rx-body">
+      ${prescriptions.map((r,i)=>{
+        const days = daysLabel(r.duration);
+        const qty = computeQuantityLabel(r.medicine, r.frequency, r.duration);
+        const subParts = [r.frequency, days?('× '+days):'', r.instructions].filter(Boolean).join(' · ');
+        return `<div class="opdx-rx-item">
+          <span class="opdx-rx-num">${i+1}.</span>
+          <span>
+            <span class="opdx-rx-med">${esc(r.medicine)}${r.dosage?' '+esc(r.dosage):''}</span>
+            ${subParts?`<div class="opdx-rx-sub">${esc(subParts)}</div>`:''}
+            ${qty?`<div class="opdx-rx-sub">${esc(qty)}</div>`:''}
+          </span>
+        </div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
 
 function downloadTextFile(filename, text, mime){
   const blob = new Blob([text], {type: mime||'text/plain'});
@@ -3320,7 +3443,7 @@ function investigationResultsSheetHTML(p, v, ci){
   return `
     <div class="print-sheet" id="sheet-inv-results">
       <div class="letterhead">${logoImgHTML(ci)}<div class="clinic-name">${esc(ci.name)}</div>
-        <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${ci.phone}</div></div>
+        <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?'<br>':''}${ci.phone}</div></div>
       <div class="sheet-title">LABORATORY REPORT</div>
       <div class="patient-strip">
         <span><strong>${esc(p.name)}</strong> <span class="pill">${p.id}</span> — ${esc(displayAge(p))}, ${esc(p.sex)}</span>
@@ -4061,49 +4184,46 @@ function visitPrintView(patientId, visitId){
   }
   const ci = state.data.clinicInfo;
 
-  const rxBlock = v.prescriptions.length ? `
-      <div class="sheet-divider"></div>
-      <div class="sheet-title">PRESCRIPTION</div>
-      <div>
-        ${v.prescriptions.map((r,i)=>{
-          const days = daysLabel(r.duration);
-          const qty = computeQuantityLabel(r.medicine, r.frequency, r.duration);
-          return `
-          <div class="rx-line"><span class="n">${i+1}.</span>
-            <span><strong>${esc(r.medicine)}</strong>${r.dosage?' '+esc(r.dosage):''}
-            ${r.frequency?' — '+esc(r.frequency):''}${days?' × '+esc(days):''}${r.instructions?' ('+esc(r.instructions)+')':''}
-            ${qty?`<br><span class="faint">${esc(qty)}</span>`:''}</span></div>`;
-        }).join('')}
-      </div>` : '';
-
   const rxOnlySheet = v.prescriptions.length ? `
-    <div class="print-sheet" id="sheet-rx-only">
-      <div class="letterhead">${logoImgHTML(ci)}
-        <div class="clinic-name">${esc(ci.name)}</div>
-        <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${esc(ci.phone||'')}</div>
-        ${v.doctorName ? `<div class="opd-doctor-top">${esc(v.doctorName)}${staffQualification(v.doctorName)?`<div class="opd-doctor-qual">${esc(staffQualification(v.doctorName))}</div>`:''}</div>` : ''}
-      </div>
-      <div class="sheet-title">PRESCRIPTION</div>
-      <div class="patient-strip">
-        <span><strong>${esc(p.name)}</strong> <span class="pill">${p.id}</span> — ${esc(displayAge(p))}, ${esc(p.sex)}</span>
-        <span>${fmtDate(v.date)}${v.time?' · '+esc(v.time):''}</span>
-      </div>
-      ${v.diagnosis ? `<div class="sheet-section"><span class="lbl">Diagnosis</span><div>${esc(v.diagnosis)}</div></div>` : ''}
-      <div style="margin-top:10px;">
-        ${v.prescriptions.map((r,i)=>{
-          const days = daysLabel(r.duration);
-          const qty = computeQuantityLabel(r.medicine, r.frequency, r.duration);
-          return `
-          <div class="rx-line"><span class="n">${i+1}.</span>
-            <span><strong>${esc(r.medicine)}</strong>${r.dosage?' '+esc(r.dosage):''}
-            ${r.frequency?' — '+esc(r.frequency):''}${days?' × '+esc(days):''}${r.instructions?' ('+esc(r.instructions)+')':''}
-            ${qty?`<br><span class="faint">${esc(qty)}</span>`:''}</span></div>`;
-        }).join('')}
-      </div>
-      ${v.followUpDate ? `<div class="opd-followup"><span class="opd-k">Follow-up date</span><span class="opd-v"><strong>${fmtDate(v.followUpDate)}</strong></span></div>` : ''}
-      <div class="opd-sign">
-        <div class="opd-sign-space"></div>
-        <div class="opd-sign-label">Signature</div>
+    <div class="print-sheet opdx-card" id="sheet-rx-only">
+      <div class="opdx-inner">
+        <div class="opdx-head">
+          <div class="opdx-brand">
+            ${letterheadCrestHTML(ci)}
+            <div>
+              <div class="opdx-clinic-name">${esc(ci.name)}</div>
+              <div class="opdx-clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?'<br>':''}${esc(ci.phone||'')}</div>
+            </div>
+          </div>
+        </div>
+        <div class="opdx-strip">Prescription · ${fmtDate(v.date)}${v.time?' · '+esc(v.time):''}</div>
+
+        <div class="opdx-patient-band">
+          <div class="opdx-patient-top">
+            <div class="opdx-patient-name">${esc(p.name)}</div>
+            <div class="opdx-patient-id">${esc(p.id)}</div>
+          </div>
+          <div class="opdx-meta-grid">
+            <div class="opdx-meta-item"><span class="opdx-meta-k">Age / Sex</span><span class="opdx-meta-v">${esc(displayAge(p))}${p.sex?' · '+esc(p.sex):''}</span></div>
+            ${v.doctorName ? `<div class="opdx-meta-item"><span class="opdx-meta-k">Doctor</span><span class="opdx-meta-v">${esc(v.doctorName)}${staffQualification(v.doctorName)?' · '+esc(staffQualification(v.doctorName)):''}</span></div>` : ''}
+          </div>
+        </div>
+
+        ${v.diagnosis ? `<div class="opdx-clinical"><div class="opdx-c-block dx"><div class="opdx-c-icon">D</div><div class="opdx-c-body"><div class="opdx-c-title">Diagnosis</div><div class="opdx-c-text">${esc(v.diagnosis)}</div></div></div></div>` : ''}
+
+        ${rxCardHTML(v.prescriptions)}
+        ${v.followUpDate ? `<div class="opdx-followup-band"><span class="opdx-followup-k">Follow-up</span><span class="opdx-followup-v">${fmtDate(v.followUpDate)}</span></div>` : ''}
+
+        <div class="opdx-foot">
+          <div class="opdx-doctor-block">
+            ${v.doctorName?`<div class="opdx-doctor-name">${esc(v.doctorName)}</div>`:''}
+            ${esc(staffQualification(v.doctorName)||'')}
+          </div>
+          <div class="opdx-sign-box">
+            <div class="opdx-sign-line"></div>
+            <div class="opdx-sign-lbl">Signature</div>
+          </div>
+        </div>
       </div>
     </div>` : '';
 
@@ -4111,79 +4231,121 @@ function visitPrintView(patientId, visitId){
   // details and consultation notes on top (filled in by the receptionist
   // / doctor), prescription at the bottom.
   const formattedComplaints = formatComplaintsForOpd(v.complaints);
-  const complaintsHtml = formattedComplaints === '—'
+  const complaintsHtmlX = formattedComplaints === '—'
     ? '—'
-    : formattedComplaints.split('\n').map(line=>`<div class="opd-complaint">${esc(line)}</div>`).join('');
+    : formattedComplaints.split('\n').map(line=>`<div>${esc(line)}</div>`).join('');
 
   const opdSheet = `
-    <div class="print-sheet opd-card" id="sheet-opd">
-      <div class="letterhead">${logoImgHTML(ci)}
-        <div class="clinic-name">${esc(ci.name)}</div>
-        <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${esc(ci.phone||'')}</div>
-        ${v.doctorName ? `<div class="opd-doctor-top">${esc(v.doctorName)}${staffQualification(v.doctorName)?`<div class="opd-doctor-qual">${esc(staffQualification(v.doctorName))}</div>`:''}</div>` : ''}
-      </div>
-      <div class="opd-badge">${isPediatricPatient(p)?'PEDIATRIC OPD CARD':'OPD CARD'}</div>
+    <div class="print-sheet opdx-card" id="sheet-opd">
+      <div class="opdx-inner">
+        <div class="opdx-head">
+          <div class="opdx-brand">
+            ${letterheadCrestHTML(ci)}
+            <div>
+              <div class="opdx-clinic-name">${esc(ci.name)}</div>
+              <div class="opdx-clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?'<br>':''}${esc(ci.phone||'')}</div>
+            </div>
+          </div>
+        </div>
+        <div class="opdx-strip">${isPediatricPatient(p)?'Pediatric OPD card':'OPD card'} · ${fmtDate(v.date)}${v.time?' · '+esc(v.time):''}</div>
 
-      <div class="opd-demo">
-        <div class="opd-demo-row"><span class="opd-k">Unique ID</span><span class="opd-v"><strong>${esc(p.id)}</strong></span></div>
-        <div class="opd-demo-row"><span class="opd-k">Name</span><span class="opd-v"><strong>${esc(p.name)}</strong></span></div>
-        <div class="opd-demo-row"><span class="opd-k">Age</span><span class="opd-v">${esc(opdAgeDisplay(p))}</span></div>
-        <div class="opd-demo-row"><span class="opd-k">Address</span><span class="opd-v">${esc(p.address)||'—'}</span></div>
-        <div class="opd-demo-row"><span class="opd-k">Phone</span><span class="opd-v">${esc(p.phone)||'—'}</span></div>
-        <div class="opd-demo-row"><span class="opd-k">Date &amp; time</span><span class="opd-v">${fmtDate(v.date)}${v.time?' · '+esc(v.time):''}</span></div>
-        ${v.token!=null?`<div class="opd-demo-row"><span class="opd-k">Token</span><span class="opd-v"><strong style="font-size:18px;">#${v.token}</strong></span></div>`:''}
-        <div class="opd-demo-row"><span class="opd-k">Sex</span><span class="opd-v">${esc(p.sex)||'—'}</span></div>
-        ${p.allergies ? `<div class="opd-demo-row"><span class="opd-k">⚠ Allergies</span><span class="opd-v"><strong>${esc(p.allergies)}</strong></span></div>` : ''}
-        ${p.chronicConditions ? `<div class="opd-demo-row"><span class="opd-k">Chronic illness</span><span class="opd-v">${esc(p.chronicConditions)}</span></div>` : ''}
-      </div>
+        <div class="opdx-patient-band">
+          <div class="opdx-patient-top">
+            <div class="opdx-patient-name">${esc(p.name)}</div>
+            <div class="opdx-patient-id">${esc(p.id)}</div>
+          </div>
+          <div class="opdx-meta-grid">
+            <div class="opdx-meta-item"><span class="opdx-meta-k">Age / Sex</span><span class="opdx-meta-v">${esc(opdAgeDisplay(p))}${p.sex?' · '+esc(p.sex):''}</span></div>
+            <div class="opdx-meta-item"><span class="opdx-meta-k">Phone</span><span class="opdx-meta-v">${esc(p.phone)||'—'}</span></div>
+            <div class="opdx-meta-item" style="grid-column:1 / -1;"><span class="opdx-meta-k">Address</span><span class="opdx-meta-v">${esc(p.address)||'—'}</span></div>
+            ${v.doctorName?`<div class="opdx-meta-item"><span class="opdx-meta-k">Doctor</span><span class="opdx-meta-v">${esc(v.doctorName)}</span></div>`:''}
+            ${staffQualification(v.doctorName)?`<div class="opdx-meta-item"><span class="opdx-meta-k">Qualification</span><span class="opdx-meta-v">${esc(staffQualification(v.doctorName))}</span></div>`:''}
+          </div>
+        </div>
 
-      <div class="opd-vitals" style="grid-template-columns:repeat(auto-fit,minmax(70px,1fr));">
-        <div class="opd-vital"><span class="opd-vital-lbl">BP</span><span class="opd-vital-val">${esc(v.vitals.bp)||'—'}</span></div>
-        <div class="opd-vital"><span class="opd-vital-lbl">Pulse</span><span class="opd-vital-val">${esc(v.vitals.pulse)||'—'}</span></div>
-        <div class="opd-vital"><span class="opd-vital-lbl">Temp</span><span class="opd-vital-val">${esc(v.vitals.temp)||'—'}</span></div>
-        <div class="opd-vital"><span class="opd-vital-lbl">Weight</span><span class="opd-vital-val">${esc(v.vitals.weight)||'—'}${v.vitals.weight?' kg':''}</span></div>
-        <div class="opd-vital"><span class="opd-vital-lbl">Height</span><span class="opd-vital-val">${esc(v.vitals.height)||'—'}${v.vitals.height?' cm':''}</span></div>
-        <div class="opd-vital"><span class="opd-vital-lbl">BMI</span><span class="opd-vital-val">${(()=>{ const r=calcBMI(v.vitals.weight,v.vitals.height,patientAgeYearsForBmi(p)); return r?r.value+' ('+r.label+')':'—'; })()}</span></div>
-      </div>
+        ${(p.allergies || p.chronicConditions) ? `<div class="opdx-alert-row">
+          ${p.allergies?`<span class="opdx-alert-chip">⚠ Allergy — ${esc(p.allergies)}</span>`:''}
+          ${p.chronicConditions?`<span class="opdx-alert-chip chronic">${esc(p.chronicConditions)}</span>`:''}
+        </div>` : ''}
 
-      <div class="opd-block">
-        <div class="opd-block-title">Chief complaints</div>
-        <div class="opd-block-body opd-complaints">${complaintsHtml}</div>
-      </div>
-      <div class="opd-block">
-        <div class="opd-block-title">Examination</div>
-        <div class="opd-block-body">${esc(v.examination)||'—'}</div>
-      </div>
-      <div class="opd-block">
-        <div class="opd-block-title">Diagnosis</div>
-        <div class="opd-block-body opd-dx">${esc(v.diagnosis)||'—'}</div>
-      </div>
-      ${v.notes ? `<div class="opd-block"><div class="opd-block-title">Notes</div><div class="opd-block-body">${esc(v.notes)}</div></div>` : ''}
-      ${v.referredTo ? `<div class="opd-block"><div class="opd-block-title">Referred to</div><div class="opd-block-body">${esc(v.referredTo)}${v.referralReason?' — '+esc(v.referralReason):''}</div></div>` : ''}
-      ${rxBlock}
-      ${v.followUpDate ? `<div class="opd-followup"><span class="opd-k">Follow-up date</span><span class="opd-v"><strong>${fmtDate(v.followUpDate)}</strong></span></div>` : ''}
-      <div class="opd-sign">
-        <div class="opd-sign-space"></div>
-        <div class="opd-sign-label">Signature</div>
+        <div class="opdx-vitals-row">
+          <div class="opdx-vital"><span class="opdx-vital-lbl">BP</span><span class="opdx-vital-val">${esc(v.vitals.bp)||'—'}</span></div>
+          <div class="opdx-vital"><span class="opdx-vital-lbl">Pulse</span><span class="opdx-vital-val">${esc(v.vitals.pulse)||'—'}</span></div>
+          <div class="opdx-vital"><span class="opdx-vital-lbl">Temp</span><span class="opdx-vital-val">${esc(v.vitals.temp)||'—'}${v.vitals.temp?'<span class="opdx-vital-unit">°F</span>':''}</span></div>
+          <div class="opdx-vital"><span class="opdx-vital-lbl">Weight</span><span class="opdx-vital-val">${esc(v.vitals.weight)||'—'}${v.vitals.weight?'<span class="opdx-vital-unit"> kg</span>':''}</span></div>
+          <div class="opdx-vital"><span class="opdx-vital-lbl">Height</span><span class="opdx-vital-val">${esc(v.vitals.height)||'—'}${v.vitals.height?'<span class="opdx-vital-unit"> cm</span>':''}</span></div>
+          <div class="opdx-vital"><span class="opdx-vital-lbl">BMI</span>${(()=>{ const r=calcBMI(v.vitals.weight,v.vitals.height,patientAgeYearsForBmi(p)); return r?`<span class="opdx-vital-val">${r.value}</span><div class="opdx-vital-unit">${esc(r.label)}</div>`:'<span class="opdx-vital-val">—</span>'; })()}</div>
+        </div>
+
+        <div class="opdx-clinical">
+          <div class="opdx-c-block"><div class="opdx-c-icon">C</div><div class="opdx-c-body"><div class="opdx-c-title">Chief complaints</div><div class="opdx-c-text">${complaintsHtmlX}</div></div></div>
+          <div class="opdx-c-block"><div class="opdx-c-icon">E</div><div class="opdx-c-body"><div class="opdx-c-title">Examination</div><div class="opdx-c-text">${esc(v.examination)||'—'}</div></div></div>
+          <div class="opdx-c-block dx"><div class="opdx-c-icon">D</div><div class="opdx-c-body"><div class="opdx-c-title">Diagnosis</div><div class="opdx-c-text">${esc(v.diagnosis)||'—'}</div></div></div>
+          ${v.notes ? `<div class="opdx-c-block"><div class="opdx-c-icon">N</div><div class="opdx-c-body"><div class="opdx-c-title">Notes</div><div class="opdx-c-text">${esc(v.notes)}</div></div></div>` : ''}
+          ${v.referredTo ? `<div class="opdx-c-block"><div class="opdx-c-icon">R</div><div class="opdx-c-body"><div class="opdx-c-title">Referred to</div><div class="opdx-c-text">${esc(v.referredTo)}${v.referralReason?' — '+esc(v.referralReason):''}</div></div></div>` : ''}
+        </div>
+
+        ${rxCardHTML(v.prescriptions)}
+        ${v.followUpDate ? `<div class="opdx-followup-band"><span class="opdx-followup-k">Follow-up</span><span class="opdx-followup-v">${fmtDate(v.followUpDate)}</span></div>` : ''}
+
+        <div class="opdx-foot">
+          <div class="opdx-doctor-block">
+            ${v.doctorName?`<div class="opdx-doctor-name">${esc(v.doctorName)}</div>`:''}
+            ${esc(staffQualification(v.doctorName)||'')}
+          </div>
+          <div class="opdx-sign-box">
+            <div class="opdx-sign-line"></div>
+            <div class="opdx-sign-lbl">Signature</div>
+          </div>
+        </div>
       </div>
     </div>`;
 
   const invSheet = v.investigations.length ? `
-    <div class="print-sheet" id="sheet-inv">
-      <div class="letterhead">${logoImgHTML(ci)}<div class="clinic-name">${esc(ci.name)}</div>
-        <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${ci.phone}</div></div>
-      <div class="sheet-title">INVESTIGATION REQUEST</div>
-      <div class="patient-strip">
-        <span><strong>${esc(p.name)}</strong> <span class="pill">${p.id}</span> — ${esc(displayAge(p))}, ${esc(p.sex)}</span>
-        <span>${fmtDate(v.date)}</span>
+    <div class="print-sheet opdx-card" id="sheet-inv">
+      <div class="opdx-inner">
+        <div class="opdx-head">
+          <div class="opdx-brand">
+            ${letterheadCrestHTML(ci)}
+            <div>
+              <div class="opdx-clinic-name">${esc(ci.name)}</div>
+              <div class="opdx-clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?'<br>':''}${esc(ci.phone||'')}</div>
+            </div>
+          </div>
+        </div>
+        <div class="opdx-strip">Investigation request · ${fmtDate(v.date)}</div>
+
+        <div class="opdx-patient-band">
+          <div class="opdx-patient-top">
+            <div class="opdx-patient-name">${esc(p.name)}</div>
+            <div class="opdx-patient-id">${esc(p.id)}</div>
+          </div>
+          <div class="opdx-meta-grid">
+            <div class="opdx-meta-item"><span class="opdx-meta-k">Age / Sex</span><span class="opdx-meta-v">${esc(displayAge(p))}${p.sex?' · '+esc(p.sex):''}</span></div>
+            ${v.doctorName ? `<div class="opdx-meta-item"><span class="opdx-meta-k">Requested by</span><span class="opdx-meta-v">${esc(v.doctorName)}</span></div>` : ''}
+          </div>
+        </div>
+
+        ${v.diagnosis?`<div class="opdx-clinical"><div class="opdx-c-block dx"><div class="opdx-c-icon">D</div><div class="opdx-c-body"><div class="opdx-c-title">Clinical diagnosis</div><div class="opdx-c-text">${esc(v.diagnosis)}</div></div></div></div>`:''}
+
+        <div class="opdx-rx-card">
+          <div class="opdx-rx-head"><span class="opdx-rx-head-title">Investigations requested</span></div>
+          <div class="opdx-rx-body">
+            ${v.investigations.map((r,i)=>`<div class="opdx-rx-item"><span class="opdx-rx-num">${i+1}.</span><span><span class="opdx-rx-med">${esc(r.test)}</span>${r.notes?`<div class="opdx-rx-sub">${esc(r.notes)}</div>`:''}</span></div>`).join('')}
+          </div>
+        </div>
+
+        <div class="opdx-foot">
+          <div class="opdx-doctor-block">
+            ${v.doctorName?`<div class="opdx-doctor-name">${esc(v.doctorName)}</div>`:''}
+            ${esc(staffQualification(v.doctorName)||'')}
+          </div>
+          <div class="opdx-sign-box">
+            <div class="opdx-sign-line"></div>
+            <div class="opdx-sign-lbl">Signature</div>
+          </div>
+        </div>
       </div>
-      ${v.diagnosis?`<div class="sheet-section"><span class="lbl">Clinical diagnosis</span><div>${esc(v.diagnosis)}</div></div>`:''}
-      <div style="margin-top:10px;">
-        ${v.investigations.map((r,i)=>`
-          <div class="rx-line"><span class="n">${i+1}.</span>
-            <span><strong>${esc(r.test)}</strong>${r.notes?` — ${esc(r.notes)}`:''}</span></div>`).join('')}
-      </div>
-      <div class="sheet-section" style="margin-top:24px;"><span class="lbl">Requested by</span><div>${esc(v.doctorName)||'—'}</div></div>
     </div>` : '';
 
   const resultsCard = v.investigations.length ? `
@@ -4773,7 +4935,7 @@ function billingDetailView(patientId, visitId){
   const receiptSheet = `
     <div class="print-sheet" id="sheet-receipt">
       <div class="letterhead">${logoImgHTML(ci)}<div class="clinic-name">${esc(ci.name)}</div>
-        <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${ci.phone}</div></div>
+        <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?'<br>':''}${ci.phone}</div></div>
       <div class="sheet-title">RECEIPT</div>
       <div class="patient-strip">
         <span><strong>${esc(p.name)}</strong> (${p.id})</span>
@@ -5256,7 +5418,7 @@ function renderCertificatePreview(type){
     <div class="print-sheet opd-card cert-sheet" id="sheet-cert">
       <div class="letterhead">${logoImgHTML(ci)}
         <div class="clinic-name">${esc(ci.name)}</div>
-        <div class="clinic-meta">${esc(ci.address||'')}${ci.address&&ci.phone?' · ':''}${esc(ci.phone||'')}</div>
+        <div class="clinic-meta">${esc(ci.address||'')}${ci.address&&ci.phone?'<br>':''}${esc(ci.phone||'')}</div>
       </div>
       <div class="opd-badge">${esc(title)}</div>
       <div class="cert-meta">
@@ -5309,7 +5471,7 @@ function reportsView(){
   const reportSheet = `
     <div class="print-sheet" id="sheet-report" style="max-width:680px;">
       <div class="letterhead">${logoImgHTML(ci)}<div class="clinic-name">${esc(ci.name)}</div>
-        <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${ci.phone}</div></div>
+        <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?'<br>':''}${ci.phone}</div></div>
       <div class="sheet-title">CLINIC REPORT — ${esc(periodLabel.toUpperCase())}</div>
       <div class="sheet-section"><span class="lbl">Visits</span><div>${stats.visitCount}</div></div>
       <div class="sheet-section"><span class="lbl">New patients</span><div>${stats.newPatients}</div></div>
