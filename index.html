@@ -92,7 +92,7 @@
   .btn[disabled]{opacity:0.45;cursor:not-allowed;}
   .btn-block{width:100%;justify-content:center;}
 
-  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:20px 22px;box-shadow:var(--shadow-sm);overflow:hidden;}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);padding:20px 22px;box-shadow:var(--shadow-sm);}
   .stack{display:flex;flex-direction:column;gap:14px;}
   .muted{color:var(--ink-soft);}
   .faint{color:var(--ink-faint);font-size:12.5px;}
@@ -243,21 +243,6 @@
   .dbx-fdate .m{font-size:8.5px;font-weight:700;color:var(--teal);text-transform:uppercase;}
   .dbx-followup-actions{display:flex;gap:6px;margin-left:auto;flex-shrink:0;}
   .dbx-quick-actions{padding:4px 18px 16px;display:flex;flex-direction:column;gap:8px;}
-
-  /* ---- Shared list / records pages (match dashboard) ---- */
-  .pg-search{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:99px;padding:8px 14px;box-shadow:var(--shadow-sm);flex:1;min-width:180px;max-width:420px;}
-  .pg-search svg{width:14px;height:14px;color:var(--ink-faint);flex-shrink:0;}
-  .pg-search input{border:none;outline:none;font-size:13px;color:var(--ink);width:100%;background:transparent;font-family:inherit;}
-  .pg-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 18px 8px;}
-  .pg-toolbar .field{margin-bottom:0;}
-  .pg-meta{font-size:12px;color:var(--ink-faint);padding:0 18px 10px;}
-  .dbx-qrow.list{align-items:flex-start;}
-  .dbx-qmeta{font-size:11.5px;color:var(--ink-soft);flex-shrink:0;min-width:72px;text-align:right;}
-  .settings-grid{display:grid;grid-template-columns:1fr;gap:16px;max-width:720px;}
-  .set-logo-preview{max-width:88px;max-height:88px;border:1px solid var(--line);border-radius:12px;padding:6px;background:#fff;}
-  .cert-type-bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;}
-  .staff-mini{width:28px;height:28px;border-radius:50%;background:var(--primary-tint);color:var(--primary);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:11px;flex-shrink:0;}
-
 
 
   .search-wrap{position:relative;max-width:340px;}
@@ -642,7 +627,10 @@ let state = {
   loginSelectedName: '',
   ui: { editingPatient: false, resetConfirmText: '', editingStaffName: null },
   regDupeAcknowledged: false, // set once staff confirms a phone-match warning isn't the same person
-  mergeUI: null // { aId, bId, searchA, searchB, choices } — active on the Merge patients screen
+  mergeUI: null, // { aId, bId, searchA, searchB, choices } — active on the Merge patients screen
+  pedTab: 'patients',
+  pedLinkedPatientId: null,
+  pedChartSex: 'Male'
 };
 
 function defaultData(){
@@ -1009,6 +997,12 @@ function go(route, params){
   }
   if(route === 'mergePatients'){
     initMergeUI();
+  }
+  if(route === 'pediatrics'){
+    state.pedTab = state.pedTab || 'patients';
+    if(state.routeParams && state.routeParams.patientId){
+      state.pedLinkedPatientId = state.routeParams.patientId;
+    }
   }
   render();
 }
@@ -1454,50 +1448,43 @@ function appointmentsView(){
   const rows = list.map(a=>{
     const patient = a.patientId ? state.data.patients.find(p=>p.id===a.patientId) : null;
     const nameCell = patient
-      ? `${esc(patient.name)} <span class="pill">${patient.id}</span>`
+      ? `${esc(patient.name)} <span class="pill">${patient.id}</span>${isPediatricPatient(patient)?' <span class="pill" style="background:var(--teal-tint);color:var(--teal);">Ped</span>':''}`
       : `${esc(a.name)}${a.phone?` <span class="faint">${esc(a.phone)}</span>`:''} <span class="faint">(not registered)</span>`;
     const canCheckIn = isToday && a.status==='booked';
     const isPastOrToday = date <= todayStr();
     const statusPill =
       a.status==='checked-in' ? '<span class="pill">Arrived</span>' :
       a.status==='no-show' ? '<span class="pill" style="background:var(--danger-tint);color:var(--danger);">No-show</span>' : '';
-    const displayName = patient ? patient.name : (a.name||'Guest');
-    return `<div class="dbx-qrow list">
-      <div class="dbx-qtime">${esc(a.time)}</div>
-      <div class="dbx-avatar ${avatarColorClass(displayName)}">${esc(initialsOf(displayName))}</div>
-      <div class="dbx-qtext">
-        <div class="dbx-qname">${nameCell}</div>
-        <div class="dbx-qsub">${esc(a.doctorName)||'Any doctor'}${a.notes?' · '+esc(a.notes):''}</div>
-      </div>
-      ${statusPill}
-      ${canCheckIn ? `<button class="dbx-qbtn" onclick="checkInAppointment('${a.id}')">Check in</button>` : ''}
-      ${a.status==='booked' ? `<button class="dbx-qbtn ghost" onclick="startEditAppointment('${a.id}')">Reschedule</button>` : ''}
-      ${a.status==='booked' && isPastOrToday ? `<button class="dbx-qbtn ghost" onclick="markNoShow('${a.id}')">No-show</button>` : ''}
-      ${a.status==='booked' ? `<button class="dbx-qbtn ghost" onclick="cancelAppointment('${a.id}')">Cancel</button>` : ''}
-    </div>`;
+    return `<tr>
+      <td>${esc(a.time)}</td>
+      <td>${nameCell}</td>
+      <td>${esc(a.doctorName)||'<span class="faint">Any</span>'}</td>
+      <td>${esc(a.notes)||'<span class="faint">—</span>'}</td>
+      <td style="white-space:nowrap;">
+        ${statusPill}
+        ${canCheckIn ? `<button class="btn btn-sm btn-accent" onclick="checkInAppointment('${a.id}')">Check in</button>` : ''}
+        ${a.status==='booked' ? `<button class="btn btn-ghost btn-sm" onclick="startEditAppointment('${a.id}')">Reschedule</button>` : ''}
+        ${a.status==='booked' && isPastOrToday ? `<button class="btn btn-ghost btn-sm" onclick="markNoShow('${a.id}')">No-show</button>` : ''}
+        ${a.status==='booked' ? `<button class="btn btn-ghost btn-sm" onclick="cancelAppointment('${a.id}')">Cancel</button>` : ''}
+      </td>
+    </tr>`;
   }).join('');
 
   return `
-    <div class="dbx-topline">
-      <div class="dbx-greet">
-        <div class="dbx-greet-eyebrow">Schedule</div>
-        <h1>Appointments</h1>
-        <p>Book ahead and see the day's booked slots</p>
-      </div>
-      <div class="dbx-actions">
-        <button class="btn btn-accent" onclick="go('newAppointment')">+ Book appointment</button>
-      </div>
+    <div class="page-head">
+      <div><h1>Appointments</h1><p class="muted">Book ahead and see the day's booked slots</p></div>
+      <button class="btn btn-accent" onclick="go('newAppointment')">+ Book appointment</button>
     </div>
-    <div class="dbx-panel">
-      <div class="pg-toolbar">
-        <div class="field" style="max-width:180px;flex:none;margin:0;"><label>Date</label><input type="date" value="${date}" onchange="setApptDate(this.value)"></div>
-        <button class="dbx-qbtn" onclick="shiftApptDate(-1)">‹ Prev</button>
-        <button class="dbx-qbtn ${isToday?'':''}" onclick="goToApptToday()">Today</button>
-        <button class="dbx-qbtn" onclick="shiftApptDate(1)">Next ›</button>
+    <div class="card">
+      <div class="row" style="align-items:flex-end;margin-bottom:14px;">
+        <div class="field" style="max-width:180px;flex:none;"><label>Date</label><input type="date" value="${date}" onchange="setApptDate(this.value)"></div>
+        <button class="btn btn-sm" onclick="shiftApptDate(-1)">‹ Prev day</button>
+        <button class="btn btn-sm" onclick="goToApptToday()">Today</button>
+        <button class="btn btn-sm" onclick="shiftApptDate(1)">Next day ›</button>
       </div>
-      <div class="pg-meta">${fmtDate(date)}${isToday?' — today':''} · ${list.length} booked</div>
+      <p class="muted" style="margin-bottom:10px;">${fmtDate(date)}${isToday?' — today':''} · ${list.length} booked</p>
       ${list.length
-        ? rows
+        ? `<table><thead><tr><th>Time</th><th>Patient</th><th>Doctor</th><th>Notes</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
         : emptyState('📅', 'No appointments booked for this day', isToday ? 'Book a slot to hold a patient\'s place for today.' : 'Book a slot to hold a patient\'s place on this date.',
             `<button class="btn btn-accent btn-sm" onclick="go('newAppointment')">+ Book appointment</button>`)}
     </div>`;
@@ -1582,12 +1569,7 @@ function newAppointmentView(){
   }
 
   return `
-    <div class="dbx-topline">
-      <div class="dbx-greet">
-        <div class="dbx-greet-eyebrow">Schedule</div>
-        <h1>${da.editId ? 'Reschedule appointment' : 'Book appointment'}</h1>
-      </div>
-    </div>
+    <div class="page-head"><h1>${da.editId ? 'Reschedule appointment' : 'Book appointment'}</h1></div>
     <div class="card" style="max-width:520px;">
       ${patientBlock}
       <div class="row" style="margin-top:6px;">
@@ -2447,7 +2429,7 @@ function shellView(){
     ['patients','Patients'],
     ['newVisit', isDoctor() ? 'New OPD Visit' : 'Check In Patient']
   ];
-  if(isDoctor()) mainItems.push(['pediatrics','Pediatrics']);
+  mainItems.push(['pediatrics','Pediatrics']);
   const recordItems = [
     ['billing','Billing'],
     ['certificates','Certificates'],
@@ -2589,7 +2571,32 @@ function dashboardView(){
         <button class="dbx-qbtn wide" onclick="go('newPatient')">+ Register new patient</button>
         <button class="dbx-qbtn wide" onclick="go('newAppointment')">+ Book appointment</button>
         <button class="dbx-qbtn wide" onclick="state.certPatientId=null;state.search='';go('certificates')">+ Issue certificate</button>
+        <button class="dbx-qbtn wide" onclick="go('pediatrics')">🧒 Pediatrics tools</button>
       </div>
+    </div>`;
+
+  const pedList = pediatricPatients();
+  const pedDue = pedList.map(p=>{
+    const due = vaccinationDueSummary(p);
+    return {p, due};
+  }).filter(x=>x.due.overdue).slice(0,8);
+  const pedToday = todaysVisits.filter(({patient})=>isPediatricPatient(patient)).length;
+  const pedPanel = `
+    <div class="dbx-panel">
+      <div class="dbx-panel-head">
+        <h2>Pediatrics${pedList.length?` <span class="count">${pedList.length}</span>`:''}</h2>
+        <button class="btn btn-sm" onclick="go('pediatrics')">Open</button>
+      </div>
+      <div class="dbx-qrow"><div class="dbx-qtext"><div class="dbx-qname">${pedToday} pediatric visit${pedToday===1?'':'s'} today</div>
+        <div class="dbx-qsub">${pedDue.length} child${pedDue.length===1?'':'ren'} with vaccines due or overdue</div></div></div>
+      ${pedDue.length ? pedDue.map(({p,due})=>`
+        <div class="dbx-qrow dbx-clickable" onclick="state.pedLinkedPatientId='${p.id}';state.pedTab='immunization';go('pediatrics')">
+          <div class="dbx-avatar ${avatarColorClass(p.name)}">${esc(initialsOf(p.name))}</div>
+          <div class="dbx-qtext">
+            <div class="dbx-qname">${esc(p.name)} <span class="pill">${p.id}</span></div>
+            <div class="dbx-qsub">${esc(opdAgeDisplay(p))} · ${due.overdue} vaccine${due.overdue===1?'':'s'} due</div>
+          </div>
+        </div>`).join('') : `<div style="padding:8px 18px 16px;" class="faint">No overdue vaccines among registered children.</div>`}
     </div>`;
 
   return `
@@ -2640,6 +2647,7 @@ function dashboardView(){
       </div>
       <div>
         ${followUpCard}
+        ${pedPanel}
         ${quickActionsCard}
       </div>
     </div>`;
@@ -2666,37 +2674,36 @@ function patientsTableHTML(){
   }
   const rows = list.map(p=>{
     const lv = lastVisitDate(p);
-    return `<div class="dbx-qrow dbx-clickable" onclick="go('patient',{patientId:'${p.id}'})">
-      <div class="dbx-avatar ${avatarColorClass(p.name)}">${esc(initialsOf(p.name))}</div>
-      <div class="dbx-qtext">
-        <div class="dbx-qname">${esc(p.name)} <span class="pill">${p.id}</span></div>
-        <div class="dbx-qsub">${esc(displayAge(p))} / ${esc(p.sex)} · ${esc(p.phone)||'no phone'}</div>
-      </div>
-      <div class="dbx-qmeta">${lv?fmtDate(lv):'No visits'}</div>
-    </div>`;
+    const ped = isPediatricPatient(p);
+    const due = ped ? vaccinationDueSummary(p) : null;
+    const vacCell = !ped ? '<span class="faint">—</span>'
+      : due.overdue ? `<span class="pill" style="background:var(--danger-tint);color:var(--danger);">${due.overdue} due</span>`
+      : due.upcoming ? `<span class="pill" style="background:var(--accent-tint);color:var(--accent);">${due.upcoming} upcoming</span>`
+      : '<span class="faint">Up to date</span>';
+    return `<tr class="clickable" onclick="go('patient',{patientId:'${p.id}'})">
+      <td><span class="pill">${p.id}</span></td>
+      <td>${esc(p.name)}${ped?' <span class="pill" style="background:var(--teal-tint);color:var(--teal);">Ped</span>':''}</td>
+      <td>${esc(displayAge(p))} / ${esc(p.sex)}</td>
+      <td>${esc(p.phone)||'<span class="faint">—</span>'}</td>
+      <td>${lv?fmtDate(lv):'<span class="faint">No visits</span>'}</td>
+      <td>${vacCell}</td>
+    </tr>`;
   }).join('');
-  return rows;
+  return `<table><thead><tr><th>ID</th><th>Name</th><th>Age/Sex</th><th>Phone</th><th>Last visit</th><th>Vaccines</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function patientsView(){
   return `
-    <div class="dbx-topline">
-      <div class="dbx-greet">
-        <div class="dbx-greet-eyebrow">Records</div>
-        <h1>Patients</h1>
-        <p>${state.data.patients.length} registered</p>
-      </div>
-      <div class="dbx-actions">
-        ${isDoctor() ? `<button class="btn" onclick="go('mergePatients')">Merge duplicates</button>` : ''}
+    <div class="page-head">
+      <div><h1>Patients</h1><p class="muted">${state.data.patients.length} registered</p></div>
+      <div class="row">
+        ${isDoctor() ? `<button class="btn btn-ghost" onclick="go('mergePatients')">🔗 Merge duplicates</button>` : ''}
         <button class="btn btn-accent" onclick="go('newPatient')">+ New Patient</button>
       </div>
     </div>
-    <div class="dbx-panel">
-      <div class="pg-toolbar">
-        <div class="pg-search">
-          ${navIcon('search')}
-          <input type="text" placeholder="Search by name, ID or phone" value="${esc(state.search)}" oninput="onPatientSearchInput(this.value)">
-        </div>
+    <div class="card">
+      <div class="search-wrap" style="margin-bottom:14px;">
+        <input type="text" placeholder="Search by name, ID or phone" value="${esc(state.search)}" oninput="onPatientSearchInput(this.value)">
       </div>
       <div id="patients-table-container">${patientsTableHTML()}</div>
     </div>`;
@@ -2837,13 +2844,7 @@ async function performMerge(){
 const BLOOD_GROUPS = ['A+','A-','B+','B-','AB+','AB-','O+','O-','Unknown'];
 function newPatientView(){
   return `
-    <div class="dbx-topline">
-      <div class="dbx-greet">
-        <div class="dbx-greet-eyebrow">Records</div>
-        <h1>Register new patient</h1>
-        <p>Required fields are marked with *</p>
-      </div>
-    </div>
+    <div class="page-head"><h1>Register new patient</h1></div>
     <div class="card" style="max-width:520px;">
       <div class="row"><div class="field"><label>Full name *</label><input id="reg-name" type="text"></div></div>
       <div class="row">
@@ -2947,42 +2948,37 @@ function patientView(patientId){
       ? `go('newVisit',{patientId:'${p.id}',editVisitId:'${v.id}'})`
       : `go('visitPrint',{patientId:'${p.id}',visitId:'${v.id}'})`;
     return `
-    <div class="dbx-qrow dbx-clickable" onclick="${clickAction}">
-      <div class="dbx-qtime">${fmtDate(v.date)}</div>
-      <div class="dbx-qtext">
-        <div class="dbx-qname">${isDoctor() ? (esc(v.diagnosis)||'No diagnosis yet') : 'Visit'}</div>
-        <div class="dbx-qsub">${esc(v.doctorName)||'Unassigned'}${v.referredTo?' · referred':''}</div>
-      </div>
-      ${st==='waiting'
-        ? `<span class="dbx-qstatus wait">Waiting${canContinue?' — continue':''}</span>`
-        : '<span class="dbx-qstatus done">Completed</span>'}
-      ${isDoctor() ? `<button class="dbx-qbtn ghost" onclick="event.stopPropagation();deleteVisit('${p.id}','${v.id}')">Delete</button>` : ''}
-    </div>`;
+    <tr class="clickable" onclick="${clickAction}">
+      <td>${fmtDate(v.date)}</td>
+      <td>${isDoctor() ? (esc(v.diagnosis)||'<span class="faint">—</span>') : '<span class="faint">—</span>'}</td>
+      <td>${esc(v.doctorName)||'<span class="faint">—</span>'}</td>
+      <td>${st==='waiting'
+        ? `<span class="pill" style="background:var(--accent-tint);color:var(--accent);">Waiting${canContinue?' — tap to continue':''}</span>`
+        : '<span class="pill">Completed</span>'}
+        ${v.referredTo ? `<span class="pill" title="Referred to ${esc(v.referredTo)}${v.referralReason?' — '+esc(v.referralReason):''}" style="margin-left:4px;">↗ Referred</span>` : ''}</td>
+      <td>${isDoctor() ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();deleteVisit('${p.id}','${v.id}')">Delete</button>` : ''}</td>
+    </tr>`;
   }).join('');
 
   const pedBanner = isPediatricPatient(p)
     ? `<div class="banner banner-info" style="margin-bottom:14px;"><strong>Pediatric patient</strong> (under 16) — ${esc(opdAgeDisplay(p))}
-        ${isDoctor() ? `<button class="btn btn-sm" style="margin-left:8px;" onclick="state.pedLinkedPatientId='${p.id}';state.pedTab='growth';go('pediatrics')">Open in Pediatrics</button>` : ''}
+        <button class="btn btn-sm" style="margin-left:8px;" onclick="state.pedLinkedPatientId='${p.id}';state.pedTab='growth';go('pediatrics')">Open in Pediatrics</button>
       </div>` : '';
   return `
-    <div class="dbx-topline">
-      <div class="dbx-greet">
-        <div class="dbx-greet-eyebrow">Patient record</div>
-        <h1>${esc(p.name)}</h1>
-        <p><span class="pill">${p.id}</span> · ${esc(displayAge(p))} / ${esc(p.sex)}</p>
-      </div>
-      <div class="dbx-actions">
-        <button class="btn" onclick="state.certPatientId='${p.id}';state.certType='sick';go('certificates')">Certificate</button>
+    <div class="page-head">
+      <div><h1>${esc(p.name)} <span class="pill">${p.id}</span></h1></div>
+      <div class="row" style="gap:8px;">
         <button class="btn btn-accent" onclick="go('newVisit',{patientId:'${p.id}'})">+ New OPD Visit</button>
+        <button class="btn" onclick="state.certPatientId='${p.id}';state.certType='sick';go('certificates')">Certificate</button>
       </div>
     </div>
     ${pedBanner}
     <div class="card" style="margin-bottom:18px;">${infoBlock}</div>
-    ${isDoctor() && isPediatricPatient(p) ? growthRecordsCardHTML(p) : ''}
-    ${isDoctor() && isPediatricPatient(p) ? vaccinationCardHTML(p) : ''}
-    <div class="dbx-panel" style="margin-bottom:18px;">
-      <div class="dbx-panel-head"><h2>Visit history${visits.length?` <span class="count">${visits.length}</span>`:''}</h2></div>
-      ${visits.length ? visitRows
+    ${isPediatricPatient(p) ? growthRecordsCardHTML(p) : ''}
+    ${isPediatricPatient(p) ? vaccinationCardHTML(p) : ''}
+    <div class="card" style="margin-bottom:18px;">
+      <h2 style="margin-bottom:10px;">Visit history</h2>
+      ${visits.length ? `<table><thead><tr><th>Date</th><th>Diagnosis</th><th>Doctor</th><th>Status</th><th></th></tr></thead><tbody>${visitRows}</tbody></table>`
         : emptyState('🩺', 'No visits recorded yet', 'Start a new OPD visit to begin this patient\'s record.',
             `<button class="btn btn-accent btn-sm" onclick="go('newVisit',{patientId:'${p.id}'})">+ New OPD Visit</button>`)}
     </div>
@@ -3884,9 +3880,9 @@ function growthChartSVG(measure, sex, childAgeMonths, childValue){
   </svg>`;
 }
 function growthChartCardHTML(measure, sex, childAgeMonths, childValue){
-  const meta = GROWTH_MEASURE_META[measure];
+  const meta = GROWTH_MEASURE_META[measure] || {title: measure, unit: ''};
   return `<div class="card" style="padding:12px 10px;margin-bottom:8px;">
-    <div class="faint" style="margin-bottom:6px;">${meta.title} (${meta.unit}) — dashed lines 3rd/15th/85th/97th, solid line 50th, dot is this reading</div>
+    <div class="faint" style="margin-bottom:6px;">${meta.title}${meta.unit?' ('+meta.unit+')':''} — dashed lines 3rd/15th/85th/97th, solid line 50th, dot is this reading</div>
     ${growthChartSVG(measure, sex, childAgeMonths, childValue)}
   </div>`;
 }
@@ -4661,9 +4657,6 @@ async function saveInvestigationResults(patientId, visitId){
 function setPedTab(tab){ state.pedTab = tab; state.search=''; render(); }
 
 function pediatricsView(){
-  if(!isDoctor()){
-    return `<div class="page-head"><h1>Pediatrics</h1></div><p class="muted">This section is available to staff logged in with the Doctor role.</p>`;
-  }
   const tab = state.pedTab || 'patients';
   const tabs = [
     ['patients','Pediatric patients'],
@@ -4673,8 +4666,8 @@ function pediatricsView(){
     ['reference','Vitals & milestones']
   ];
   const nav = tabs.map(([k,label])=>
-    `<button class="${tab===k?'on':''}" onclick="setPedTab('${k}')">${label}</button>`
-  ).join('');
+    `<button class="btn btn-sm ${tab===k?'btn-primary':''}" onclick="setPedTab('${k}')">${label}</button>`
+  ).join(' ');
   let content;
   if(tab==='dose') content = doseCalcHTML();
   else if(tab==='immunization') content = immunizationHTML();
@@ -4682,17 +4675,11 @@ function pediatricsView(){
   else if(tab==='patients') content = pediatricPatientsHTML();
   else content = growthCalcHTML();
   return `
-    <div class="dbx-topline">
-      <div class="dbx-greet">
-        <div class="dbx-greet-eyebrow">Under 16 years</div>
-        <h1>Pediatrics</h1>
-        <p>Growth, dosing and immunization</p>
-      </div>
-      <div class="dbx-actions">
-        <button class="btn btn-accent" onclick="go('newVisit')">+ New pediatric OPD</button>
-      </div>
+    <div class="page-head">
+      <div><h1>Pediatrics</h1><p class="muted">Patients under 16 years · growth, dosing &amp; immunization</p></div>
+      <button class="btn btn-accent" onclick="go('newVisit')">+ New pediatric OPD</button>
     </div>
-    <div class="dbx-seg" style="margin-bottom:16px;width:fit-content;flex-wrap:wrap;">${nav}</div>
+    <div class="row" style="margin-bottom:18px;flex-wrap:wrap;gap:8px;">${nav}</div>
     ${content}`;
 }
 
@@ -4707,29 +4694,26 @@ function pediatricPatientsHTML(){
   const rows = list.map(p=>{
     const lv = lastVisitDate(p);
     const due = vaccinationDueSummary(p);
-    return `<div class="dbx-qrow dbx-clickable" onclick="go('patient',{patientId:'${p.id}'})">
-      <div class="dbx-avatar ${avatarColorClass(p.name)}">${esc(initialsOf(p.name))}</div>
-      <div class="dbx-qtext">
-        <div class="dbx-qname">${esc(p.name)} <span class="pill">${p.id}</span></div>
-        <div class="dbx-qsub">${esc(opdAgeDisplay(p))} / ${esc(p.sex)} · ${esc(p.phone)||'no phone'} · ${lv?('last visit '+fmtDate(lv)):'no visits'}</div>
-      </div>
-      ${due.overdue ? `<span class="dbx-qstatus wait">${due.overdue} vaccine due</span>`
-        : due.upcoming ? `<span class="dbx-qstatus wait">${due.upcoming} upcoming</span>`
-        : '<span class="dbx-qstatus done">Vaccines up to date</span>'}
-      <button class="dbx-qbtn" onclick="event.stopPropagation();go('newVisit',{patientId:'${p.id}'})">OPD</button>
-    </div>`;
+    return `<tr class="clickable" onclick="go('patient',{patientId:'${p.id}'})">
+      <td><span class="pill">${p.id}</span></td>
+      <td>${esc(p.name)}</td>
+      <td>${esc(opdAgeDisplay(p))} / ${esc(p.sex)}</td>
+      <td>${esc(p.phone)||'<span class="faint">—</span>'}</td>
+      <td>${lv?fmtDate(lv):'<span class="faint">No visits</span>'}</td>
+      <td>${due.overdue ? `<span class="pill" style="background:var(--danger-tint);color:var(--danger);">${due.overdue} due</span>`
+        : due.upcoming ? `<span class="pill" style="background:var(--accent-tint);color:var(--accent);">${due.upcoming} upcoming</span>`
+        : '<span class="faint">Up to date</span>'}</td>
+      <td><button class="btn btn-sm btn-accent" onclick="event.stopPropagation();go('newVisit',{patientId:'${p.id}'})">OPD</button></td>
+    </tr>`;
   }).join('');
   return `
-    <div class="dbx-panel">
-      <div class="pg-toolbar">
-        <div class="pg-search">
-          ${navIcon('search')}
-          <input type="text" placeholder="Search pediatric patients by name, ID or phone" value="${esc(state.search||'')}" oninput="state.search=this.value;render()">
-        </div>
+    <div class="card">
+      <div class="search-wrap" style="margin-bottom:14px;">
+        <input type="text" placeholder="Search pediatric patients by name, ID or phone" value="${esc(state.search||'')}" oninput="state.search=this.value;render()">
       </div>
-      <div class="pg-meta">${list.length} patient${list.length===1?'':'s'} under 16 years</div>
+      <p class="muted" style="margin-bottom:10px;">${list.length} patient${list.length===1?'':'s'} under 16 years</p>
       ${list.length
-        ? rows
+        ? `<table><thead><tr><th>ID</th><th>Name</th><th>Age / Sex</th><th>Phone</th><th>Last visit</th><th>Vaccines</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
         : emptyState('🧒', 'No pediatric patients yet', 'Register a child (with date of birth or age under 16) and they will appear here.',
             `<button class="btn btn-accent btn-sm" onclick="go('newPatient')">+ New Patient</button>`)}
     </div>`;
@@ -5140,39 +5124,26 @@ function billingView(){
     const b = billingOf(visit);
     const total = billingTotal(b);
     return `
-    <div class="dbx-qrow dbx-clickable" onclick="go('billingDetail',{patientId:'${patient.id}',visitId:'${visit.id}'})">
-      <div class="dbx-avatar ${avatarColorClass(patient.name)}">${esc(initialsOf(patient.name))}</div>
-      <div class="dbx-qtext">
-        <div class="dbx-qname">${esc(patient.name)} <span class="pill">${patient.id}</span></div>
-        <div class="dbx-qsub">${fmtDate(visit.date)}${visit.doctorName?' · '+esc(visit.doctorName):''}</div>
-      </div>
-      <div class="dbx-qmeta">${total ? '₹'+total.toFixed(0) : 'Not set'}</div>
-      ${b.paid ? '<span class="dbx-qstatus done">Paid</span>' : '<span class="dbx-qstatus wait">Unpaid</span>'}
-    </div>`;
+    <tr class="clickable" onclick="go('billingDetail',{patientId:'${patient.id}',visitId:'${visit.id}'})">
+      <td>${fmtDate(visit.date)}</td>
+      <td>${esc(patient.name)} <span class="faint">${patient.id}</span></td>
+      <td>${total ? '₹'+total.toFixed(0) : '<span class="faint">Not set</span>'}</td>
+      <td>${b.paid ? '<span class="pill">Paid</span>' : '<span class="pill" style="background:var(--accent-tint);color:var(--accent);">Unpaid</span>'}</td>
+    </tr>`;
   }).join('');
 
   return `
-    <div class="dbx-topline">
-      <div class="dbx-greet">
-        <div class="dbx-greet-eyebrow">Accounts</div>
-        <h1>Billing</h1>
-        <p>Fees, extra charges and payment status</p>
-      </div>
-    </div>
-    <div class="dbx-panel">
-      <div class="pg-toolbar">
-        <div class="pg-search">
-          ${navIcon('search')}
+    <div class="page-head"><h1>Billing</h1></div>
+    <div class="card">
+      <div class="row" style="align-items:flex-end;margin-bottom:10px;flex-wrap:wrap;gap:10px;">
+        <div class="search-wrap" style="flex:1;min-width:180px;">
           <input type="text" placeholder="Search by patient name or ID" value="${esc(state.search)}" oninput="onBillingSearchInput(this.value)">
         </div>
-        <div class="dbx-seg">
-          <button class="${!state.billingUnpaidOnly?'on':''}" onclick="if(state.billingUnpaidOnly)toggleBillingUnpaidOnly()">All</button>
-          <button class="${state.billingUnpaidOnly?'on':''}" onclick="if(!state.billingUnpaidOnly)toggleBillingUnpaidOnly()">Unpaid only</button>
-        </div>
+        <button class="btn btn-sm ${state.billingUnpaidOnly?'btn-primary':''}" onclick="toggleBillingUnpaidOnly()">${state.billingUnpaidOnly ? '✓ Unpaid only' : 'Show unpaid only'}</button>
       </div>
-      ${state.billingUnpaidOnly ? `<div class="pg-meta">${filtered.length} unpaid visit${filtered.length===1?'':'s'} · ₹${outstandingTotal.toFixed(0)} outstanding</div>` : ''}
+      ${state.billingUnpaidOnly ? `<p class="muted" style="margin-bottom:10px;">${filtered.length} unpaid visit${filtered.length===1?'':'s'} · ₹${outstandingTotal.toFixed(0)} outstanding</p>` : ''}
       <div id="billing-table-container">
-        ${shown.length ? rows
+        ${shown.length ? `<table><thead><tr><th>Date</th><th>Patient</th><th>Total</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`
           : state.billingUnpaidOnly
             ? emptyState('🎉', 'No unpaid visits', 'Every visit that matches your search is fully paid.',
                 `<button class="btn btn-sm" onclick="toggleBillingUnpaidOnly()">Show all visits</button>`)
@@ -5220,13 +5191,9 @@ function billingDetailView(patientId, visitId){
     </div>`;
 
   return `
-    <div class="dbx-topline">
-      <div class="dbx-greet">
-        <div class="dbx-greet-eyebrow">Billing</div>
-        <h1>${esc(p.name)}</h1>
-        <p>${p.id} · ${fmtDate(v.date)}</p>
-      </div>
-      <div class="dbx-actions"><button class="btn" onclick="go('billing')">Back to billing</button></div>
+    <div class="page-head">
+      <div><h1>Billing — ${esc(p.name)}</h1><p class="muted">${p.id} · ${fmtDate(v.date)}</p></div>
+      <button class="btn btn-ghost" onclick="go('billing')">Back to billing</button>
     </div>
     <div class="card stack" style="max-width:560px;margin-bottom:16px;">
       <div class="field"><label>Consultation fee (₹)</label><input id="bill-fee" type="number" step="0.01" value="${esc(b.fee)}"></div>
@@ -5316,12 +5283,13 @@ function reportDateRange(preset){
   return {from: iso(new Date(y, m, 1)), to: todayStr()}; // 'month' default
 }
 function computeReportStats(from, to){
-  let visitCount=0, revenue=0, paidRevenue=0, unpaidRevenue=0;
+  let visitCount=0, revenue=0, paidRevenue=0, unpaidRevenue=0, pediatricVisits=0;
   const byDoctor = {};
   state.data.patients.forEach(p=>{
     (p.visits||[]).forEach(v=>{
       if(!v.date || v.date < from || v.date > to) return;
       visitCount++;
+      if(isPediatricPatient(p)) pediatricVisits++;
       const b = billingOf(v);
       const total = billingTotal(b);
       revenue += total;
@@ -5334,7 +5302,7 @@ function computeReportStats(from, to){
   });
   const newPatients = state.data.patients.filter(p=>p.registeredDate && p.registeredDate>=from && p.registeredDate<=to).length;
   const doctorRows = Object.entries(byDoctor).sort((a,b)=>b[1].visits-a[1].visits);
-  return {visitCount, revenue, paidRevenue, unpaidRevenue, newPatients, doctorRows};
+  return {visitCount, revenue, paidRevenue, unpaidRevenue, newPatients, pediatricVisits, doctorRows};
 }
 function setReportRange(preset){
   state.reportRange = preset;
@@ -5355,8 +5323,8 @@ function certificatesView(){
     ['general','General medical']
   ];
   const typeNav = types.map(([k,l])=>
-    `<button class="${type===k?'on':''}" onclick="state.certType='${k}';render()">${l}</button>`
-  ).join('');
+    `<button class="btn btn-sm ${type===k?'btn-primary':''}" onclick="state.certType='${k}';render()">${l}</button>`
+  ).join(' ');
 
   let searchBlock = '';
   if(!linked){
@@ -5514,15 +5482,14 @@ function certificatesView(){
   }
 
   return `
-    <div class="dbx-topline">
-      <div class="dbx-greet">
-        <div class="dbx-greet-eyebrow">Documents</div>
+    <div class="page-head">
+      <div>
         <h1>Medical certificates</h1>
-        <p>Issue leave, fitness, school or general certificates</p>
+        <p class="muted">Issue formal leave, fitness, school or general medical certificates for any patient</p>
       </div>
     </div>
     ${searchBlock}
-    ${linked?`<div class="dbx-seg" style="margin-bottom:16px;width:fit-content;flex-wrap:wrap;">${typeNav}</div>`:''}
+    ${linked?`<div class="row" style="margin-bottom:14px;flex-wrap:wrap;gap:8px;">${typeNav}</div>`:''}
     ${form}
     <div id="cert-preview"></div>`;
 }
@@ -5865,8 +5832,8 @@ function reportsView(){
   const stats = computeReportStats(range.from, range.to);
   const presets = [['today','Today'],['week','This week'],['month','This month'],['lastMonth','Last month'],['all','All time']];
   const presetBtns = presets.map(([k,label])=>
-    `<button class="${state.reportRange===k?'on':''}" onclick="setReportRange('${k}')">${label}</button>`
-  ).join('');
+    `<button class="btn btn-sm ${state.reportRange===k?'btn-primary':''}" onclick="setReportRange('${k}')">${label}</button>`
+  ).join(' ');
   const doctorRows = stats.doctorRows.map(([name,d])=>
     `<tr><td>${esc(name)}</td><td>${d.visits}</td><td>₹${d.revenue.toFixed(0)}</td></tr>`
   ).join('');
@@ -5879,6 +5846,7 @@ function reportsView(){
       <div class="sheet-title">CLINIC REPORT — ${esc(periodLabel.toUpperCase())}</div>
       <div class="sheet-section"><span class="lbl">Visits</span><div>${stats.visitCount}</div></div>
       <div class="sheet-section"><span class="lbl">New patients</span><div>${stats.newPatients}</div></div>
+      <div class="sheet-section"><span class="lbl">Pediatric visits</span><div>${stats.pediatricVisits}</div></div>
       <div class="sheet-section"><span class="lbl">Total revenue</span><div>₹${stats.revenue.toFixed(2)}</div></div>
       <div class="sheet-section"><span class="lbl">Collected</span><div>₹${stats.paidRevenue.toFixed(2)}</div></div>
       <div class="sheet-section"><span class="lbl">Outstanding</span><div>₹${stats.unpaidRevenue.toFixed(2)}</div></div>
@@ -5888,30 +5856,26 @@ function reportsView(){
       <p class="faint" style="margin-top:16px;">Generated ${fmtDate(todayStr())}</p>
     </div>`;
   return `
-    <div class="dbx-topline">
-      <div class="dbx-greet">
-        <div class="dbx-greet-eyebrow">Analytics</div>
-        <h1>Reports</h1>
-        <p>${periodLabel}</p>
-      </div>
-      <div class="dbx-actions">
-        <button class="btn" onclick="printSection('sheet-report')">Print report</button>
-        <button class="btn" onclick="exportReportCSV()">Export CSV</button>
+    <div class="page-head">
+      <h1>Reports</h1>
+      <div class="row">
+        <button class="btn btn-sm" onclick="printSection('sheet-report')">🖶 Print report</button>
+        <button class="btn btn-sm" onclick="exportReportCSV()">⬇ Export CSV</button>
       </div>
     </div>
-    <div class="dbx-seg" style="margin-bottom:16px;width:fit-content;flex-wrap:wrap;">${presetBtns}</div>
-    <div class="dbx-stat-grid">
-      <div class="dbx-stat-card"><div class="dbx-stat-icon teal">${navIcon('statVisits')}</div><div><div class="dbx-stat-num">${stats.visitCount}</div><div class="dbx-stat-label">Visits</div></div></div>
-      <div class="dbx-stat-card"><div class="dbx-stat-icon gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="19" height="19"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg></div><div><div class="dbx-stat-num">₹${stats.revenue.toFixed(0)}</div><div class="dbx-stat-label">Total revenue</div></div></div>
-      <div class="dbx-stat-card"><div class="dbx-stat-icon blue">${navIcon('statPatients')}</div><div><div class="dbx-stat-num">₹${stats.paidRevenue.toFixed(0)}</div><div class="dbx-stat-label">Collected</div></div></div>
-      <div class="dbx-stat-card"><div class="dbx-stat-icon navy">${navIcon('statWaiting')}</div><div><div class="dbx-stat-num">₹${stats.unpaidRevenue.toFixed(0)}</div><div class="dbx-stat-label">Outstanding</div></div></div>
-      <div class="dbx-stat-card"><div class="dbx-stat-icon teal">${navIcon('statPatients')}</div><div><div class="dbx-stat-num">${stats.newPatients}</div><div class="dbx-stat-label">New patients</div></div></div>
+    <div class="row" style="margin-bottom:12px;flex-wrap:wrap;gap:8px;">${presetBtns}</div>
+    <p class="muted" style="margin-bottom:16px;">${periodLabel}</p>
+    <div class="stat-grid" style="margin-bottom:20px;">
+      <div class="stat-card"><div class="stat-num">${stats.visitCount}</div><div class="stat-label">Visits</div></div>
+      <div class="stat-card"><div class="stat-num">₹${stats.revenue.toFixed(0)}</div><div class="stat-label">Total revenue</div></div>
+      <div class="stat-card"><div class="stat-num">₹${stats.paidRevenue.toFixed(0)}</div><div class="stat-label">Collected</div></div>
+      <div class="stat-card"><div class="stat-num">₹${stats.unpaidRevenue.toFixed(0)}</div><div class="stat-label">Outstanding</div></div>
+      <div class="stat-card"><div class="stat-num">${stats.newPatients}</div><div class="stat-label">New patients</div></div>
+      <div class="stat-card"><div class="stat-num">${stats.pediatricVisits}</div><div class="stat-label">Pediatric visits</div></div>
     </div>
-    <div class="dbx-panel">
-      <div class="dbx-panel-head"><h2>Visits by doctor</h2></div>
-      <div style="padding:0 18px 16px;">
+    <div class="card">
+      <h2 style="margin-bottom:10px;">Visits by doctor</h2>
       ${doctorRows ? `<table><thead><tr><th>Doctor</th><th>Visits</th><th>Revenue</th></tr></thead><tbody>${doctorRows}</tbody></table>` : '<p class="muted">No visits in this period.</p>'}
-      </div>
     </div>
     ${reportSheet}`;
 }
@@ -5930,6 +5894,7 @@ function exportReportCSV(){
     ['Metric','Value'],
     ['Visits', stats.visitCount],
     ['New patients', stats.newPatients],
+    ['Pediatric visits', stats.pediatricVisits],
     ['Total revenue', stats.revenue.toFixed(2)],
     ['Collected', stats.paidRevenue.toFixed(2)],
     ['Outstanding', stats.unpaidRevenue.toFixed(2)],
@@ -5993,7 +5958,7 @@ function settingsView(){
       </tr>`;
     }
     return `<tr>
-      <td><div style="display:flex;align-items:center;gap:8px;"><div class="staff-mini">${esc(initialsOf(s.name))}</div><span>${esc(s.name)}${s.owner?' <span class="pill" title="Can manage all staff accounts">Admin</span>':''}</span></div></td>
+      <td>${esc(s.name)}${s.owner?' <span class="pill" title="Can manage all staff accounts">Admin</span>':''}</td>
       <td>${esc(s.role)}</td>
       <td>${esc(s.qualification)||'<span class="faint">—</span>'}</td>
       <td>••••</td>
@@ -6014,13 +5979,7 @@ function settingsView(){
       <td><button class="btn btn-ghost btn-sm" onclick="removeRxTemplate(${i})">Remove</button></td></tr>`).join('');
 
   return `
-    <div class="dbx-topline">
-      <div class="dbx-greet">
-        <div class="dbx-greet-eyebrow">Clinic</div>
-        <h1>Settings</h1>
-        <p>Clinic info, staff, medicines and backups</p>
-      </div>
-    </div>
+    <div class="page-head"><h1>Settings</h1></div>
     <div class="card" style="margin-bottom:18px;max-width:520px;">
       <h2 style="margin-bottom:12px;">Clinic info</h2>
       <div class="field"><label>Clinic name</label><input id="ci-name" value="${esc(ci.name)}"></div>
@@ -6134,24 +6093,15 @@ function auditLogTableHTML(){
 }
 function auditLogView(){
   return `
-    <div class="dbx-topline">
-      <div class="dbx-greet">
-        <div class="dbx-greet-eyebrow">Settings</div>
-        <h1>Activity log</h1>
-        <p>${(state.data.auditLog||[]).length} entries recorded</p>
-      </div>
-      <div class="dbx-actions">
-        <button class="btn" onclick="go('settings')">Back to settings</button>
-      </div>
+    <div class="page-head">
+      <div><h1>Activity log</h1><p class="muted">${(state.data.auditLog||[]).length} entries recorded</p></div>
+      <button class="btn btn-ghost" onclick="go('settings')">Back to settings</button>
     </div>
-    <div class="dbx-panel">
-      <div class="pg-toolbar">
-        <div class="pg-search">
-          ${navIcon('search')}
-          <input type="text" placeholder="Search by staff, action or details" value="${esc(state.auditSearch||'')}" oninput="onAuditSearchInput(this.value)">
-        </div>
+    <div class="card">
+      <div class="search-wrap" style="margin-bottom:14px;">
+        <input type="text" placeholder="Search by staff, action or details" value="${esc(state.auditSearch||'')}" oninput="onAuditSearchInput(this.value)">
       </div>
-      <div id="audit-log-container" style="padding:0 8px 12px;">${auditLogTableHTML()}</div>
+      <div id="audit-log-container">${auditLogTableHTML()}</div>
     </div>`;
 }
 
