@@ -623,14 +623,14 @@ let state = {
   apptError: '',
   auditSearch: '',
   dashboardMineOnly: false, // "My patients today" toggle, doctor dashboard
+  pedTab: 'patients',
+  pedLinkedPatientId: null,
+  pedChartSex: 'Male',
   billingUnpaidOnly: false,
   loginSelectedName: '',
   ui: { editingPatient: false, resetConfirmText: '', editingStaffName: null },
   regDupeAcknowledged: false, // set once staff confirms a phone-match warning isn't the same person
-  mergeUI: null, // { aId, bId, searchA, searchB, choices } — active on the Merge patients screen
-  pedTab: 'patients',
-  pedLinkedPatientId: null,
-  pedChartSex: 'Male'
+  mergeUI: null // { aId, bId, searchA, searchB, choices } — active on the Merge patients screen
 };
 
 function defaultData(){
@@ -997,12 +997,6 @@ function go(route, params){
   }
   if(route === 'mergePatients'){
     initMergeUI();
-  }
-  if(route === 'pediatrics'){
-    state.pedTab = state.pedTab || 'patients';
-    if(state.routeParams && state.routeParams.patientId){
-      state.pedLinkedPatientId = state.routeParams.patientId;
-    }
   }
   render();
 }
@@ -1448,7 +1442,7 @@ function appointmentsView(){
   const rows = list.map(a=>{
     const patient = a.patientId ? state.data.patients.find(p=>p.id===a.patientId) : null;
     const nameCell = patient
-      ? `${esc(patient.name)} <span class="pill">${patient.id}</span>${isPediatricPatient(patient)?' <span class="pill" style="background:var(--teal-tint);color:var(--teal);">Ped</span>':''}`
+      ? `${esc(patient.name)} <span class="pill">${patient.id}</span>`
       : `${esc(a.name)}${a.phone?` <span class="faint">${esc(a.phone)}</span>`:''} <span class="faint">(not registered)</span>`;
     const canCheckIn = isToday && a.status==='booked';
     const isPastOrToday = date <= todayStr();
@@ -2564,6 +2558,29 @@ function dashboardView(){
         : `<div style="padding:0 4px;">${emptyState('✅', 'No follow-ups due', 'Follow-up dates set during a visit will surface here when they\'re due.')}</div>`}
     </div>` : '';
 
+  const pedDueList = pediatricPatients().map(p=>{
+    const due = vaccinationDueSummary(p);
+    return {p, due};
+  }).filter(x=>x.due.overdue).sort((a,b)=>b.due.overdue-a.due.overdue).slice(0,8);
+  const pedDueRows = pedDueList.map(({p,due})=>`
+    <div class="dbx-qrow dbx-clickable" onclick="state.pedLinkedPatientId='${p.id}';state.pedTab='immunization';go('pediatrics')">
+      <div class="dbx-avatar ${avatarColorClass(p.name)}">${esc(initialsOf(p.name))}</div>
+      <div class="dbx-qtext">
+        <div class="dbx-qname">${esc(p.name)} <span class="pill">${p.id}</span></div>
+        <div class="dbx-qsub">${esc(opdAgeDisplay(p))} · ${due.overdue} vaccine${due.overdue===1?'':'s'} due</div>
+      </div>
+      <span class="dbx-qstatus wait">Due</span>
+    </div>`).join('');
+  const pedDueCard = `
+    <div class="dbx-panel">
+      <div class="dbx-panel-head">
+        <h2>Pediatric vaccines due${pedDueList.length?` <span class="count">${pedDueList.length}</span>`:''}</h2>
+        <button class="btn btn-ghost btn-sm" onclick="go('pediatrics')">Open</button>
+      </div>
+      ${pedDueList.length ? pedDueRows
+        : `<div style="padding:0 4px;">${emptyState('💉', 'No overdue vaccines in the list', 'Children under 16 with due or overdue IAP/UIP doses appear here.')}</div>`}
+    </div>`;
+
   const quickActionsCard = `
     <div class="dbx-panel">
       <div class="dbx-panel-head"><h2>Quick actions</h2></div>
@@ -2573,30 +2590,6 @@ function dashboardView(){
         <button class="dbx-qbtn wide" onclick="state.certPatientId=null;state.search='';go('certificates')">+ Issue certificate</button>
         <button class="dbx-qbtn wide" onclick="go('pediatrics')">🧒 Pediatrics tools</button>
       </div>
-    </div>`;
-
-  const pedList = pediatricPatients();
-  const pedDue = pedList.map(p=>{
-    const due = vaccinationDueSummary(p);
-    return {p, due};
-  }).filter(x=>x.due.overdue).slice(0,8);
-  const pedToday = todaysVisits.filter(({patient})=>isPediatricPatient(patient)).length;
-  const pedPanel = `
-    <div class="dbx-panel">
-      <div class="dbx-panel-head">
-        <h2>Pediatrics${pedList.length?` <span class="count">${pedList.length}</span>`:''}</h2>
-        <button class="btn btn-sm" onclick="go('pediatrics')">Open</button>
-      </div>
-      <div class="dbx-qrow"><div class="dbx-qtext"><div class="dbx-qname">${pedToday} pediatric visit${pedToday===1?'':'s'} today</div>
-        <div class="dbx-qsub">${pedDue.length} child${pedDue.length===1?'':'ren'} with vaccines due or overdue</div></div></div>
-      ${pedDue.length ? pedDue.map(({p,due})=>`
-        <div class="dbx-qrow dbx-clickable" onclick="state.pedLinkedPatientId='${p.id}';state.pedTab='immunization';go('pediatrics')">
-          <div class="dbx-avatar ${avatarColorClass(p.name)}">${esc(initialsOf(p.name))}</div>
-          <div class="dbx-qtext">
-            <div class="dbx-qname">${esc(p.name)} <span class="pill">${p.id}</span></div>
-            <div class="dbx-qsub">${esc(opdAgeDisplay(p))} · ${due.overdue} vaccine${due.overdue===1?'':'s'} due</div>
-          </div>
-        </div>`).join('') : `<div style="padding:8px 18px 16px;" class="faint">No overdue vaccines among registered children.</div>`}
     </div>`;
 
   return `
@@ -2621,6 +2614,7 @@ function dashboardView(){
       <div class="dbx-stat-card"><div class="dbx-stat-icon teal">${navIcon('statVisits')}</div><div><div class="dbx-stat-num">${todaysVisits.length}</div><div class="dbx-stat-label">Visits today</div></div></div>
       <div class="dbx-stat-card"><div class="dbx-stat-icon gold">${navIcon('statWaiting')}</div><div><div class="dbx-stat-num">${waitingVisits.length}</div><div class="dbx-stat-label">Waiting for doctor</div></div></div>
       <div class="dbx-stat-card"><div class="dbx-stat-icon navy">${navIcon('statAppt')}</div><div><div class="dbx-stat-num">${appointmentsForDate(today).filter(a=>a.status==='booked').length}</div><div class="dbx-stat-label">Appointments booked today</div></div></div>
+      <div class="dbx-stat-card"><div class="dbx-stat-icon teal">${navIcon('pediatrics')}</div><div><div class="dbx-stat-num">${pediatricPatients().length}</div><div class="dbx-stat-label">Pediatric patients</div></div></div>
     </div>
 
     <div class="dbx-two-col">
@@ -2647,7 +2641,7 @@ function dashboardView(){
       </div>
       <div>
         ${followUpCard}
-        ${pedPanel}
+        ${pedDueCard}
         ${quickActionsCard}
       </div>
     </div>`;
@@ -2674,22 +2668,15 @@ function patientsTableHTML(){
   }
   const rows = list.map(p=>{
     const lv = lastVisitDate(p);
-    const ped = isPediatricPatient(p);
-    const due = ped ? vaccinationDueSummary(p) : null;
-    const vacCell = !ped ? '<span class="faint">—</span>'
-      : due.overdue ? `<span class="pill" style="background:var(--danger-tint);color:var(--danger);">${due.overdue} due</span>`
-      : due.upcoming ? `<span class="pill" style="background:var(--accent-tint);color:var(--accent);">${due.upcoming} upcoming</span>`
-      : '<span class="faint">Up to date</span>';
     return `<tr class="clickable" onclick="go('patient',{patientId:'${p.id}'})">
       <td><span class="pill">${p.id}</span></td>
-      <td>${esc(p.name)}${ped?' <span class="pill" style="background:var(--teal-tint);color:var(--teal);">Ped</span>':''}</td>
+      <td>${esc(p.name)}${isPediatricPatient(p)?' <span class="pill" title="Under 16">Ped</span>':''}</td>
       <td>${esc(displayAge(p))} / ${esc(p.sex)}</td>
       <td>${esc(p.phone)||'<span class="faint">—</span>'}</td>
       <td>${lv?fmtDate(lv):'<span class="faint">No visits</span>'}</td>
-      <td>${vacCell}</td>
     </tr>`;
   }).join('');
-  return `<table><thead><tr><th>ID</th><th>Name</th><th>Age/Sex</th><th>Phone</th><th>Last visit</th><th>Vaccines</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<table><thead><tr><th>ID</th><th>Name</th><th>Age/Sex</th><th>Phone</th><th>Last visit</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
 function patientsView(){
@@ -3832,11 +3819,12 @@ const GROWTH_MEASURE_META = {
   height: {title:'Height/Length-for-age', unit:'cm'},
   hc: {title:'Head circumference-for-age', unit:'cm'}
 };
-function growthChartSVG(measure, sex, childAgeMonths, childValue){
+function growthChartSVG(measure, sex, childAgeMonths, childValue, extraPoints){
   const curves = growthCurveData(measure, sex);
   if(!curves.length) return '';
   const allVals = curves.flatMap(c=>c.points.map(p=>p.value));
   if(childValue!=null) allVals.push(childValue);
+  (extraPoints||[]).forEach(pt=>{ if(pt && pt.value!=null) allVals.push(pt.value); });
   let minV = Math.min(...allVals), maxV = Math.max(...allVals);
   const pad = (maxV-minV)*0.08 || 1;
   minV -= pad; maxV += pad;
@@ -3871,19 +3859,24 @@ function growthChartSVG(measure, sex, childAgeMonths, childValue){
   }
 
   let childMarker = '';
+  (extraPoints||[]).forEach(pt=>{
+    if(pt && pt.value!=null && pt.ageMonths!=null){
+      childMarker += `<circle cx="${xS(pt.ageMonths)}" cy="${yS(pt.value)}" r="3.5" fill="var(--primary)" stroke="#fff" stroke-width="1.5"/>`;
+    }
+  });
   if(childValue!=null && childAgeMonths!=null){
-    childMarker = `<circle cx="${xS(childAgeMonths)}" cy="${yS(childValue)}" r="5.5" fill="var(--accent)" stroke="#fff" stroke-width="2"/>`;
+    childMarker += `<circle cx="${xS(childAgeMonths)}" cy="${yS(childValue)}" r="5.5" fill="var(--accent)" stroke="#fff" stroke-width="2"/>`;
   }
 
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block;" xmlns="http://www.w3.org/2000/svg">
     ${yTicks}${xTicks}${paths}${endLabels}${childMarker}
   </svg>`;
 }
-function growthChartCardHTML(measure, sex, childAgeMonths, childValue){
-  const meta = GROWTH_MEASURE_META[measure] || {title: measure, unit: ''};
+function growthChartCardHTML(measure, sex, childAgeMonths, childValue, extraPoints){
+  const meta = GROWTH_MEASURE_META[measure];
   return `<div class="card" style="padding:12px 10px;margin-bottom:8px;">
-    <div class="faint" style="margin-bottom:6px;">${meta.title}${meta.unit?' ('+meta.unit+')':''} — dashed lines 3rd/15th/85th/97th, solid line 50th, dot is this reading</div>
-    ${growthChartSVG(measure, sex, childAgeMonths, childValue)}
+    <div class="faint" style="margin-bottom:6px;">${meta.title} (${meta.unit}) — dashed lines 3rd/15th/85th/97th, solid line 50th, gold dot is latest reading</div>
+    ${growthChartSVG(measure, sex, childAgeMonths, childValue, extraPoints)}
   </div>`;
 }
 
@@ -4709,14 +4702,44 @@ function pediatricPatientsHTML(){
   return `
     <div class="card">
       <div class="search-wrap" style="margin-bottom:14px;">
-        <input type="text" placeholder="Search pediatric patients by name, ID or phone" value="${esc(state.search||'')}" oninput="state.search=this.value;render()">
+        <input type="text" placeholder="Search pediatric patients by name, ID or phone" value="${esc(state.search||'')}" oninput="onPediatricSearchInput(this.value)">
       </div>
-      <p class="muted" style="margin-bottom:10px;">${list.length} patient${list.length===1?'':'s'} under 16 years</p>
-      ${list.length
-        ? `<table><thead><tr><th>ID</th><th>Name</th><th>Age / Sex</th><th>Phone</th><th>Last visit</th><th>Vaccines</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
-        : emptyState('🧒', 'No pediatric patients yet', 'Register a child (with date of birth or age under 16) and they will appear here.',
-            `<button class="btn btn-accent btn-sm" onclick="go('newPatient')">+ New Patient</button>`)}
+      <div id="pediatric-table-container">${pediatricPatientsTableInner(list)}</div>
     </div>`;
+}
+function onPediatricSearchInput(v){
+  state.search = v;
+  const q = (v||'').trim().toLowerCase();
+  let list = pediatricPatients();
+  if(q){
+    list = list.filter(p=>
+      p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || (p.phone||'').includes(q)
+    );
+  }
+  const el = document.getElementById('pediatric-table-container');
+  if(el) el.innerHTML = pediatricPatientsTableInner(list);
+}
+function pediatricPatientsTableInner(list){
+  const rows = list.map(p=>{
+    const lv = lastVisitDate(p);
+    const due = vaccinationDueSummary(p);
+    return `<tr class="clickable" onclick="go('patient',{patientId:'${p.id}'})">
+      <td><span class="pill">${p.id}</span></td>
+      <td>${esc(p.name)}</td>
+      <td>${esc(opdAgeDisplay(p))} / ${esc(p.sex)}</td>
+      <td>${esc(p.phone)||'<span class="faint">—</span>'}</td>
+      <td>${lv?fmtDate(lv):'<span class="faint">No visits</span>'}</td>
+      <td>${due.overdue ? `<span class="pill" style="background:var(--danger-tint);color:var(--danger);">${due.overdue} due</span>`
+        : due.upcoming ? `<span class="pill" style="background:var(--accent-tint);color:var(--accent);">${due.upcoming} upcoming</span>`
+        : '<span class="faint">Up to date</span>'}</td>
+      <td><button class="btn btn-sm btn-accent" onclick="event.stopPropagation();go('newVisit',{patientId:'${p.id}'})">OPD</button></td>
+    </tr>`;
+  }).join('');
+  return `<p class="muted" style="margin-bottom:10px;">${list.length} patient${list.length===1?'':'s'} under 16 years</p>
+    ${list.length
+      ? `<table><thead><tr><th>ID</th><th>Name</th><th>Age / Sex</th><th>Phone</th><th>Last visit</th><th>Vaccines</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+      : emptyState('🧒', 'No pediatric patients yet', 'Register a child (with date of birth or age under 16) and they will appear here.',
+          `<button class="btn btn-accent btn-sm" onclick="go('newPatient')">+ New Patient</button>`)}`;
 }
 
 // Approximate age-in-months thresholds for IAP schedule rows (for due suggestions).
@@ -4795,9 +4818,9 @@ function growthCalcHTML(){
       <div class="card" style="margin-bottom:18px;">
         <h2 style="margin-bottom:4px;">Growth charts — ${esc(linked.name)}</h2>
         <p class="faint" style="margin-bottom:12px;">WHO standards with all saved readings plotted. Dot = most recent reading.</p>
-        ${last.weight!=null ? growthChartCardHTML('weight', sexR, last.ageMonths, last.weight) : ''}
-        ${last.height!=null ? growthChartCardHTML('height', sexR, last.ageMonths, last.height) : ''}
-        ${last.hc!=null ? growthChartCardHTML('hc', sexR, last.ageMonths, last.hc) : ''}
+        ${last.weight!=null ? growthChartCardHTML('weight', sexR, last.ageMonths, last.weight, recs.filter(r=>r.weight!=null).map(r=>({ageMonths:r.ageMonths,value:r.weight}))) : ''}
+        ${last.height!=null ? growthChartCardHTML('height', sexR, last.ageMonths, last.height, recs.filter(r=>r.height!=null).map(r=>({ageMonths:r.ageMonths,value:r.height}))) : ''}
+        ${last.hc!=null ? growthChartCardHTML('hc', sexR, last.ageMonths, last.hc, recs.filter(r=>r.hc!=null).map(r=>({ageMonths:r.ageMonths,value:r.hc}))) : ''}
         <table style="margin-top:10px;"><thead><tr><th>Date</th><th>Age</th><th>Weight</th><th>Height</th><th>HC</th></tr></thead>
         <tbody>${recs.slice().reverse().map(r=>`
           <tr><td>${fmtDate(r.date)}</td><td>${(r.ageMonths/12).toFixed(1)}y</td>
@@ -5041,7 +5064,7 @@ function immunizationHTML(){
         <td>${esc(it.vaccine)}</td>
         <td>${statusPill(it.status)}</td>
         <td>${it.status!=='given'
-          ? `<button class="btn btn-sm btn-accent" onclick="quickAddVaccination('${linked.id}','${esc(it.vaccine).replace(/'/g,"\\'")}')">Mark given</button>`
+          ? `<button class="btn btn-sm btn-accent" onclick="quickAddVaccination('${linked.id}', this.getAttribute('data-vac'))" data-vac="${esc(it.vaccine)}">Mark given</button>`
           : '<span class="faint">—</span>'}</td>
       </tr>`).join('');
     const recorded = (linked.vaccinations||[]).slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
@@ -5283,13 +5306,12 @@ function reportDateRange(preset){
   return {from: iso(new Date(y, m, 1)), to: todayStr()}; // 'month' default
 }
 function computeReportStats(from, to){
-  let visitCount=0, revenue=0, paidRevenue=0, unpaidRevenue=0, pediatricVisits=0;
+  let visitCount=0, revenue=0, paidRevenue=0, unpaidRevenue=0;
   const byDoctor = {};
   state.data.patients.forEach(p=>{
     (p.visits||[]).forEach(v=>{
       if(!v.date || v.date < from || v.date > to) return;
       visitCount++;
-      if(isPediatricPatient(p)) pediatricVisits++;
       const b = billingOf(v);
       const total = billingTotal(b);
       revenue += total;
@@ -5302,7 +5324,7 @@ function computeReportStats(from, to){
   });
   const newPatients = state.data.patients.filter(p=>p.registeredDate && p.registeredDate>=from && p.registeredDate<=to).length;
   const doctorRows = Object.entries(byDoctor).sort((a,b)=>b[1].visits-a[1].visits);
-  return {visitCount, revenue, paidRevenue, unpaidRevenue, newPatients, pediatricVisits, doctorRows};
+  return {visitCount, revenue, paidRevenue, unpaidRevenue, newPatients, doctorRows};
 }
 function setReportRange(preset){
   state.reportRange = preset;
@@ -5846,7 +5868,6 @@ function reportsView(){
       <div class="sheet-title">CLINIC REPORT — ${esc(periodLabel.toUpperCase())}</div>
       <div class="sheet-section"><span class="lbl">Visits</span><div>${stats.visitCount}</div></div>
       <div class="sheet-section"><span class="lbl">New patients</span><div>${stats.newPatients}</div></div>
-      <div class="sheet-section"><span class="lbl">Pediatric visits</span><div>${stats.pediatricVisits}</div></div>
       <div class="sheet-section"><span class="lbl">Total revenue</span><div>₹${stats.revenue.toFixed(2)}</div></div>
       <div class="sheet-section"><span class="lbl">Collected</span><div>₹${stats.paidRevenue.toFixed(2)}</div></div>
       <div class="sheet-section"><span class="lbl">Outstanding</span><div>₹${stats.unpaidRevenue.toFixed(2)}</div></div>
@@ -5871,7 +5892,6 @@ function reportsView(){
       <div class="stat-card"><div class="stat-num">₹${stats.paidRevenue.toFixed(0)}</div><div class="stat-label">Collected</div></div>
       <div class="stat-card"><div class="stat-num">₹${stats.unpaidRevenue.toFixed(0)}</div><div class="stat-label">Outstanding</div></div>
       <div class="stat-card"><div class="stat-num">${stats.newPatients}</div><div class="stat-label">New patients</div></div>
-      <div class="stat-card"><div class="stat-num">${stats.pediatricVisits}</div><div class="stat-label">Pediatric visits</div></div>
     </div>
     <div class="card">
       <h2 style="margin-bottom:10px;">Visits by doctor</h2>
@@ -5894,7 +5914,6 @@ function exportReportCSV(){
     ['Metric','Value'],
     ['Visits', stats.visitCount],
     ['New patients', stats.newPatients],
-    ['Pediatric visits', stats.pediatricVisits],
     ['Total revenue', stats.revenue.toFixed(2)],
     ['Collected', stats.paidRevenue.toFixed(2)],
     ['Outstanding', stats.unpaidRevenue.toFixed(2)],
