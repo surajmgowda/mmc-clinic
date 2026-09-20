@@ -498,11 +498,18 @@
   }
 
   @media print{
-    body *{visibility:hidden;}
-    .print-sheet.print-active,.print-sheet.print-active *{visibility:visible;}
+    html,body{height:auto !important;overflow:visible !important;background:#fff !important;}
+    body *{visibility:hidden !important;}
+    .print-sheet:not(.print-active){display:none !important;}
+    .print-sheet.print-active,.print-sheet.print-active *{visibility:visible !important;}
     .print-sheet.print-active{
-      display:block;position:absolute;top:0;left:0;width:100%;padding:18px 26px;border:none;
+      display:block !important;position:absolute;top:0;left:0;width:100%;
+      padding:12px 18px !important;margin:0 !important;border:none !important;
+      box-shadow:none !important;border-radius:0 !important;overflow:visible !important;
+      max-width:none !important;page-break-after:avoid;page-break-inside:avoid;
     }
+    .print-sheet.print-active::before{display:none !important;}
+    @page{margin:10mm;}
   }
 
   @media (max-width:820px){
@@ -845,6 +852,10 @@ function go(route, params){
   state.routeParams = params || {};
   state.search = '';
   state.ui.editingPatient = false;
+  if(route !== 'certificates'){
+    state.editingCertIndex = null;
+    state.pendingCertFields = null;
+  }
   if(route === 'newVisit'){
     let existingVisit = null;
     if(state.routeParams.editVisitId && state.routeParams.patientId){
@@ -984,6 +995,19 @@ function staffByName(name){
 function staffQualification(name){
   const s = staffByName(name);
   return (s && s.qualification) ? s.qualification : '';
+}
+function doctorQualLine(name, storedQual){
+  const q = (storedQual && String(storedQual).trim()) || staffQualification(name) || '';
+  if(!name) return '';
+  return q ? `${esc(name)} · ${esc(q)}` : esc(name);
+}
+function doctorBlockHTML(name, storedQual){
+  const q = (storedQual && String(storedQual).trim()) || staffQualification(name) || '';
+  if(!name && !q) return '';
+  return `<div class="opdx-doctor-block">
+            ${name?`<div class="opdx-doctor-name">${esc(name)}</div>`:''}
+            ${q?`<div class="opdx-doctor-qual">${esc(q)}</div>`:''}
+          </div>`;
 }
 
 
@@ -1937,7 +1961,14 @@ async function saveVisit(){
 function printSection(id){
   document.querySelectorAll('.print-sheet').forEach(el=>el.classList.remove('print-active'));
   const el = document.getElementById(id);
-  if(el){ el.classList.add('print-active'); window.print(); }
+  if(!el) return;
+  el.classList.add('print-active');
+  const after = ()=>{
+    el.classList.remove('print-active');
+    window.removeEventListener('afterprint', after);
+  };
+  window.addEventListener('afterprint', after);
+  window.print();
 }
 
 /* ============================= SETTINGS ============================= */
@@ -3450,7 +3481,7 @@ function investigationResultsSheetHTML(p, v, ci){
         <span>${fmtDate(v.date)}</span>
       </div>
       ${testBlocks}
-      <div class="sheet-section" style="margin-top:20px;"><span class="lbl">Reported by</span><div>${esc(v.doctorName)||'—'}</div></div>
+      <div class="sheet-section" style="margin-top:20px;"><span class="lbl">Reported by</span><div>${v.doctorName ? doctorQualLine(v.doctorName) : '—'}</div></div>
     </div>`;
 }
 function invResultEntryHTML(patient, investigations){
@@ -4215,10 +4246,7 @@ function visitPrintView(patientId, visitId){
         ${v.followUpDate ? `<div class="opdx-followup-band"><span class="opdx-followup-k">Follow-up</span><span class="opdx-followup-v">${fmtDate(v.followUpDate)}</span></div>` : ''}
 
         <div class="opdx-foot">
-          <div class="opdx-doctor-block">
-            ${v.doctorName?`<div class="opdx-doctor-name">${esc(v.doctorName)}</div>`:''}
-            ${esc(staffQualification(v.doctorName)||'')}
-          </div>
+          ${doctorBlockHTML(v.doctorName)}
           <div class="opdx-sign-box">
             <div class="opdx-sign-line"></div>
             <div class="opdx-sign-lbl">Signature</div>
@@ -4258,8 +4286,7 @@ function visitPrintView(patientId, visitId){
             <div class="opdx-meta-item"><span class="opdx-meta-k">Age / Sex</span><span class="opdx-meta-v">${esc(opdAgeDisplay(p))}${p.sex?' · '+esc(p.sex):''}</span></div>
             <div class="opdx-meta-item"><span class="opdx-meta-k">Phone</span><span class="opdx-meta-v">${esc(p.phone)||'—'}</span></div>
             <div class="opdx-meta-item" style="grid-column:1 / -1;"><span class="opdx-meta-k">Address</span><span class="opdx-meta-v">${esc(p.address)||'—'}</span></div>
-            ${v.doctorName?`<div class="opdx-meta-item"><span class="opdx-meta-k">Doctor</span><span class="opdx-meta-v">${esc(v.doctorName)}</span></div>`:''}
-            ${staffQualification(v.doctorName)?`<div class="opdx-meta-item"><span class="opdx-meta-k">Qualification</span><span class="opdx-meta-v">${esc(staffQualification(v.doctorName))}</span></div>`:''}
+            ${v.doctorName?`<div class="opdx-meta-item"><span class="opdx-meta-k">Doctor</span><span class="opdx-meta-v">${doctorQualLine(v.doctorName)}</span></div>`:''}
           </div>
         </div>
 
@@ -4289,10 +4316,7 @@ function visitPrintView(patientId, visitId){
         ${v.followUpDate ? `<div class="opdx-followup-band"><span class="opdx-followup-k">Follow-up</span><span class="opdx-followup-v">${fmtDate(v.followUpDate)}</span></div>` : ''}
 
         <div class="opdx-foot">
-          <div class="opdx-doctor-block">
-            ${v.doctorName?`<div class="opdx-doctor-name">${esc(v.doctorName)}</div>`:''}
-            ${esc(staffQualification(v.doctorName)||'')}
-          </div>
+          ${doctorBlockHTML(v.doctorName)}
           <div class="opdx-sign-box">
             <div class="opdx-sign-line"></div>
             <div class="opdx-sign-lbl">Signature</div>
@@ -4322,7 +4346,7 @@ function visitPrintView(patientId, visitId){
           </div>
           <div class="opdx-meta-grid">
             <div class="opdx-meta-item"><span class="opdx-meta-k">Age / Sex</span><span class="opdx-meta-v">${esc(displayAge(p))}${p.sex?' · '+esc(p.sex):''}</span></div>
-            ${v.doctorName ? `<div class="opdx-meta-item"><span class="opdx-meta-k">Requested by</span><span class="opdx-meta-v">${esc(v.doctorName)}</span></div>` : ''}
+            ${v.doctorName ? `<div class="opdx-meta-item"><span class="opdx-meta-k">Requested by</span><span class="opdx-meta-v">${doctorQualLine(v.doctorName)}</span></div>` : ''}
           </div>
         </div>
 
@@ -4336,10 +4360,7 @@ function visitPrintView(patientId, visitId){
         </div>
 
         <div class="opdx-foot">
-          <div class="opdx-doctor-block">
-            ${v.doctorName?`<div class="opdx-doctor-name">${esc(v.doctorName)}</div>`:''}
-            ${esc(staffQualification(v.doctorName)||'')}
-          </div>
+          ${doctorBlockHTML(v.doctorName)}
           <div class="opdx-sign-box">
             <div class="opdx-sign-line"></div>
             <div class="opdx-sign-lbl">Signature</div>
@@ -5068,6 +5089,8 @@ function setReportRange(preset){
 
 /* ============================= MEDICAL CERTIFICATES ============================= */
 function certificatesView(){
+  const editing = state.editingCertIndex!=null;
+  const genLabel = editing ? 'Save changes' : null;
   const q = (state.search||'').trim().toLowerCase();
   const linked = state.certPatientId ? state.data.patients.find(p=>p.id===state.certPatientId) : null;
   const type = state.certType || 'sick';
@@ -5151,7 +5174,7 @@ function certificatesView(){
             <textarea id="cert-remarks" placeholder="Optional"></textarea>
           </div>
           <div id="cert-error" class="error-text"></div>
-          <button class="btn btn-primary" onclick="renderCertificatePreview('sick')">Generate medical certificate</button>
+          <button class="btn btn-primary" onclick="renderCertificatePreview('sick')">${editing?'Save changes':'Generate medical certificate'}</button>
         </div>`;
     } else if(type==='fitness'){
       form = `
@@ -5175,7 +5198,7 @@ function certificatesView(){
           </div>
           <div class="field"><label>Additional remarks</label><textarea id="cert-remarks" placeholder="Optional"></textarea></div>
           <div id="cert-error" class="error-text"></div>
-          <button class="btn btn-primary" onclick="renderCertificatePreview('fitness')">Generate fitness certificate</button>
+          <button class="btn btn-primary" onclick="renderCertificatePreview('fitness')">${editing?'Save changes':'Generate fitness certificate'}</button>
         </div>`;
     } else if(type==='school'){
       form = `
@@ -5209,7 +5232,7 @@ function certificatesView(){
           </div>
           <div class="field"><label>Additional remarks</label><textarea id="cert-remarks" placeholder="Optional"></textarea></div>
           <div id="cert-error" class="error-text"></div>
-          <button class="btn btn-primary" onclick="renderCertificatePreview('school')">Generate school certificate</button>
+          <button class="btn btn-primary" onclick="renderCertificatePreview('school')">${editing?'Save changes':'Generate school certificate'}</button>
         </div>`;
     } else {
       form = `
@@ -5231,7 +5254,7 @@ function certificatesView(){
           </div>
           <div class="field"><label>Additional remarks</label><textarea id="cert-remarks" placeholder="Optional"></textarea></div>
           <div id="cert-error" class="error-text"></div>
-          <button class="btn btn-primary" onclick="renderCertificatePreview('general')">Generate certificate</button>
+          <button class="btn btn-primary" onclick="renderCertificatePreview('general')">${editing?'Save changes':'Generate certificate'}</button>
         </div>`;
     }
   }
@@ -5255,23 +5278,33 @@ function certTypeLabel(type){ return CERT_TYPE_LABELS[type] || type; }
 // every certificate issued for them (type, number, date, issuing doctor).
 function certificateHistoryHTML(p){
   const certs = (p.certificates||[]).slice().sort((a,b)=> (b.issuedAt||'').localeCompare(a.issuedAt||''));
+  const me = state.session.staffName || '';
+  const canManage = (c) => isDoctor() && (c.doctor === me || c.issuedBy === me || isOwner());
   const body = certs.length
-    ? `<table><thead><tr><th>Date</th><th>Type</th><th>Certificate no.</th><th>Doctor</th></tr></thead><tbody>
-        ${certs.map(c=>`<tr>
+    ? `<table><thead><tr><th>Date</th><th>Type</th><th>Certificate no.</th><th>Doctor</th><th></th></tr></thead><tbody>
+        ${certs.map((c,origIdx)=>{
+          const idx = (p.certificates||[]).indexOf(c);
+          const actions = `<button class="btn btn-sm" onclick="viewIssuedCertificate('${p.id}',${idx})">View</button>`
+            + (canManage(c) ? ` <button class="btn btn-sm" onclick="editIssuedCertificate('${p.id}',${idx})">Edit</button>
+              <button class="btn btn-ghost btn-sm" onclick="deleteIssuedCertificate('${p.id}',${idx})">Delete</button>` : '');
+          return `<tr>
           <td>${fmtDate(c.date)}</td>
           <td>${esc(certTypeLabel(c.type))}</td>
           <td><span class="pill">${esc(c.certNo)}</span></td>
-          <td>${esc(c.doctor)||'<span class="faint">—</span>'}</td>
-        </tr>`).join('')}
+          <td>${c.doctor ? doctorQualLine(c.doctor, c.qualification) : '<span class="faint">—</span>'}</td>
+          <td style="white-space:nowrap;">${actions}</td>
+        </tr>`;
+        }).join('')}
       </tbody></table>`
     : emptyState('📜', 'No certificates issued yet', 'Certificates generated for this patient will be listed here.');
   return `
     <div class="card" style="margin-bottom:18px;">
       <div class="rx-row-head" style="margin-bottom:10px;">
         <h2>Certificate history</h2>
-        <button class="btn btn-sm" onclick="state.certPatientId='${p.id}';state.certType='sick';go('certificates')">+ Issue certificate</button>
+        <button class="btn btn-sm" onclick="state.certPatientId='${p.id}';state.certType='sick';state.editingCertIndex=null;go('certificates')">+ Issue certificate</button>
       </div>
       ${body}
+      <div id="issued-cert-preview"></div>
     </div>`;
 }
 function certVal(id){
@@ -5296,152 +5329,197 @@ function pronounForSex(sex){
   return {subj:'They', obj:'them', poss:'their', HeShe:'They', hisHer:'their'};
 }
 
-function renderCertificatePreview(type){
-  const p = state.data.patients.find(x=>x.id===state.certPatientId);
-  if(!p) return;
-  const err = document.getElementById('cert-error');
-  const ci = state.data.clinicInfo;
-  const doctor = certVal('cert-doctor');
-  const qual = certVal('cert-qual') || staffQualification(doctor);
-  const certDateRaw = certVal('cert-date') || todayStr();
-  const certDate = fmtDate(certDateRaw);
-  let certNo = certVal('cert-no');
-  if(!certNo) certNo = nextCertificateNo();
-  const place = certVal('cert-place') || (ci.address||'');
-  const remarks = certVal('cert-remarks');
-  const pr = pronounForSex(p.sex);
-
-  if(!doctor){
-    if(err) err.textContent = 'Doctor name is required.';
-    return;
+function collectCertificateFields(type){
+  const fields = {
+    type,
+    date: certVal('cert-date') || todayStr(),
+    certNo: certVal('cert-no'),
+    doctor: certVal('cert-doctor'),
+    qualification: certVal('cert-qual'),
+    place: certVal('cert-place'),
+    remarks: certVal('cert-remarks')
+  };
+  if(type==='sick'){
+    fields.from = certVal('cert-from');
+    fields.to = certVal('cert-to');
+    fields.diagnosis = certVal('cert-diagnosis');
+    fields.nature = certVal('cert-nature');
+    fields.advice = certVal('cert-advice');
+    fields.resume = certVal('cert-resume');
+  } else if(type==='fitness'){
+    fields.purpose = certVal('cert-purpose');
+    fields.findings = certVal('cert-findings');
+    fields.height = certVal('cert-height');
+    fields.weight = certVal('cert-weight');
+    fields.bp = certVal('cert-bp');
+    fields.limitation = certVal('cert-limitation');
+  } else if(type==='school'){
+    fields.school = certVal('cert-school');
+    fields.klass = certVal('cert-class');
+    fields.purpose = certVal('cert-purpose');
+    fields.from = certVal('cert-from');
+    fields.to = certVal('cert-to');
+    fields.diagnosis = certVal('cert-diagnosis');
+    fields.advice = certVal('cert-advice');
+  } else {
+    fields.subject = certVal('cert-subject');
+    fields.diagnosis = certVal('cert-diagnosis');
+    fields.body = certVal('cert-body');
+    fields.advice = certVal('cert-advice');
   }
+  return fields;
+}
 
+function buildCertificateContent(p, fields){
+  const type = fields.type;
+  const ci = state.data.clinicInfo;
+  const doctor = fields.doctor || '';
+  const qual = fields.qualification || staffQualification(doctor);
+  const certDateRaw = fields.date || todayStr();
+  const certDate = fmtDate(certDateRaw);
+  const certNo = fields.certNo || '';
+  const place = fields.place || (ci.address||'');
+  const remarks = fields.remarks || '';
+  const pr = pronounForSex(p.sex);
   let title = 'MEDICAL CERTIFICATE';
   let bodyHtml = '';
+  let error = '';
+
+  if(!doctor) error = 'Doctor name is required.';
 
   if(type==='sick'){
-    const fromRaw = certVal('cert-from');
-    const toRaw = certVal('cert-to');
-    const diagnosis = certVal('cert-diagnosis');
-    const nature = certVal('cert-nature');
-    const advice = certVal('cert-advice');
-    const resumeRaw = certVal('cert-resume');
-    if(!fromRaw || !toRaw || !diagnosis){
-      if(err) err.textContent = 'Leave from, leave to, and diagnosis are required.';
-      return;
-    }
-    if(err) err.textContent = '';
-    const days = daysBetweenInclusive(fromRaw, toRaw);
-    title = 'MEDICAL LEAVE CERTIFICATE';
-    bodyHtml = `
+    if(!error && (!fields.from || !fields.to || !fields.diagnosis))
+      error = 'Leave from, leave to, and diagnosis are required.';
+    if(!error){
+      const days = daysBetweenInclusive(fields.from, fields.to);
+      title = 'MEDICAL LEAVE CERTIFICATE';
+      bodyHtml = `
       <p>This is to certify that <strong>${esc(p.name)}</strong>, ${esc(opdAgeDisplay(p))} / ${esc(p.sex||'—')}, Patient ID <strong>${esc(p.id)}</strong>${p.address?', residing at '+esc(p.address):''}, was examined and treated under my care.</p>
-      <p><strong>Diagnosis:</strong> ${esc(diagnosis)}</p>
-      ${nature?`<p><strong>Clinical notes:</strong> ${esc(nature)}</p>`:''}
-      <p>${pr.HeShe} is advised medical leave from <strong>${fmtDate(fromRaw)}</strong> to <strong>${fmtDate(toRaw)}</strong>${days?` (${days} day${days===1?'':'s'})`:''}.</p>
-      ${advice?`<p><strong>Advice:</strong> ${esc(advice)}</p>`:''}
-      ${resumeRaw?`<p>${pr.HeShe} is fit to resume duty / school / college with effect from <strong>${fmtDate(resumeRaw)}</strong>.</p>`
+      <p><strong>Diagnosis:</strong> ${esc(fields.diagnosis)}</p>
+      ${fields.nature?`<p><strong>Clinical notes:</strong> ${esc(fields.nature)}</p>`:''}
+      <p>${pr.HeShe} is advised medical leave from <strong>${fmtDate(fields.from)}</strong> to <strong>${fmtDate(fields.to)}</strong>${days?` (${days} day${days===1?'':'s'})`:''}.</p>
+      ${fields.advice?`<p><strong>Advice:</strong> ${esc(fields.advice)}</p>`:''}
+      ${fields.resume?`<p>${pr.HeShe} is fit to resume duty / school / college with effect from <strong>${fmtDate(fields.resume)}</strong>.</p>`
         :`<p>${pr.HeShe} is advised to resume normal activity only after the leave period, or as further advised.</p>`}
       ${remarks?`<p><strong>Remarks:</strong> ${esc(remarks)}</p>`:''}
       <p style="margin-top:14px;">This certificate is issued on the patient's request for official / leave purposes.</p>`;
-  } else if(type==='fitness'){
-    const purpose = certVal('cert-purpose');
-    const findings = certVal('cert-findings');
-    const height = certVal('cert-height');
-    const weight = certVal('cert-weight');
-    const bp = certVal('cert-bp');
-    const limitation = certVal('cert-limitation');
-    if(!purpose || !findings){
-      if(err) err.textContent = 'Purpose and examination findings are required.';
-      return;
     }
-    if(err) err.textContent = '';
-    title = 'FITNESS CERTIFICATE';
-    const vitalsBits = [height?`Height: ${esc(height)} cm`:'', weight?`Weight: ${esc(weight)} kg`:'', bp?`BP: ${esc(bp)}`:''].filter(Boolean).join(' · ');
-    bodyHtml = `
+  } else if(type==='fitness'){
+    if(!error && (!fields.purpose || !fields.findings))
+      error = 'Purpose and examination findings are required.';
+    if(!error){
+      title = 'FITNESS CERTIFICATE';
+      const vitalsBits = [fields.height?`Height: ${esc(fields.height)} cm`:'', fields.weight?`Weight: ${esc(fields.weight)} kg`:'', fields.bp?`BP: ${esc(fields.bp)}`:''].filter(Boolean).join(' · ');
+      bodyHtml = `
       <p>This is to certify that <strong>${esc(p.name)}</strong>, ${esc(opdAgeDisplay(p))} / ${esc(p.sex||'—')}, Patient ID <strong>${esc(p.id)}</strong>${p.address?', residing at '+esc(p.address):''}, has been medically examined by me on <strong>${certDate}</strong>.</p>
-      <p><strong>Purpose:</strong> ${esc(purpose)}</p>
+      <p><strong>Purpose:</strong> ${esc(fields.purpose)}</p>
       ${vitalsBits?`<p><strong>Recorded measurements:</strong> ${vitalsBits}</p>`:''}
-      <p><strong>Findings:</strong> ${esc(findings)}</p>
-      ${limitation?`<p><strong>Disability / limitation:</strong> ${esc(limitation)}</p>`:''}
+      <p><strong>Findings:</strong> ${esc(fields.findings)}</p>
+      ${fields.limitation?`<p><strong>Disability / limitation:</strong> ${esc(fields.limitation)}</p>`:''}
       ${remarks?`<p><strong>Remarks:</strong> ${esc(remarks)}</p>`:''}
       <p style="margin-top:14px;">In my opinion, the above-named person is <strong>medically fit</strong> for the stated purpose at the time of examination.</p>`;
-  } else if(type==='school'){
-    const school = certVal('cert-school');
-    const klass = certVal('cert-class');
-    const purpose = certVal('cert-purpose') || 'Medical leave / absence from class';
-    const diagnosis = certVal('cert-diagnosis');
-    const advice = certVal('cert-advice');
-    const fromRaw = certVal('cert-from');
-    const toRaw = certVal('cert-to');
-    if(!school || !diagnosis){
-      if(err) err.textContent = 'School/college name and diagnosis/findings are required.';
-      return;
     }
-    if(err) err.textContent = '';
-    title = 'SCHOOL / COLLEGE MEDICAL CERTIFICATE';
-    const days = daysBetweenInclusive(fromRaw, toRaw);
-    const isLeave = /leave|absence/i.test(purpose);
-    bodyHtml = `
-      <p>This is to certify that <strong>${esc(p.name)}</strong>, ${esc(opdAgeDisplay(p))} / ${esc(p.sex||'—')}, Patient ID <strong>${esc(p.id)}</strong>, student of <strong>${esc(school)}</strong>${klass?' ('+esc(klass)+')':''}, was examined by me on <strong>${certDate}</strong>.</p>
-      <p><strong>Purpose:</strong> ${esc(purpose)}</p>
-      <p><strong>Diagnosis / findings:</strong> ${esc(diagnosis)}</p>
-      ${isLeave && fromRaw && toRaw
-        ? `<p>${pr.HeShe} is advised medical leave from <strong>${fmtDate(fromRaw)}</strong> to <strong>${fmtDate(toRaw)}</strong>${days?` (${days} day${days===1?'':'s'})`:''}.</p>`
+  } else if(type==='school'){
+    if(!error && (!fields.school || !fields.diagnosis))
+      error = 'School/college name and diagnosis/findings are required.';
+    if(!error){
+      title = 'SCHOOL / COLLEGE MEDICAL CERTIFICATE';
+      const days = daysBetweenInclusive(fields.from, fields.to);
+      const isLeave = /leave|absence/i.test(fields.purpose||'');
+      bodyHtml = `
+      <p>This is to certify that <strong>${esc(p.name)}</strong>, ${esc(opdAgeDisplay(p))} / ${esc(p.sex||'—')}, Patient ID <strong>${esc(p.id)}</strong>, student of <strong>${esc(fields.school)}</strong>${fields.klass?' ('+esc(fields.klass)+')':''}, was examined by me on <strong>${certDate}</strong>.</p>
+      <p><strong>Purpose:</strong> ${esc(fields.purpose||'')}</p>
+      <p><strong>Diagnosis / findings:</strong> ${esc(fields.diagnosis)}</p>
+      ${isLeave && fields.from && fields.to
+        ? `<p>${pr.HeShe} is advised medical leave from <strong>${fmtDate(fields.from)}</strong> to <strong>${fmtDate(fields.to)}</strong>${days?` (${days} day${days===1?'':'s'})`:''}.</p>`
         : ''}
-      ${advice?`<p><strong>Advice:</strong> ${esc(advice)}</p>`:''}
+      ${fields.advice?`<p><strong>Advice:</strong> ${esc(fields.advice)}</p>`:''}
       ${remarks?`<p><strong>Remarks:</strong> ${esc(remarks)}</p>`:''}
       <p style="margin-top:14px;">This certificate is issued for submission to the school / college authorities.</p>`;
-  } else {
-    const subject = certVal('cert-subject') || 'MEDICAL CERTIFICATE';
-    const diagnosis = certVal('cert-diagnosis');
-    const body = certVal('cert-body');
-    const advice = certVal('cert-advice');
-    if(!diagnosis || !body){
-      if(err) err.textContent = 'Diagnosis and certificate statement are required.';
-      return;
     }
-    if(err) err.textContent = '';
-    title = subject.toUpperCase();
-    bodyHtml = `
+  } else {
+    if(!error && (!fields.diagnosis || !fields.body))
+      error = 'Diagnosis and certificate statement are required.';
+    if(!error){
+      title = (fields.subject || 'MEDICAL CERTIFICATE').toUpperCase();
+      bodyHtml = `
       <p>This is to certify that <strong>${esc(p.name)}</strong>, ${esc(opdAgeDisplay(p))} / ${esc(p.sex||'—')}, Patient ID <strong>${esc(p.id)}</strong>${p.address?', residing at '+esc(p.address):''}, was examined by me.</p>
-      <p><strong>Diagnosis:</strong> ${esc(diagnosis)}</p>
-      <p>${esc(body)}</p>
-      ${advice?`<p><strong>Advice:</strong> ${esc(advice)}</p>`:''}
+      <p><strong>Diagnosis:</strong> ${esc(fields.diagnosis)}</p>
+      <p>${esc(fields.body)}</p>
+      ${fields.advice?`<p><strong>Advice:</strong> ${esc(fields.advice)}</p>`:''}
       ${remarks?`<p><strong>Remarks:</strong> ${esc(remarks)}</p>`:''}`;
+    }
   }
+  return {error, title, bodyHtml, doctor, qual, certDate, certDateRaw, certNo, place};
+}
 
-  if(!p.certificates) p.certificates = [];
-  p.certificates.push({ type, certNo, date: certDateRaw, doctor, issuedAt: new Date().toISOString(), issuedBy: state.session.staffName||'' });
-  saveData();
-
-  const html = `
+function certificateSheetHTML(p, built, ci){
+  return `
     <div class="print-sheet opd-card cert-sheet" id="sheet-cert">
       <div class="letterhead">${logoImgHTML(ci)}
         <div class="clinic-name">${esc(ci.name)}</div>
         <div class="clinic-meta">${esc(ci.address||'')}${ci.address&&ci.phone?'<br>':''}${esc(ci.phone||'')}</div>
       </div>
-      <div class="opd-badge">${esc(title)}</div>
+      <div class="opd-badge">${esc(built.title)}</div>
       <div class="cert-meta">
-        <span>No. <strong>${esc(certNo)}</strong></span>
-        <span>Date: <strong>${certDate}</strong></span>
+        <span>No. <strong>${esc(built.certNo)}</strong></span>
+        <span>Date: <strong>${built.certDate}</strong></span>
       </div>
       <div class="cert-body">
-        ${bodyHtml}
+        ${built.bodyHtml}
       </div>
       <div class="cert-footer">
         <div class="cert-place">
-          ${place?`<div class="faint">Place</div><div>${esc(place)}</div>`:''}
+          ${built.place?`<div class="faint">Place</div><div>${esc(built.place)}</div>`:''}
           <div class="faint" style="margin-top:10px;">Date</div>
-          <div>${certDate}</div>
+          <div>${built.certDate}</div>
         </div>
         <div class="cert-sign">
           <div class="opd-sign-space"></div>
-          <div class="opd-sign-name">${esc(doctor)}</div>
-          ${qual?`<div class="opd-doctor-qual" style="text-align:center;width:180px;">${esc(qual)}</div>`:''}
+          <div class="opd-sign-name">${esc(built.doctor)}</div>
+          ${built.qual?`<div class="opd-doctor-qual" style="text-align:center;width:180px;">${esc(built.qual)}</div>`:''}
           <div class="opd-sign-label">Signature &amp; stamp</div>
         </div>
       </div>
-    </div>
+    </div>`;
+}
+
+function renderCertificatePreview(type){
+  const p = state.data.patients.find(x=>x.id===state.certPatientId);
+  if(!p) return;
+  const err = document.getElementById('cert-error');
+  const ci = state.data.clinicInfo;
+  const fields = collectCertificateFields(type);
+  const built = buildCertificateContent(p, fields);
+  if(built.error){
+    if(err) err.textContent = built.error;
+    return;
+  }
+  if(err) err.textContent = '';
+  if(!fields.certNo) fields.certNo = nextCertificateNo();
+  built.certNo = fields.certNo;
+  fields.qualification = built.qual;
+
+  if(!p.certificates) p.certificates = [];
+  const rec = {
+    type, certNo: fields.certNo, date: fields.date, doctor: fields.doctor,
+    qualification: built.qual, issuedAt: new Date().toISOString(),
+    issuedBy: state.session.staffName||'', fields
+  };
+  const editIdx = (state.editingCertIndex!=null) ? state.editingCertIndex : -1;
+  if(editIdx>=0 && p.certificates[editIdx]){
+    rec.issuedAt = p.certificates[editIdx].issuedAt || rec.issuedAt;
+    rec.issuedBy = p.certificates[editIdx].issuedBy || rec.issuedBy;
+    p.certificates[editIdx] = rec;
+    logAudit('Edited certificate', `${type} ${fields.certNo} — ${p.name} (${p.id})`);
+  } else {
+    p.certificates.push(rec);
+    logAudit('Generated certificate', `${type} ${fields.certNo} — ${p.name} (${p.id})`);
+  }
+  state.editingCertIndex = null;
+  saveData();
+
+  const html = certificateSheetHTML(p, built, ci) + `
     <div class="row" style="margin-top:12px;gap:8px;">
       <button class="btn btn-primary" onclick="printSection('sheet-cert')">Print certificate</button>
       <button class="btn btn-ghost" onclick="document.getElementById('cert-preview').innerHTML=''">Clear preview</button>
@@ -5451,7 +5529,78 @@ function renderCertificatePreview(type){
     box.innerHTML = html;
     box.scrollIntoView({behavior:'smooth', block:'start'});
   }
-  logAudit('Generated certificate', `${type} ${certNo} — ${p.name} (${p.id})`);
+}
+
+function viewIssuedCertificate(patientId, idx){
+  const p = state.data.patients.find(x=>x.id===patientId);
+  if(!p || !p.certificates || !p.certificates[idx]) return;
+  const c = p.certificates[idx];
+  const fields = Object.assign({type:c.type, date:c.date, certNo:c.certNo, doctor:c.doctor, qualification:c.qualification||''}, c.fields||{});
+  fields.type = c.type; fields.date = fields.date || c.date; fields.certNo = fields.certNo || c.certNo;
+  fields.doctor = fields.doctor || c.doctor;
+  fields.qualification = fields.qualification || c.qualification || staffQualification(fields.doctor);
+  const built = buildCertificateContent(p, fields);
+  built.certNo = fields.certNo;
+  const html = certificateSheetHTML(p, built, state.data.clinicInfo) + `
+    <div class="row" style="margin-top:12px;gap:8px;">
+      <button class="btn btn-primary" onclick="printSection('sheet-cert')">Print certificate</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('issued-cert-preview').innerHTML=''">Close</button>
+    </div>`;
+  const box = document.getElementById('issued-cert-preview');
+  if(box){
+    box.innerHTML = html;
+    box.scrollIntoView({behavior:'smooth', block:'start'});
+  }
+}
+
+function editIssuedCertificate(patientId, idx){
+  const p = state.data.patients.find(x=>x.id===patientId);
+  if(!p || !p.certificates || !p.certificates[idx]) return;
+  const c = p.certificates[idx];
+  const me = state.session.staffName || '';
+  if(!(isDoctor() && (c.doctor===me || c.issuedBy===me || isOwner()))){
+    alert('Only the issuing doctor (or clinic admin) can edit this certificate.');
+    return;
+  }
+  state.certPatientId = patientId;
+  state.certType = c.type || 'sick';
+  state.editingCertIndex = idx;
+  state.pendingCertFields = Object.assign({
+    type:c.type, date:c.date, certNo:c.certNo, doctor:c.doctor,
+    qualification:c.qualification||staffQualification(c.doctor)||''
+  }, c.fields||{});
+  go('certificates');
+}
+
+async function deleteIssuedCertificate(patientId, idx){
+  const p = state.data.patients.find(x=>x.id===patientId);
+  if(!p || !p.certificates || !p.certificates[idx]) return;
+  const c = p.certificates[idx];
+  const me = state.session.staffName || '';
+  if(!(isDoctor() && (c.doctor===me || c.issuedBy===me || isOwner()))){
+    alert('Only the issuing doctor (or clinic admin) can delete this certificate.');
+    return;
+  }
+  if(!confirm(`Delete certificate ${c.certNo || ''} (${certTypeLabel(c.type)})? This cannot be undone.`)) return;
+  p.certificates.splice(idx,1);
+  logAudit('Deleted certificate', `${c.type||''} ${c.certNo||''} — ${p.name} (${p.id})`);
+  await saveData();
+  render();
+}
+
+function applyPendingCertFields(){
+  const f = state.pendingCertFields;
+  if(!f) return;
+  const set = (id, val) => { const el = document.getElementById(id); if(el && val!=null) el.value = val; };
+  set('cert-date', f.date); set('cert-no', f.certNo); set('cert-doctor', f.doctor);
+  set('cert-qual', f.qualification); set('cert-place', f.place); set('cert-remarks', f.remarks);
+  set('cert-from', f.from); set('cert-to', f.to); set('cert-diagnosis', f.diagnosis);
+  set('cert-nature', f.nature); set('cert-advice', f.advice); set('cert-resume', f.resume);
+  set('cert-purpose', f.purpose); set('cert-findings', f.findings);
+  set('cert-height', f.height); set('cert-weight', f.weight); set('cert-bp', f.bp);
+  set('cert-limitation', f.limitation); set('cert-school', f.school); set('cert-class', f.klass);
+  set('cert-subject', f.subject); set('cert-body', f.body);
+  state.pendingCertFields = null;
 }
 
 
@@ -5775,6 +5924,7 @@ function render(){
     return;
   }
   app.innerHTML = shellView();
+  if(state.route==='certificates') applyPendingCertFields();
 }
 
 restoreSessionFromStorage();
