@@ -999,7 +999,7 @@ function staffQualification(name){
 function doctorQualLine(name, storedQual){
   const q = (storedQual && String(storedQual).trim()) || staffQualification(name) || '';
   if(!name) return '';
-  return q ? `${esc(name)} · ${esc(q)}` : esc(name);
+  return q ? `${esc(name)}<br><span style="font-size:11px;color:var(--ink-faint);font-weight:400;">${esc(q)}</span>` : esc(name);
 }
 function doctorBlockHTML(name, storedQual){
   const q = (storedQual && String(storedQual).trim()) || staffQualification(name) || '';
@@ -2832,9 +2832,9 @@ function growthRecordsCardHTML(p){
   if(!recs.length) return '';
   const rows = recs.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(r=>`
     <tr><td>${fmtDate(r.date)}</td><td>${(r.ageMonths/12).toFixed(1)}y</td>
-      <td>${r.weight?r.weight+'kg ('+r.weightPercentile+'th)':'<span class="faint">—</span>'}</td>
-      <td>${r.height?r.height+'cm ('+r.heightPercentile+'th)':'<span class="faint">—</span>'}</td>
-      <td>${r.hc?r.hc+'cm ('+r.hcPercentile+'th)':'<span class="faint">—</span>'}</td>
+      <td>${r.weight?r.weight+'kg ('+pctZLabel(r.weightPercentile, r.weightZ)+')':'<span class="faint">—</span>'}</td>
+      <td>${r.height?r.height+'cm ('+pctZLabel(r.heightPercentile, r.heightZ)+')':'<span class="faint">—</span>'}</td>
+      <td>${r.hc?r.hc+'cm ('+pctZLabel(r.hcPercentile, r.hcZ)+')':'<span class="faint">—</span>'}</td>
     </tr>`).join('');
   return `
     <div class="card" style="margin-bottom:18px;">
@@ -3588,9 +3588,9 @@ function growthPercentile(measure, sex, ageMonths, value){
   const table = WHO_LMS[key];
   if(!table || !value || ageMonths<0 || ageMonths>60) return null;
   const [L,M,S] = lmsAt(table, ageMonths);
-  const {percentile} = lmsToPercentile(value, L, M, S);
+  const {z, percentile} = lmsToPercentile(value, L, M, S);
   const clamped = Math.max(0.1, Math.min(99.9, percentile));
-  return { percentile: clamped, ...percentileBand(clamped) };
+  return { percentile: clamped, z, ...percentileBand(clamped) };
 }
 
 // ---- Growth chart (SVG, self-contained — no charting library) ----
@@ -4236,7 +4236,7 @@ function visitPrintView(patientId, visitId){
           </div>
           <div class="opdx-meta-grid">
             <div class="opdx-meta-item"><span class="opdx-meta-k">Age / Sex</span><span class="opdx-meta-v">${esc(displayAge(p))}${p.sex?' · '+esc(p.sex):''}</span></div>
-            ${v.doctorName ? `<div class="opdx-meta-item"><span class="opdx-meta-k">Doctor</span><span class="opdx-meta-v">${esc(v.doctorName)}${staffQualification(v.doctorName)?' · '+esc(staffQualification(v.doctorName)):''}</span></div>` : ''}
+            ${v.doctorName ? `<div class="opdx-meta-item"><span class="opdx-meta-k">Doctor</span><span class="opdx-meta-v">${doctorQualLine(v.doctorName)}</span></div>` : ''}
           </div>
         </div>
 
@@ -4590,9 +4590,9 @@ function growthCalcHTML(){
         <table style="margin-top:10px;"><thead><tr><th>Date</th><th>Age</th><th>Weight</th><th>Height</th><th>HC</th></tr></thead>
         <tbody>${recs.slice().reverse().map(r=>`
           <tr><td>${fmtDate(r.date)}</td><td>${(r.ageMonths/12).toFixed(1)}y</td>
-            <td>${r.weight!=null?r.weight+' kg'+(r.weightPercentile!=null?' ('+r.weightPercentile+'th)':''):'—'}</td>
-            <td>${r.height!=null?r.height+' cm'+(r.heightPercentile!=null?' ('+r.heightPercentile+'th)':''):'—'}</td>
-            <td>${r.hc!=null?r.hc+' cm'+(r.hcPercentile!=null?' ('+r.hcPercentile+'th)':''):'—'}</td>
+            <td>${r.weight!=null?r.weight+' kg'+(r.weightPercentile!=null?' ('+pctZLabel(r.weightPercentile, r.weightZ)+')':''):'—'}</td>
+            <td>${r.height!=null?r.height+' cm'+(r.heightPercentile!=null?' ('+pctZLabel(r.heightPercentile, r.heightZ)+')':''):'—'}</td>
+            <td>${r.hc!=null?r.hc+' cm'+(r.hcPercentile!=null?' ('+pctZLabel(r.hcPercentile, r.hcZ)+')':''):'—'}</td>
           </tr>`).join('')}</tbody></table>
       </div>`;
   } else if(linked){
@@ -4657,14 +4657,24 @@ function onGrowthPatientSearch(v){
   document.getElementById('growth-patient-results').innerHTML = growthPatientResultsHTML();
 }
 
+// Shared "Nth (±Z SD)" formatter — older saved readings from before Z-scores
+// were stored won't have one, so falls back to percentile-only for those.
+function pctZLabel(pct, z){
+  if(pct==null) return '';
+  return z==null ? (pct+'th') : (pct+'th, '+(z>=0?'+':'')+z.toFixed(2)+' SD');
+}
 function growthRowHTML(label, valueStr, r){
   const bg = r.cls==='band-low' ? 'var(--danger-tint)' : r.cls==='band-mid' ? 'var(--accent-tint)' : 'var(--primary-tint)';
   const fg = r.cls==='band-low' ? 'var(--danger)' : r.cls==='band-mid' ? 'var(--accent)' : 'var(--primary-dark)';
+  const zStr = (r.z>=0?'+':'') + r.z.toFixed(2);
   return `<div class="card" style="padding:12px 14px;margin-bottom:8px;">
     <div style="display:flex;justify-content:space-between;align-items:baseline;">
       <strong>${esc(label)}</strong><span class="faint">${esc(valueStr)}</span>
     </div>
-    <div style="font-size:24px;font-family:'Source Serif 4',serif;color:var(--primary-dark);margin-top:4px;">${r.percentile.toFixed(0)}<span style="font-size:14px;">th percentile</span></div>
+    <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">
+      <div style="font-size:24px;font-family:'Source Serif 4',serif;color:var(--primary-dark);margin-top:4px;">${r.percentile.toFixed(0)}<span style="font-size:14px;">th percentile</span></div>
+      <span class="faint" style="font-size:13px;">${zStr} SD</span>
+    </div>
     <span class="pill" style="background:${bg};color:${fg};margin-top:4px;">${esc(r.label)}</span>
   </div>`;
 }
@@ -4685,10 +4695,10 @@ function calcGrowth(){
     return;
   }
   let rows = '';
-  const reading = {date: todayStr(), ageMonths, sex, weight:weight||null, height:height||null, hc:hc||null, weightPercentile:null, heightPercentile:null, hcPercentile:null};
-  if(weight){ const r = growthPercentile('weight', sex, ageMonths, weight); if(r){ rows += growthRowHTML('Weight', weight+' kg', r) + growthChartCardHTML('weight', sex, ageMonths, weight); reading.weightPercentile = Math.round(r.percentile); } }
-  if(height){ const r = growthPercentile('height', sex, ageMonths, height); if(r){ rows += growthRowHTML('Height / Length', height+' cm', r) + growthChartCardHTML('height', sex, ageMonths, height); reading.heightPercentile = Math.round(r.percentile); } }
-  if(hc){ const r = growthPercentile('hc', sex, ageMonths, hc); if(r){ rows += growthRowHTML('Head circumference', hc+' cm', r) + growthChartCardHTML('hc', sex, ageMonths, hc); reading.hcPercentile = Math.round(r.percentile); } }
+  const reading = {date: todayStr(), ageMonths, sex, weight:weight||null, height:height||null, hc:hc||null, weightPercentile:null, heightPercentile:null, hcPercentile:null, weightZ:null, heightZ:null, hcZ:null};
+  if(weight){ const r = growthPercentile('weight', sex, ageMonths, weight); if(r){ rows += growthRowHTML('Weight', weight+' kg', r) + growthChartCardHTML('weight', sex, ageMonths, weight); reading.weightPercentile = Math.round(r.percentile); reading.weightZ = Math.round(r.z*100)/100; } }
+  if(height){ const r = growthPercentile('height', sex, ageMonths, height); if(r){ rows += growthRowHTML('Height / Length', height+' cm', r) + growthChartCardHTML('height', sex, ageMonths, height); reading.heightPercentile = Math.round(r.percentile); reading.heightZ = Math.round(r.z*100)/100; } }
+  if(hc){ const r = growthPercentile('hc', sex, ageMonths, hc); if(r){ rows += growthRowHTML('Head circumference', hc+' cm', r) + growthChartCardHTML('hc', sex, ageMonths, hc); reading.hcPercentile = Math.round(r.percentile); reading.hcZ = Math.round(r.z*100)/100; } }
   if(!rows){ box.innerHTML = `<p class="muted">Enter at least one measurement.</p>`; return; }
   lastGrowthReading = reading;
   const saveBtn = state.pedLinkedPatientId
