@@ -10,6 +10,11 @@ const { Pool } = require('pg');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+// Render (and most PaaS hosts) terminate TLS at a proxy in front of the app
+// and forward requests over plain HTTP internally — without this, Express
+// has no way to know the original request was HTTPS, and req.secure would
+// always read false even on your HTTPS-only production site.
+app.set('trust proxy', 1);
 
 if (!process.env.DATABASE_URL) {
   console.error('Missing DATABASE_URL environment variable. Set it to your Postgres connection string.');
@@ -77,8 +82,12 @@ function parseCookies(req) {
   });
   return out;
 }
-function setSessionCookie(res, token) {
-  const secure = process.env.NODE_ENV === 'production' || process.env.FORCE_SECURE_COOKIE === 'true';
+function setSessionCookie(req, res, token) {
+  // req.secure is the real signal now that 'trust proxy' is set — true
+  // whenever the original request came in over HTTPS, which on Render it
+  // always will. The env vars remain as an explicit override for hosting
+  // setups where that detection isn't reliable.
+  const secure = req.secure || process.env.NODE_ENV === 'production' || process.env.FORCE_SECURE_COOKIE === 'true';
   res.setHeader('Set-Cookie',
     `mmc_session=${encodeURIComponent(token)}; HttpOnly; Path=/; Max-Age=${Math.floor(SESSION_MAX_AGE_MS / 1000)}; SameSite=Lax${secure ? '; Secure' : ''}`);
 }
@@ -246,7 +255,7 @@ app.post('/api/login', async (req, res) => {
     const token = signSession({
       name: staff.name, role: staff.role, owner: !!staff.owner, exp: Date.now() + SESSION_MAX_AGE_MS
     });
-    setSessionCookie(res, token);
+    setSessionCookie(req, res, token);
     res.json({ ok: true, name: staff.name, role: staff.role, owner: !!staff.owner });
   } catch (e) {
     console.error('POST /api/login failed:', e);
@@ -304,7 +313,7 @@ app.post('/api/setup', async (req, res) => {
       [clinicData]
     );
     const token = signSession({ name, role, owner: true, exp: Date.now() + SESSION_MAX_AGE_MS });
-    setSessionCookie(res, token);
+    setSessionCookie(req, res, token);
     res.json({ ok: true, name, role, owner: true });
   } catch (e) {
     console.error('POST /api/setup failed:', e);
