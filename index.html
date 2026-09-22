@@ -710,6 +710,36 @@
     .dbx-search{display:none;}
     .staff-chip{display:none;}
   }
+
+  /* ---- Command palette (quick search) ---- */
+  .cmd-overlay{position:fixed;inset:0;background:rgba(15,26,46,0.45);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:12vh 16px 16px;}
+  .cmd-panel{width:100%;max-width:520px;background:var(--surface);border-radius:14px;box-shadow:var(--shadow-lg);overflow:hidden;border:1px solid var(--line);}
+  .cmd-input{width:100%;border:none;padding:16px 18px;font-size:16px;border-bottom:1px solid var(--line);outline:none;background:transparent;color:var(--ink);}
+  .cmd-list{max-height:360px;overflow-y:auto;padding:6px;}
+  .cmd-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;border:none;background:transparent;width:100%;text-align:left;font:inherit;color:var(--ink);}
+  .cmd-item:hover,.cmd-item.active{background:var(--primary-tint);}
+  .cmd-item .cmd-meta{margin-left:auto;font-size:11.5px;color:var(--ink-faint);}
+  .cmd-empty{padding:18px;text-align:center;color:var(--ink-faint);font-size:13px;}
+  .cmd-hint{padding:8px 14px;font-size:11px;color:var(--ink-faint);border-top:1px solid var(--line);display:flex;justify-content:space-between;}
+  /* Token slip (print) */
+  .token-slip{display:none;}
+  @media print{
+    body *{visibility:hidden !important;}
+    .token-slip,.token-slip *{visibility:visible !important;}
+    .token-slip{display:block !important;position:fixed;left:0;top:0;width:80mm;padding:8mm;font-family:sans-serif;}
+    .token-slip .t-num{font-size:48px;font-weight:700;text-align:center;line-height:1.1;margin:8px 0;}
+    .token-slip .t-clinic{font-size:14px;font-weight:700;text-align:center;}
+    .token-slip .t-line{text-align:center;font-size:12px;margin:4px 0;}
+  }
+  .lang-toggle{display:inline-flex;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
+  .lang-toggle button{border:none;background:var(--bg);padding:6px 12px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--ink-soft);}
+  .lang-toggle button.on{background:var(--primary);color:#fff;}
+  .cash-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;}
+  .cash-strip .cash-card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;}
+  .cash-strip .cash-val{font-family:'Source Serif 4',serif;font-size:20px;font-weight:700;color:var(--primary-dark);}
+  .cash-strip .cash-lbl{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
+  .wa-btn{display:inline-flex;align-items:center;gap:5px;}
+
 </style>
 </head>
 <body>
@@ -732,6 +762,11 @@ let state = {
   pendingRecoveryStaff: null,
   pendingRecoveryToken: null,
   loginInProgress: false,
+  uiLang: (typeof localStorage!=='undefined' && localStorage.getItem('mmc_lang')) || 'en',
+  cmdOpen: false,
+  cmdQuery: '',
+  cmdIndex: 0,
+  idleMinutes: parseInt((typeof localStorage!=='undefined' && localStorage.getItem('mmc_idle_min')) || '15', 10) || 15,
   draftVisit: null,
   apptDate: null, // selected day on the Appointments screen, defaults to today
   draftAppt: null,
@@ -1669,21 +1704,265 @@ async function loadStaffListForLogin(){
   render();
 }
 
+
+/* ============================= I18N (EN / KN) ============================= */
+const I18N = {
+  en: {
+    Dashboard:'Dashboard', Appointments:'Appointments', Patients:'Patients',
+    'New OPD Visit':'New OPD Visit', 'Check In Patient':'Check In Patient',
+    Pediatrics:'Pediatrics', Billing:'Billing', Certificates:'Certificates',
+    Reports:'Reports', Settings:'Settings', 'Waiting now':'Waiting now',
+    "Today's visits":"Today's visits", 'Waiting queue':'Waiting queue',
+    'Total patients':'Total patients', 'Appointments today':'Appointments today',
+    'Follow-ups due':'Follow-ups due', 'Call tomorrow':'Tomorrow’s appointments',
+    'Daily cash':'Today’s cash', Collected:'Collected', Outstanding:'Outstanding',
+    Revenue:'Revenue', Search:'Search patients…', 'Quick search':'Quick search',
+    Language:'Language', Logout:'Log out', 'Print token':'Print token',
+    WhatsApp:'WhatsApp'
+  },
+  kn: {
+    Dashboard:'ಡ್ಯಾಶ್‌ಬೋರ್ಡ್', Appointments:'ಅಪಾಯಿಂಟ್‌ಮೆಂಟ್', Patients:'ರೋಗಿಗಳು',
+    'New OPD Visit':'ಹೊಸ OPD ಭೇಟಿ', 'Check In Patient':'ರೋಗಿ ಚೆಕ್-ಇನ್',
+    Pediatrics:'ಪೀಡಿಯಾಟ್ರಿಕ್ಸ್', Billing:'ಬಿಲ್ಲಿಂಗ್', Certificates:'ಪ್ರಮಾಣಪತ್ರ',
+    Reports:'ವರದಿಗಳು', Settings:'ಸೆಟ್ಟಿಂಗ್‌ಗಳು', 'Waiting now':'ಕಾಯುತ್ತಿರುವವರು',
+    "Today's visits":'ಇಂದಿನ ಭೇಟಿಗಳು', 'Waiting queue':'ಕಾಯುವ ಸರತಿ',
+    'Total patients':'ಒಟ್ಟು ರೋಗಿಗಳು', 'Appointments today':'ಇಂದಿನ ಅಪಾಯಿಂಟ್‌ಮೆಂಟ್',
+    'Follow-ups due':'ಫಾಲೋ-ಅಪ್ ಬಾಕಿ', 'Call tomorrow':'ನಾಳೆಯ ಅಪಾಯಿಂಟ್‌ಮೆಂಟ್',
+    'Daily cash':'ಇಂದಿನ ನಗದು', Collected:'ಸಂಗ್ರಹ', Outstanding:'ಬಾಕಿ',
+    Revenue:'ಆದಾಯ', Search:'ರೋಗಿ ಹುಡುಕಿ…', 'Quick search':'ತ್ವರಿತ ಹುಡುಕಾಟ',
+    Language:'ಭಾಷೆ', Logout:'ಲಾಗ್ ಔಟ್', 'Print token':'ಟೋಕನ್ ಮುದ್ರಿಸಿ',
+    WhatsApp:'ವಾಟ್ಸಾಪ್'
+  }
+};
+function t(key){
+  const lang = (state.uiLang === 'kn') ? 'kn' : 'en';
+  return (I18N[lang] && I18N[lang][key]) || I18N.en[key] || key;
+}
+function setUiLang(lang){
+  state.uiLang = lang === 'kn' ? 'kn' : 'en';
+  try{ localStorage.setItem('mmc_lang', state.uiLang); }catch(e){}
+  render();
+}
+
+/* ============================= WHATSAPP SHARE (wa.me — no Business API) ============================= */
+function digitsPhone(phone){
+  let d = normPhone(phone);
+  if(!d) return '';
+  if(d.length === 10) d = '91' + d; // India default
+  return d;
+}
+function whatsappUrl(phone, text){
+  const d = digitsPhone(phone);
+  if(!d) return null;
+  return 'https://wa.me/' + d + (text ? '?text=' + encodeURIComponent(text) : '');
+}
+function shareWhatsApp(phone, text){
+  const url = whatsappUrl(phone, text);
+  if(!url){ alert('No valid phone number to open WhatsApp.'); return; }
+  window.open(url, '_blank', 'noopener');
+}
+function patientWhatsAppText(p, extra){
+  const ci = state.data.clinicInfo || {};
+  const clinic = ci.name || 'MMC Clinic';
+  let msg = `Namaste ${p.name},\n\nFrom ${clinic}.`;
+  if(extra) msg += '\n\n' + extra;
+  if(ci.phone) msg += '\n\nClinic phone: ' + ci.phone;
+  return msg;
+}
+function remindApptWhatsApp(apptId){
+  const a = (state.data.appointments||[]).find(x=>x.id===apptId);
+  if(!a) return;
+  let phone = a.phone || '';
+  let name = a.name || '';
+  if(a.patientId){
+    const p = state.data.patients.find(x=>x.id===a.patientId);
+    if(p){ phone = phone || p.phone || ''; name = name || p.name || ''; }
+  }
+  shareWhatsApp(phone, appointmentWhatsAppText({name, date:a.date, time:a.time, doctorName:a.doctorName}));
+}
+function appointmentWhatsAppText(a){
+  const ci = state.data.clinicInfo || {};
+  const clinic = ci.name || 'MMC Clinic';
+  const when = (a.date || '') + (a.time ? ' at ' + a.time : '');
+  return `Namaste ${a.name || ''},\n\nReminder: your appointment at ${clinic} is on ${when}.${a.doctorName ? '\nDoctor: ' + a.doctorName : ''}\n\nPlease arrive a few minutes early.`;
+}
+
+/* ============================= PRINT QUEUE TOKEN ============================= */
+function printTokenSlip(patientId, visitId){
+  const p = state.data.patients.find(x=>x.id===patientId);
+  if(!p) return;
+  const v = (p.visits||[]).find(x=>x.id===visitId);
+  const ci = state.data.clinicInfo || {};
+  const token = v && v.token != null ? v.token : '—';
+  const slip = document.getElementById('token-slip-root') || document.createElement('div');
+  slip.id = 'token-slip-root';
+  slip.className = 'token-slip';
+  slip.innerHTML = `
+    <div class="t-clinic">${esc(ci.name || 'MMC Clinic')}</div>
+    <div class="t-line">${esc(ci.address||'')}</div>
+    <div class="t-line">TOKEN</div>
+    <div class="t-num">${esc(String(token))}</div>
+    <div class="t-line"><strong>${esc(p.name)}</strong></div>
+    <div class="t-line">${esc(p.id)}${v && v.time ? ' · ' + esc(v.time) : ''}</div>
+    <div class="t-line">${esc(fmtDate(todayStr()))}</div>
+  `;
+  if(!slip.parentNode) document.body.appendChild(slip);
+  window.print();
+}
+
+/* ============================= DAILY CASH ============================= */
+function todayCashStats(){
+  const today = todayStr();
+  let revenue = 0, collected = 0, outstanding = 0;
+  state.data.patients.forEach(p=>{
+    (p.visits||[]).forEach(v=>{
+      if(v.date !== today || !v.billing) return;
+      const total = typeof billingTotal === 'function' ? billingTotal(v.billing) : (parseFloat(v.billing.fee)||0);
+      revenue += total;
+      if(v.billing.paid) collected += total;
+      else outstanding += total;
+    });
+  });
+  return { revenue, collected, outstanding };
+}
+function cashStripHTML(){
+  const s = todayCashStats();
+  const fmt = n => '₹' + (Math.round(n*100)/100).toLocaleString('en-IN');
+  return `<div class="cash-strip">
+    <div class="cash-card"><div class="cash-val">${fmt(s.revenue)}</div><div class="cash-lbl">${t('Revenue')} · ${t('Daily cash')}</div></div>
+    <div class="cash-card"><div class="cash-val" style="color:var(--teal)">${fmt(s.collected)}</div><div class="cash-lbl">${t('Collected')}</div></div>
+    <div class="cash-card"><div class="cash-val" style="color:var(--danger)">${fmt(s.outstanding)}</div><div class="cash-lbl">${t('Outstanding')}</div></div>
+  </div>`;
+}
+
+/* ============================= COMMAND PALETTE ============================= */
+function openCommandPalette(){
+  if(!state.session.staffName) return;
+  state.cmdOpen = true;
+  state.cmdQuery = '';
+  state.cmdIndex = 0;
+  render();
+  setTimeout(()=>{ const el=document.getElementById('cmd-input'); if(el) el.focus(); }, 30);
+}
+function closeCommandPalette(){
+  state.cmdOpen = false;
+  state.cmdQuery = '';
+  render();
+}
+function cmdResults(){
+  const q = (state.cmdQuery||'').trim().toLowerCase();
+  const items = [];
+  // Quick actions
+  const actions = [
+    {label:'Dashboard', run:()=>go('dashboard')},
+    {label:'New visit / Check in', run:()=>go('newVisit')},
+    {label:'Register patient', run:()=>go('newPatient')},
+    {label:'Appointments', run:()=>go('appointments')},
+    {label:'Billing', run:()=>go('billing')},
+    {label:'Reports', run:()=>go('reports')},
+    {label:'Settings', run:()=>go('settings')},
+  ];
+  actions.forEach(a=>{
+    if(!q || a.label.toLowerCase().includes(q)) items.push({type:'action', title:a.label, subtitle:'Go', run:a.run});
+  });
+  // Patients
+  (state.data.patients||[]).forEach(p=>{
+    const hay = (p.name+' '+p.id+' '+(p.phone||'')).toLowerCase();
+    if(q && !hay.includes(q)) return;
+    items.push({
+      type:'patient',
+      title: p.name,
+      subtitle: p.id + (p.phone ? ' · '+p.phone : ''),
+      run: ()=>go('patient',{patientId:p.id})
+    });
+  });
+  return items.slice(0, 25);
+}
+function onCmdInput(v){
+  state.cmdQuery = v;
+  state.cmdIndex = 0;
+  const list = document.getElementById('cmd-list');
+  if(list) list.innerHTML = commandPaletteListHTML();
+}
+function commandPaletteListHTML(){
+  const items = cmdResults();
+  if(!items.length) return `<div class="cmd-empty">No matches</div>`;
+  return items.map((it,i)=>`
+    <button type="button" class="cmd-item ${i===state.cmdIndex?'active':''}"
+      onmouseenter="state.cmdIndex=${i}"
+      onclick="runCmdItem(${i})">
+      <span>${esc(it.title)}</span>
+      <span class="cmd-meta">${esc(it.subtitle||'')}</span>
+    </button>`).join('');
+}
+function runCmdItem(i){
+  const items = cmdResults();
+  const it = items[i];
+  if(!it) return;
+  closeCommandPalette();
+  it.run();
+}
+function commandPaletteHTML(){
+  if(!state.cmdOpen) return '';
+  return `<div class="cmd-overlay" onclick="if(event.target===this)closeCommandPalette()">
+    <div class="cmd-panel" role="dialog" aria-label="Quick search">
+      <input id="cmd-input" class="cmd-input" placeholder="${esc(t('Search'))}" value="${esc(state.cmdQuery)}"
+        oninput="onCmdInput(this.value)"
+        onkeydown="onCmdKey(event)">
+      <div id="cmd-list" class="cmd-list">${commandPaletteListHTML()}</div>
+      <div class="cmd-hint"><span>↑↓ Navigate · Enter open · Esc close</span><span>Ctrl/⌘ K</span></div>
+    </div>
+  </div>`;
+}
+function onCmdKey(e){
+  const items = cmdResults();
+  if(e.key === 'ArrowDown'){ e.preventDefault(); state.cmdIndex = Math.min(state.cmdIndex+1, items.length-1); document.getElementById('cmd-list').innerHTML = commandPaletteListHTML(); }
+  else if(e.key === 'ArrowUp'){ e.preventDefault(); state.cmdIndex = Math.max(state.cmdIndex-1, 0); document.getElementById('cmd-list').innerHTML = commandPaletteListHTML(); }
+  else if(e.key === 'Enter'){ e.preventDefault(); runCmdItem(state.cmdIndex); }
+  else if(e.key === 'Escape'){ e.preventDefault(); closeCommandPalette(); }
+}
+document.addEventListener('keydown', e=>{
+  if((e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')){
+    if(!state.session.staffName) return;
+    e.preventDefault();
+    if(state.cmdOpen) closeCommandPalette();
+    else openCommandPalette();
+  }
+  if(e.key === 'Escape' && state.cmdOpen) closeCommandPalette();
+});
+
+/* ============================= APPOINTMENT REMINDERS ============================= */
+function tomorrowStr(){
+  const d = new Date(); d.setDate(d.getDate()+1);
+  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0');
+  return y+'-'+m+'-'+day;
+}
+
+
 /* ============================= IDLE AUTO-LOGOUT ============================= */
 // A shared front-desk computer shouldn't stay signed in indefinitely, so we
 // log out automatically after a stretch of no keyboard/mouse/touch activity.
-const IDLE_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 let idleTimer = null;
+function idleTimeoutMs(){
+  const m = state.idleMinutes || 15;
+  return Math.max(5, m) * 60 * 1000;
+}
+function setIdleMinutes(mins){
+  state.idleMinutes = Math.max(5, parseInt(mins,10) || 15);
+  try{ localStorage.setItem('mmc_idle_min', String(state.idleMinutes)); }catch(e){}
+  resetIdleTimer();
+  render();
+}
 function resetIdleTimer(){
   if(idleTimer){ clearTimeout(idleTimer); idleTimer = null; }
   if(!state.session.staffName) return;
   idleTimer = setTimeout(()=>{
     if(state.session.staffName){
       logout();
-      state.loginError = 'Logged out after 15 minutes of inactivity.';
+      state.loginError = 'Logged out after ' + (state.idleMinutes||15) + ' minutes of inactivity.';
       render();
     }
-  }, IDLE_TIMEOUT_MS);
+  }, idleTimeoutMs());
 }
 ['mousedown','mousemove','keydown','touchstart','scroll'].forEach(evt=>{
   document.addEventListener(evt, resetIdleTimer, {passive:true});
@@ -1727,16 +2006,48 @@ function phoneDuplicates(phone, excludeId){
   if(!np) return [];
   return state.data.patients.filter(p=> p.id!==excludeId && normPhone(p.phone)===np);
 }
+function aadhaarDuplicates(aadhaar, excludeId){
+  const a = (aadhaar||'').replace(/\s/g,'');
+  if(!a || a.length !== 12) return [];
+  return state.data.patients.filter(p=> p.id!==excludeId && (p.aadhaar||'').replace(/\s/g,'') === a);
+}
+function namePhoneDuplicates(name, phone, excludeId){
+  const np = normPhone(phone);
+  const n = (name||'').trim().toLowerCase();
+  if(!np || !n) return [];
+  return state.data.patients.filter(p=>{
+    if(p.id===excludeId) return false;
+    if(normPhone(p.phone)!==np) return false;
+    return (p.name||'').trim().toLowerCase() === n;
+  });
+}
+function findRegisterDuplicates(name, phone, aadhaar, excludeId){
+  const seen = new Set();
+  const out = [];
+  function add(list, reason){
+    list.forEach(p=>{
+      if(seen.has(p.id)) return;
+      seen.add(p.id);
+      out.push({patient:p, reason});
+    });
+  }
+  add(namePhoneDuplicates(name, phone, excludeId), 'Same name and phone');
+  add(aadhaarDuplicates(aadhaar, excludeId), 'Same Aadhaar number');
+  add(phoneDuplicates(phone, excludeId), 'Same phone number');
+  return out;
+}
 function dupeWarningHTML(matches){
-  const cards = matches.map(p=>`
+  // matches: array of patients OR {patient, reason}
+  const norm = matches.map(m => m.patient ? m : {patient:m, reason:'Same phone number'});
+  const cards = norm.map(({patient:p, reason})=>`
     <div class="card" style="padding:10px 12px;margin-bottom:6px;">
       <strong>${esc(p.name)}</strong> <span class="pill">${p.id}</span>
-      <div class="faint">${esc(displayAge(p))}/${esc(p.sex)} · ${(p.visits||[]).length} visit(s)${lastVisitDate(p)?' · last visit '+fmtDate(lastVisitDate(p)):''}</div>
+      <div class="faint">${esc(reason)} · ${esc(displayAge(p))}/${esc(p.sex)} · ${(p.visits||[]).length} visit(s)${lastVisitDate(p)?' · last visit '+fmtDate(lastVisitDate(p)):''}</div>
       <button class="btn btn-sm" style="margin-top:6px;" onclick="go('patient',{patientId:'${p.id}'})">Use this record instead</button>
     </div>`).join('');
   return `
-    <div class="banner" style="background:var(--accent-tint);color:var(--accent);margin-top:10px;">
-      <strong>⚠ This phone number is already on file.</strong> A shared family phone can mean two different people — check it's not the same person before registering a new record.
+    <div class="banner" style="background:var(--accent-tint);color:var(--accent-dark,#B8860B);margin-top:10px;">
+      <strong>⚠ Possible duplicate patient.</strong> Check the matches below before creating a new record. Family members may share one phone — only continue if this is a different person.
     </div>
     ${cards}
     <button class="btn btn-ghost btn-sm" onclick="confirmRegisterAnyway()">This is a different person — register anyway</button>`;
@@ -1767,7 +2078,7 @@ async function saveNewPatient(){
   }
   err.textContent = '';
   if(!state.regDupeAcknowledged){
-    const matches = phoneDuplicates(phone, null);
+    const matches = findRegisterDuplicates(name, phone, aadhaar, null);
     if(matches.length){
       const warnEl = document.getElementById('reg-dupe-warning');
       if(warnEl) warnEl.innerHTML = dupeWarningHTML(matches);
@@ -1866,13 +2177,14 @@ function appointmentsView(){
         ${a.status==='booked' ? `<button class="btn btn-ghost btn-sm" onclick="startEditAppointment('${a.id}')">Reschedule</button>` : ''}
         ${a.status==='booked' && isPastOrToday ? `<button class="btn btn-ghost btn-sm" onclick="markNoShow('${a.id}')">No-show</button>` : ''}
         ${a.status==='booked' ? `<button class="btn btn-ghost btn-sm" onclick="cancelAppointment('${a.id}')">Cancel</button>` : ''}
+        ${(a.phone || (patient && patient.phone)) ? `<button class="btn btn-ghost btn-sm" onclick="remindApptWhatsApp(${jsAttr(a.id)})">${t('WhatsApp')}</button>` : ''}
       </td>
     </tr>`;
   }).join('');
 
   return `
     <div class="page-head">
-      <div><h1>Appointments</h1><p class="muted">Book ahead and see the day's booked slots</p></div>
+      <div><h1>${t('Appointments')}</h1><p class="muted">Book ahead and see the day's booked slots</p></div>
       <button class="btn btn-accent" onclick="go('newAppointment')">+ Book appointment</button>
     </div>
     <div class="card">
@@ -2939,17 +3251,17 @@ function onResetAuthMethodChange(){
 
 function shellView(){
   const mainItems = [
-    ['dashboard','Dashboard'],
-    ['appointments','Appointments'],
-    ['patients','Patients'],
-    ['newVisit', isDoctor() ? 'New OPD Visit' : 'Check In Patient']
+    ['dashboard', t('Dashboard')],
+    ['appointments', t('Appointments')],
+    ['patients', t('Patients')],
+    ['newVisit', isDoctor() ? t('New OPD Visit') : t('Check In Patient')]
   ];
-  mainItems.push(['pediatrics','Pediatrics']);
+  mainItems.push(['pediatrics', t('Pediatrics')]);
   const recordItems = [
-    ['billing','Billing'],
-    ['certificates','Certificates'],
-    ['reports','Reports'],
-    ['settings','Settings']
+    ['billing', t('Billing')],
+    ['certificates', t('Certificates')],
+    ['reports', t('Reports')],
+    ['settings', t('Settings')]
   ];
   const navBtn = ([r,label]) =>
     `<button class="nav-item ${state.route===r?'active':''}" onclick="go('${r}')">${navIcon(r)}<span>${esc(label)}</span></button>`;
@@ -2972,7 +3284,8 @@ function shellView(){
           <div class="staff-avatar">${esc(initialsOf(state.session.staffName))}</div>
           <div class="staff-chip"><strong>${esc(state.session.staffName)}</strong><span>${staff?esc(staff.role):''}</span></div>
         </div>
-        <button class="nav-item" onclick="logout()">${navIcon('logout')}<span>Log out</span></button>
+        <button class="nav-item" onclick="openCommandPalette()">${navIcon('patients')}<span>${t('Quick search')}</span></button>
+        <button class="nav-item" onclick="logout()">${navIcon('logout')}<span>${t('Logout')}</span></button>
       </div>
     </div>
     <div class="main">
@@ -3048,9 +3361,12 @@ function dashboardView(){
         <div class="dbx-qname">${esc(patient.name)}</div>
         <div class="dbx-qsub">${esc(patient.id)}${waitLabel ? ' · '+esc(waitLabel) : ''}${visit.token!=null ? ' · #'+visit.token : ''}</div>
       </div>
-      ${isDoctor()
-        ? `<button class="dbx-qbtn" onclick="event.stopPropagation();go('newVisit',{patientId:'${patient.id}',editVisitId:'${visit.id}'})">Continue</button>`
-        : `<span class="dbx-qstatus wait">Waiting</span>`}
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
+        <button class="dbx-qbtn ghost" onclick="event.stopPropagation();printTokenSlip('${patient.id}','${visit.id}')" title="Print token">${t('Print token')}</button>
+        ${isDoctor()
+          ? `<button class="dbx-qbtn" onclick="event.stopPropagation();go('newVisit',{patientId:'${patient.id}',editVisitId:'${visit.id}'})">Continue</button>`
+          : `<span class="dbx-qstatus wait">Waiting</span>`}
+      </div>
     </div>`;
   }).join('');
 
@@ -3068,7 +3384,7 @@ function dashboardView(){
     </div>`;
   }).join('');
 
-  const followUpRows = followUps.map(({patient,visit})=>{
+  const followUpRows = followUps.slice(0,12).map(({patient,visit})=>{
     const d = new Date(visit.followUpDate+'T00:00:00');
     const dayNum = isNaN(d) ? '—' : d.getDate();
     const monLabel = isNaN(d) ? '' : d.toLocaleDateString('en-IN',{month:'short'});
@@ -3080,17 +3396,18 @@ function dashboardView(){
         <div class="dbx-qsub">${esc(visit.diagnosis)||'—'}${visit.followUpDate<today?' · overdue':''}</div>
       </div>
       <div class="dbx-followup-actions">
-        <button class="dbx-qbtn" onclick="go('newVisit',{patientId:'${patient.id}',editVisitId:'${visit.id}'})">Open</button>
+        <button class="dbx-qbtn" onclick="go('newVisit',{patientId:'${patient.id}'})">Visit</button>
+        ${patient.phone?`<button class="dbx-qbtn ghost" onclick="shareWhatsApp(${jsAttr(patient.phone)}, patientWhatsAppText(state.data.patients.find(x=>x.id===${jsAttr(patient.id)}), 'Your follow-up is due. Please visit the clinic.'))">${t('WhatsApp')}</button>`:''}
         <button class="dbx-qbtn ghost" onclick="markFollowUpDone('${patient.id}','${visit.id}')">Done</button>
       </div>
     </div>`;
   }).join('');
-  const followUpCard = isDoctor() ? `
+  const followUpCard = `
     <div class="dbx-panel">
-      <div class="dbx-panel-head"><h2>Follow-ups due${followUps.length?` <span class="count">${followUps.length}</span>`:''}</h2></div>
+      <div class="dbx-panel-head"><h2>${t('Follow-ups due')}${followUps.length?` <span class="count">${followUps.length}</span>`:''}</h2></div>
       ${followUps.length ? followUpRows
         : `<div style="padding:0 4px;">${emptyState('✅', 'No follow-ups due', 'Follow-up dates set during a visit will surface here when they are due.')}</div>`}
-    </div>` : '';
+    </div>`;
 
   const pedDueList = pediatricPatients().map(p=>{
     const due = vaccinationDueSummary(p);
@@ -3175,9 +3492,31 @@ function dashboardView(){
             `<button class="btn btn-accent btn-sm" onclick="go('newVisit')">+ New visit</button>`)}</div>`}
     </div>`;
 
+  const tomorrow = tomorrowStr();
+  const tomorrowAppts = appointmentsForDate(tomorrow).filter(a=>a.status==='booked' || !a.status);
+  const apptRemindRows = tomorrowAppts.slice(0,10).map(a=>{
+    const phone = a.phone || (a.patientId && (state.data.patients.find(p=>p.id===a.patientId)||{}).phone) || '';
+    const name = a.name || (a.patientId && (state.data.patients.find(p=>p.id===a.patientId)||{}).name) || 'Patient';
+    return `<div class="dbx-qrow">
+      <div class="dbx-qtime">${esc(a.time||'')}</div>
+      <div class="dbx-qtext">
+        <div class="dbx-qname">${esc(name)}</div>
+        <div class="dbx-qsub">${esc(a.doctorName||'')}${phone?' · '+esc(phone):''}</div>
+      </div>
+      ${phone?`<button class="dbx-qbtn" onclick="remindApptWhatsApp(${jsAttr(a.id)})">${t('WhatsApp')}</button>`:''}
+    </div>`;
+  }).join('');
+  const apptRemindCard = `
+    <div class="dbx-panel">
+      <div class="dbx-panel-head"><h2>${t('Call tomorrow')}${tomorrowAppts.length?` <span class="count">${tomorrowAppts.length}</span>`:''}</h2></div>
+      ${tomorrowAppts.length ? apptRemindRows
+        : `<div style="padding:0 4px;">${emptyState('📅', 'No appointments tomorrow', 'Booked appointments for tomorrow appear here so you can send reminders.')}</div>`}
+    </div>`;
+
   return `
     ${hero}
     ${ctaRow}
+    ${cashStripHTML()}
     ${queueSection}
 
     <div class="dbx-stat-grid">
@@ -3204,6 +3543,7 @@ function dashboardView(){
       </div>
       <div>
         ${followUpCard}
+        ${apptRemindCard}
         ${pedDueCard}
         ${quickActionsCard}
       </div>
@@ -3520,6 +3860,7 @@ function patientView(patientId){
       <div class="row" style="gap:8px;">
         <button class="btn btn-accent" onclick="go('newVisit',{patientId:'${p.id}'})">+ New OPD Visit</button>
         <button class="btn" onclick="state.certPatientId='${p.id}';state.certType='sick';go('certificates')">Certificate</button>
+        ${p.phone?`<button class="btn wa-btn" onclick="shareWhatsApp(${jsAttr(p.phone)}, patientWhatsAppText(state.data.patients.find(x=>x.id===${jsAttr(p.id)})))">${t('WhatsApp')}</button>`:''}
       </div>
     </div>
     ${pedBanner}
@@ -6415,6 +6756,7 @@ function reportsView(){
   state.reportRange = state.reportRange || 'month';
   const range = reportDateRange(state.reportRange);
   const stats = computeReportStats(range.from, range.to);
+  const cashBlock = state.reportRange==='today' ? cashStripHTML() : '';
   const presets = [['today','Today'],['week','This week'],['month','This month'],['lastMonth','Last month'],['all','All time']];
   const presetBtns = presets.map(([k,label])=>
     `<button class="btn btn-sm ${state.reportRange===k?'btn-primary':''}" onclick="setReportRange('${k}')">${label}</button>`
@@ -6456,6 +6798,7 @@ function reportsView(){
       <div class="stat-card"><div class="stat-num">₹${stats.unpaidRevenue.toFixed(0)}</div><div class="stat-label">Outstanding</div></div>
       <div class="stat-card"><div class="stat-num">${stats.newPatients}</div><div class="stat-label">New patients</div></div>
     </div>
+    ${cashBlock}
     <div class="card">
       <h2 style="margin-bottom:10px;">Visits by doctor</h2>
       ${doctorRows ? `<table><thead><tr><th>Doctor</th><th>Visits</th><th>Revenue</th></tr></thead><tbody>${doctorRows}</tbody></table>` : '<p class="muted">No visits in this period.</p>'}
@@ -6563,6 +6906,20 @@ function settingsView(){
 
   return `
     <div class="page-head"><h1>Settings</h1></div>
+    <div class="card" style="margin-bottom:18px;max-width:520px;">
+      <h2 style="margin-bottom:10px;">${t('Language')} / Display</h2>
+      <p class="muted" style="font-size:12.5px;">UI labels can switch between English and Kannada. Clinical notes stay as you type them.</p>
+      <div class="lang-toggle" style="margin-bottom:14px;">
+        <button type="button" class="${state.uiLang!=='kn'?'on':''}" onclick="setUiLang('en')">English</button>
+        <button type="button" class="${state.uiLang==='kn'?'on':''}" onclick="setUiLang('kn')">ಕನ್ನಡ</button>
+      </div>
+      <div class="field"><label>Auto-logout after inactivity (minutes)</label>
+        <select id="idle-mins" onchange="setIdleMinutes(this.value)">
+          ${[5,10,15,30,60].map(m=>`<option value="${m}" ${state.idleMinutes===m?'selected':''}>${m} minutes</option>`).join('')}
+        </select>
+      </div>
+      <p class="faint">Press Ctrl+K (⌘K on Mac) anytime for ${t('Quick search')}.</p>
+    </div>
     <div class="card" style="margin-bottom:18px;max-width:520px;">
       <h2 style="margin-bottom:12px;">Clinic info</h2>
       <div class="field"><label>Clinic name</label><input id="ci-name" value="${esc(ci.name)}"></div>
@@ -6747,10 +7104,11 @@ function render(){
   if(state.loading){ app.innerHTML = loadingView(); return; }
   if(state.loadError && !state.data){ app.innerHTML = connectionErrorView(); return; }
   if(!state.session.staffName){
+    state.cmdOpen = false;
     app.innerHTML = state.data.staff.length===0 ? setupView() : loginView();
     return;
   }
-  app.innerHTML = shellView();
+  app.innerHTML = shellView() + commandPaletteHTML();
   if(state.route==='certificates') applyPendingCertFields();
 }
 
