@@ -635,7 +635,7 @@ let state = {
 
 function defaultData(){
   return {
-    clinicInfo: { name: 'Male Madeshwara Clinic', shortName: 'MM', address: '', phone: '', logoDataUrl: '' },
+    clinicInfo: { name: 'Male Madeshwara Clinic', shortName: 'MMC', address: '', phone: '', logoDataUrl: '' },
     nextPatientSeq: 1,
     nextCertSeq: 1,
     nextTokenSeq: 1,
@@ -921,7 +921,14 @@ let dataVersion = 0;
 
 async function loadData(){
   try{
-    const res = await fetch('/api/data');
+    const res = await fetch('/api/data', {credentials:'same-origin'});
+    if(res.status === 401){
+      // Session cookie missing/expired — the server no longer recognizes us,
+      // regardless of what the local UI thinks. Back to the login screen.
+      state.session.staffName = null;
+      await loadStaffListForLogin();
+      return;
+    }
     if(!res.ok) throw new Error('bad response');
     const json = await res.json();
     state.data = json.data;
@@ -946,9 +953,16 @@ async function saveData(){
   try{
     const res = await fetch('/api/data', {
       method:'PUT',
+      credentials:'same-origin',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({version: dataVersion, data: state.data})
     });
+    if(res.status === 401){
+      state.saveError = 'Your session has expired — please log in again.';
+      state.session.staffName = null;
+      render();
+      return false;
+    }
     if(res.status === 409){
       const server = await res.json();
       state.data = server.data;
@@ -1002,20 +1016,17 @@ function go(route, params){
 }
 
 /* ============================= AUTH ============================= */
-// Staff PINs are stored as SHA-256 hashes, not plain text (matters since
-// the data backup export makes the raw record easy to open). Accounts
-// created before this existed still have a plain 4-digit PIN on file;
-// verifyPin() accepts either, and silently upgrades a legacy account to a
-// hash the next time that PIN is used successfully.
+// Actual PIN verification now happens server-side (see /api/login in
+// server.js) — the server checks the real stored hash and issues a signed
+// session cookie; the browser is never trusted to self-certify who it is.
+// hashPin() still runs client-side only for the narrow, already-logged-in-
+// as-owner cases of setting a NEW pin (addStaff, resetStaffPin) — the
+// resulting unsalted hash is transparently upgraded to a salted one
+// server-side the first time that staff member actually logs in with it.
 async function hashPin(pin){
   const enc = new TextEncoder().encode(pin);
   const buf = await crypto.subtle.digest('SHA-256', enc);
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
-}
-function looksHashed(pin){ return typeof pin === 'string' && pin.length === 64 && /^[0-9a-f]+$/.test(pin); }
-async function verifyPin(staff, enteredPin){
-  if(looksHashed(staff.pin)) return (await hashPin(enteredPin)) === staff.pin;
-  return staff.pin === enteredPin;
 }
 
 /* ============================= PIN LOCKOUT ============================= */
@@ -1073,15 +1084,28 @@ async function doSetup(){
   const pin = document.getElementById('setup-pin').value.trim();
   const err = document.getElementById('setup-error');
   if(!name || !/^\d{4}$/.test(pin)){
-    err.textContent = 'Enter your name and a PIN.'; return;
+    err.textContent = 'Enter your name and a 4-digit PIN.'; return;
   }
-  state.data.staff.push({name, role, pin: await hashPin(pin), owner: true, qualification: ''});
-  logAudit('Clinic set up', `First account: ${name} (${role})`, name);
-  const ok = await saveData();
-  if(!ok){ err.textContent = state.saveError; render(); return; }
-  state.session.staffName = name;
-  saveSessionToStorage();
-  go('dashboard');
+  try{
+    const res = await fetch('/api/setup', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({name, role, pin})
+    });
+    const json = await res.json().catch(()=>({}));
+    if(!res.ok){
+      err.textContent = json.error || 'Could not complete setup — try again.';
+      return;
+    }
+    state.session.staffName = json.name;
+    state.loading = true;
+    render();
+    await loadData();
+    logAudit('Clinic set up', `First account: ${json.name} (${json.role})`, json.name);
+    await saveData();
+  } catch(e){
+    err.textContent = 'Could not reach the clinic server. Check your connection and try again.';
+  }
 }
 
 // Whoever's logged in — used to gate doctor-only actions like "Continue".
@@ -1178,88 +1202,84 @@ async function doLogin(){
     render();
     return;
   }
-  const staff = state.data.staff.find(s => s.name === name);
-  if(staff && await verifyPin(staff, pin)){
-    clearPinAttempts(name);
-    state.session.staffName = name;
-    state.loginError = '';
-    saveSessionToStorage();
-    if(!looksHashed(staff.pin)){ staff.pin = await hashPin(pin); saveData(); }
-    go('dashboard');
-  } else {
-    const rec = recordFailedPin(name);
-    if(rec.lockedUntil && Date.now() < rec.lockedUntil){
-      state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil((rec.lockedUntil-Date.now())/1000)}s.`;
-    } else {
-      const left = PIN_LOCK_THRESHOLD - rec.fails;
-      state.loginError = `Incorrect PIN. Try again.${left<=2 ? ` (${left} attempt${left===1?'':'s'} left before a cooldown)` : ''}`;
+  try{
+    const res = await fetch('/api/login', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({staffName: name, pin})
+    });
+    if(res.ok){
+      clearPinAttempts(name);
+      const json = await res.json();
+      state.session.staffName = json.name;
+      state.loginError = '';
+      state.loading = true;
+      render();
+      await loadData();
+      return;
     }
-    render();
+    if(res.status === 429){
+      const json = await res.json().catch(()=>({}));
+      state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil((json.remainingMs||30000)/1000)}s.`;
+    } else {
+      const rec = recordFailedPin(name);
+      if(rec.lockedUntil && Date.now() < rec.lockedUntil){
+        state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil((rec.lockedUntil-Date.now())/1000)}s.`;
+      } else {
+        const left = PIN_LOCK_THRESHOLD - rec.fails;
+        state.loginError = `Incorrect PIN. Try again.${left<=2 ? ` (${left} attempt${left===1?'':'s'} left before a cooldown)` : ''}`;
+      }
+    }
+  } catch(e){
+    state.loginError = 'Could not reach the clinic server. Check your connection and try again.';
   }
-}
-
-function toggleAddFromLogin(){
-  state.loginMode = state.loginMode === 'login' ? 'addFromLogin' : 'login';
-  state.loginError = '';
-  render();
-}
-
-async function addStaffFromLogin(){
-  const name = document.getElementById('als-name').value.trim();
-  const role = document.getElementById('als-role').value;
-  const pin = document.getElementById('als-pin').value.trim();
-  const err = document.getElementById('als-error');
-  if(!name || !/^\d{4}$/.test(pin)){
-    err.textContent = 'Enter a name and a PIN.'; return;
-  }
-  if(state.data.staff.some(s=>s.name===name)){
-    err.textContent = 'That name is already registered.'; return;
-  }
-  state.data.staff.push({name, role, pin: await hashPin(pin), owner: false, qualification: ''});
-  logAudit('Added staff account', `${name} (${role})`);
-  const ok = await saveData();
-  if(!ok){ err.textContent = state.saveError; render(); return; }
-  state.loginMode = 'login';
   render();
 }
 
 function logout(){
   state.session.staffName = null;
   state.loginMode = 'login';
-  clearSessionStorage();
   go('dashboard');
+  fetch('/api/logout', {method:'POST', credentials:'same-origin'}).catch(()=>{});
 }
 
-/* ============================= SESSION PERSISTENCE ============================= */
-// Mobile/tablet browsers routinely discard a backgrounded tab to save memory
-// and reload it from scratch when you switch back — which used to wipe the
-// in-memory `state` object and drop the user back to the login screen even
-// though they'd been active seconds earlier. We mirror just the login name
-// and a last-activity timestamp into sessionStorage (cleared when the tab or
-// browser actually closes, unlike localStorage) so a reload can silently
-// restore the session instead of forcing a re-login — while still honoring
-// the real idle timeout if the time away exceeds it.
-const SESSION_KEY = 'mmc_session';
-function saveSessionToStorage(){
+/* ============================= SESSION VERIFICATION ============================= */
+// "Logged in" is now whatever the server's signed session cookie says, not
+// anything read out of browser storage — that was the actual hole (a
+// staff name sitting in sessionStorage proved nothing to the server, which
+// had no server-side concept of sessions at all). On boot, ask the server;
+// its answer is authoritative.
+async function initSession(){
   try{
-    if(!state.session.staffName){ sessionStorage.removeItem(SESSION_KEY); return; }
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify({staffName: state.session.staffName, lastActivity: Date.now()}));
-  } catch(e){ /* storage unavailable (e.g. private mode) — session just won't survive a reload */ }
-}
-function clearSessionStorage(){
-  try{ sessionStorage.removeItem(SESSION_KEY); } catch(e){}
-}
-function restoreSessionFromStorage(){
-  try{
-    const raw = sessionStorage.getItem(SESSION_KEY);
-    if(!raw) return;
-    const saved = JSON.parse(raw);
-    if(saved && saved.staffName && (Date.now() - saved.lastActivity) < IDLE_TIMEOUT_MS){
-      state.session.staffName = saved.staffName;
-    } else {
-      clearSessionStorage();
+    const res = await fetch('/api/session', {credentials:'same-origin'});
+    if(res.ok){
+      const json = await res.json();
+      state.session.staffName = json.name;
+      await loadData();
+      return;
     }
-  } catch(e){ /* ignore malformed/unavailable storage */ }
+  } catch(e){ /* fall through to the logged-out path below */ }
+  state.session.staffName = null;
+  await loadStaffListForLogin();
+}
+// Not logged in yet — fetch just enough (staff names + roles, no PINs, no
+// patient data) to render the login or first-time-setup screen.
+async function loadStaffListForLogin(){
+  try{
+    const res = await fetch('/api/staff-list', {credentials:'same-origin'});
+    if(res.ok){
+      const json = await res.json();
+      state.data = defaultData();
+      state.data.staff = json.staff;
+      state.loadError = null;
+    } else {
+      state.loadError = 'Could not reach the clinic server. Check your connection and reload the page.';
+    }
+  } catch(e){
+    state.loadError = 'Could not reach the clinic server. Check your connection and reload the page.';
+  }
+  state.loading = false;
+  render();
 }
 
 /* ============================= IDLE AUTO-LOGOUT ============================= */
@@ -1270,7 +1290,6 @@ let idleTimer = null;
 function resetIdleTimer(){
   if(idleTimer){ clearTimeout(idleTimer); idleTimer = null; }
   if(!state.session.staffName) return;
-  saveSessionToStorage(); // stamp last-activity so a tab reload can restore correctly
   idleTimer = setTimeout(()=>{
     if(state.session.staffName){
       logout();
@@ -2030,7 +2049,7 @@ async function saveVisit(){
     patient = {
       id: newPatientId(), name: dv.newPatient.name, dob: dv.newPatient.dob||'', age: dv.newPatient.age, sex: dv.newPatient.sex,
       phone: dv.newPatient.phone, address: dv.newPatient.address, allergies: dv.newPatient.allergies||'', chronicConditions: dv.newPatient.chronicConditions||'',
-      registeredDate: todayStr(), visits: [], growthRecords: [], vaccinations: []
+      registeredDate: todayStr(), visits: [], growthRecords: [], vaccinations: [], certificates: []
     };
     state.data.patients.push(patient);
   } else {
@@ -2186,6 +2205,7 @@ function csvEscape(s){
   return t;
 }
 function exportPatientsCSV(){
+  if(!isOwner()){ alert('Only the clinic admin can export patient data.'); return; }
   const rows = [['ID','Name','DOB','Age','Sex','Phone','Address','Allergies','Registered']];
   (state.data.patients||[]).forEach(p=>{
     rows.push([p.id,p.name,p.dob||'',displayAge(p),p.sex||'',p.phone||'',p.address||'',p.allergies||'',p.registeredDate||'']);
@@ -2195,6 +2215,7 @@ function exportPatientsCSV(){
   logAudit('Exported patients CSV', rows.length-1+' patients');
 }
 function exportVisitsCSV(){
+  if(!isOwner()){ alert('Only the clinic admin can export visit data.'); return; }
   const rows = [['PatientID','PatientName','VisitID','Token','Date','Time','Doctor','Diagnosis','Complaints','Status','FollowUp']];
   (state.data.patients||[]).forEach(p=>{
     (p.visits||[]).forEach(v=>{
@@ -2207,6 +2228,7 @@ function exportVisitsCSV(){
 }
 
 function downloadBackup(){
+  if(!isOwner()){ alert('Only the clinic admin can download a full data backup.'); return; }
   const blob = new Blob([JSON.stringify(state.data, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -2216,10 +2238,16 @@ function downloadBackup(){
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+  logAudit('Downloaded full backup', '');
 }
 async function restoreBackup(file){
   const msg = document.getElementById('restore-msg');
   if(!file) return;
+  if(!isOwner()){
+    if(msg) msg.textContent = 'Only the clinic admin can restore from a backup.';
+    document.getElementById('restore-file-input').value = '';
+    return;
+  }
   if(!confirm('This will replace every patient, visit, appointment and staff record currently in the system with the contents of this backup file. This cannot be undone. Continue?')){
     document.getElementById('restore-file-input').value = '';
     return;
@@ -2241,7 +2269,7 @@ async function restoreBackup(file){
     // The logged-in staff account may not exist in the restored data.
     if(!state.data.staff.some(s=>s.name===state.session.staffName)){
       state.session.staffName = null;
-      clearSessionStorage();
+      fetch('/api/logout', {method:'POST', credentials:'same-origin'}).catch(()=>{});
     }
     render();
   } catch(e){
@@ -2256,7 +2284,7 @@ async function addStaff(){
   const pin = document.getElementById('st-pin').value.trim();
   const qualification = (document.getElementById('st-qualification')||{}).value.trim() || '';
   const err = document.getElementById('st-error');
-  if(!name || !/^\d{4}$/.test(pin)){ err.textContent = 'Enter a name and a PIN.'; return; }
+  if(!name || !/^\d{4}$/.test(pin)){ err.textContent = 'Enter a name and a 4-digit PIN.'; return; }
   if(state.data.staff.some(s=>s.name===name)){ err.textContent = 'That name is already registered.'; return; }
   state.data.staff.push({name, role, pin: await hashPin(pin), qualification, owner: false});
   logAudit('Added staff account', `${name} (${role})${qualification?' · '+qualification:''}`);
@@ -2308,10 +2336,10 @@ async function resetStaffPin(name){
   if(!isOwner()){ alert('Only the clinic admin can reset staff PINs.'); return; }
   const s = state.data.staff.find(s=>s.name===name);
   if(!s) return;
-  const entered = prompt(`New PIN for ${name}:`);
+  const entered = prompt(`New 4-digit PIN for ${name}:`);
   if(entered === null) return;
   const pin = entered.trim();
-  if(!/^\d{4}$/.test(pin)){ alert('Please enter a valid PIN.'); return; }
+  if(!/^\d{4}$/.test(pin)){ alert('PIN must be exactly 4 digits.'); return; }
   s.pin = await hashPin(pin);
   logAudit('Reset staff PIN', name);
   await saveData();
@@ -2373,7 +2401,7 @@ function setupView(){
       <div class="field"><label>Role</label>
         <select id="setup-role"><option>Doctor</option><option>Receptionist</option><option>Staff</option></select>
       </div>
-      <div class="field"><label>Choose a PIN</label><input id="setup-pin" type="password" inputmode="numeric" maxlength="4"></div>
+      <div class="field"><label>Choose a 4-digit PIN</label><input id="setup-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••"></div>
       <div id="setup-error" class="error-text"></div>
       <button class="btn btn-primary btn-block" onclick="doSetup()">Create account &amp; start</button>
     </div>
@@ -2384,20 +2412,6 @@ function loginView(){
   const selectedName = state.loginSelectedName || (state.data.staff[0] && state.data.staff[0].name) || '';
   const lock = pinLockStatus(selectedName);
   const staffOptions = state.data.staff.map(s=>`<option value="${esc(s.name)}" ${s.name===selectedName?'selected':''}>${esc(s.name)} — ${esc(s.role)}</option>`).join('');
-  if(state.loginMode === 'addFromLogin'){
-    return `
-    <div class="center-screen">
-      <div class="auth-card">
-        <div class="auth-brand"><div class="brand-mark">MMC</div><h1 style="font-size:19px;">New staff account</h1></div>
-        <div class="field"><label>Name</label><input id="als-name" type="text"></div>
-        <div class="field"><label>Role</label><select id="als-role"><option>Doctor</option><option>Receptionist</option><option>Staff</option></select></div>
-        <div class="field"><label>PIN</label><input id="als-pin" type="password" inputmode="numeric" maxlength="4"></div>
-        <div id="als-error" class="error-text"></div>
-        <button class="btn btn-primary btn-block" onclick="addStaffFromLogin()">Add account</button>
-        <button class="btn btn-ghost btn-block" style="margin-top:6px;" onclick="toggleAddFromLogin()">Back to log in</button>
-      </div>
-    </div>`;
-  }
   return `
   <div class="center-screen">
     <div class="auth-card">
@@ -2407,11 +2421,10 @@ function loginView(){
         <p class="muted" style="font-size:13px;">Log in to continue</p>
       </div>
       <div class="field"><label>Staff</label><select id="login-select" onchange="onLoginStaffChange(this.value)">${staffOptions}</select></div>
-      <div class="field"><label>PIN</label><input id="login-pin" type="password" inputmode="numeric" maxlength="4" ${lock.locked?'disabled':''}></div>
+      <div class="field"><label>PIN</label><input id="login-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" ${lock.locked?'disabled':''}></div>
       ${state.loginError ? `<div class="error-text">${esc(state.loginError)}</div>` : ''}
       <button class="btn btn-primary btn-block" ${lock.locked?'disabled':''} onclick="doLogin()">Log in</button>
-      <button class="btn btn-ghost btn-block" style="margin-top:6px;" onclick="toggleAddFromLogin()">+ Add a staff account</button>
-      <p class="faint" style="text-align:center;margin-top:14px;">Forgot your PIN? Ask another staff member to reset it from Settings → Staff accounts.</p>
+      <p class="faint" style="text-align:center;margin-top:14px;">Forgot your PIN, or need a new staff account added? Ask the clinic admin — accounts are added from Settings → Staff accounts once logged in.</p>
     </div>
   </div>`;
 }
@@ -5968,9 +5981,9 @@ function settingsView(){
               </div>
             </div>
             <div class="row" style="gap:8px;">
-              <button class="btn btn-primary btn-sm" onclick="saveStaffProfileEdit('${esc(s.name)}')">Save profile</button>
+              <button class="btn btn-primary btn-sm" onclick="saveStaffProfileEdit(${jsAttr(s.name)})">Save profile</button>
               <button class="btn btn-ghost btn-sm" onclick="cancelEditStaffProfile()">Cancel</button>
-              <button class="btn btn-ghost btn-sm" onclick="resetStaffPin('${esc(s.name)}')">Reset PIN</button>
+              <button class="btn btn-ghost btn-sm" onclick="resetStaffPin(${jsAttr(s.name)})">Reset PIN</button>
             </div>
           </div>
         </td>
@@ -5983,8 +5996,8 @@ function settingsView(){
       <td>••••</td>
       <td style="white-space:nowrap;">
         ${canManageStaff ? `
-          <button class="btn btn-sm" onclick="startEditStaffProfile('${esc(s.name)}')">Edit</button>
-          ${s.name!==state.session.staffName && !s.owner ? `<button class="btn btn-ghost btn-sm" onclick="removeStaff('${esc(s.name)}')">Remove</button>` : (s.name===state.session.staffName?'<span class="faint">(you)</span>':'')}
+          <button class="btn btn-sm" onclick="startEditStaffProfile(${jsAttr(s.name)})">Edit</button>
+          ${s.name!==state.session.staffName && !s.owner ? `<button class="btn btn-ghost btn-sm" onclick="removeStaff(${jsAttr(s.name)})">Remove</button>` : (s.name===state.session.staffName?'<span class="faint">(you)</span>':'')}
         ` : `<span class="faint">${s.name===state.session.staffName?'(you)':'—'}</span>`}
       </td></tr>`;
   }).join('');
@@ -6021,9 +6034,10 @@ function settingsView(){
       <p id="logo-upload-msg" class="faint" style="margin-top:6px;"></p>
     </div>
 
+    ${isOwner() ? `
     <div class="card" style="margin-bottom:18px;max-width:520px;">
       <h2 style="margin-bottom:6px;">Backup &amp; export</h2>
-      <p class="muted" style="font-size:12.5px;">Downloads every patient, visit, and staff record as a single JSON file — keep a copy somewhere safe periodically, especially before any database change.</p>
+      <p class="muted" style="font-size:12.5px;">Downloads every patient, visit, and staff record as a single JSON file — keep a copy somewhere safe periodically, especially before any database change. Contains PHI (Aadhaar, diagnoses, contact details) — admin-only.</p>
       <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:8px;">
         <button class="btn btn-sm" onclick="downloadBackup()">⬇ Full backup (JSON)</button>
         <button class="btn btn-sm" onclick="exportPatientsCSV()">⬇ Patients list (CSV)</button>
@@ -6034,7 +6048,7 @@ function settingsView(){
       <input type="file" id="restore-file-input" accept="application/json" style="display:none;" onchange="restoreBackup(this.files[0])">
       <button class="btn btn-sm btn-danger" onclick="document.getElementById('restore-file-input').click()">⬆ Restore from backup…</button>
       <div id="restore-msg" class="error-text"></div>
-    </div>
+    </div>` : ''}
 
     <div class="card" style="margin-bottom:18px;max-width:520px;">
       <h2 style="margin-bottom:6px;">Activity log</h2>
@@ -6070,7 +6084,7 @@ function settingsView(){
         <div class="field"><label>Name</label><input id="st-name"></div>
         <div class="field"><label>Role</label><select id="st-role"><option>Doctor</option><option>Receptionist</option><option>Staff</option></select></div>
         <div class="field"><label>Qualification / course</label><input id="st-qualification" placeholder="e.g. M.B.B.S."></div>
-        <div class="field"><label>PIN</label><input id="st-pin" inputmode="numeric" maxlength="4"></div>
+        <div class="field"><label>4-digit PIN</label><input id="st-pin" inputmode="numeric" maxlength="4"></div>
       </div>
       <div id="st-error" class="error-text"></div>
       <button class="btn btn-sm" onclick="addStaff()">+ Add staff</button>
@@ -6149,13 +6163,18 @@ async function removeCustomMedicine(idx){
 
 function connectionErrorView(){
   return `<div class="center-screen"><div class="auth-card" style="text-align:center;">
-    <div class="brand-mark" style="margin:0 auto 12px auto;">MM</div>
+    <div class="brand-mark" style="margin:0 auto 12px auto;">MMC</div>
     <h1 style="font-size:18px;">Can't reach the clinic server</h1>
     <p class="muted" style="font-size:13px;">${esc(state.loadError)}</p>
     <button class="btn btn-primary btn-block" onclick="retryLoad()">Try again</button>
   </div></div>`;
 }
-function retryLoad(){ state.loading = true; render(); loadData(); }
+function retryLoad(){
+  state.loading = true;
+  render();
+  if(state.session.staffName) loadData();
+  else initSession();
+}
 
 /* ============================= ROOT RENDER ============================= */
 function render(){
@@ -6171,8 +6190,7 @@ function render(){
   if(state.route==='certificates') applyPendingCertFields();
 }
 
-restoreSessionFromStorage();
-loadData();
+initSession();
 </script>
 <script>
   if ('serviceWorker' in navigator) {
