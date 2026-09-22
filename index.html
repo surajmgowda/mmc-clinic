@@ -615,7 +615,11 @@ let state = {
   routeParams: {},
   search: '',
   loginError: '',
-  loginMode: 'login', // 'login' | 'addFromLogin'
+  loginMode: 'login', // 'login' | 'addFromLogin' | 'forgot'
+  loginAuthMethod: 'pin', // 'pin' | 'password'
+  forgotStep: 1, // 1 = answer security question, 2 = set new PIN/password
+  forgotName: '',
+  forgotError: '',
   draftVisit: null,
   apptDate: null, // selected day on the Appointments screen, defaults to today
   draftAppt: null,
@@ -635,7 +639,7 @@ let state = {
 
 function defaultData(){
   return {
-    clinicInfo: { name: 'Male Madeshwara Clinic', shortName: 'MMC', address: '', phone: '', logoDataUrl: '' },
+    clinicInfo: { name: 'Male Madeshwara Clinic', shortName: 'MM', address: '', phone: '', logoDataUrl: '' },
     nextPatientSeq: 1,
     nextCertSeq: 1,
     nextTokenSeq: 1,
@@ -921,14 +925,7 @@ let dataVersion = 0;
 
 async function loadData(){
   try{
-    const res = await fetch('/api/data', {credentials:'same-origin'});
-    if(res.status === 401){
-      // Session cookie missing/expired — the server no longer recognizes us,
-      // regardless of what the local UI thinks. Back to the login screen.
-      state.session.staffName = null;
-      await loadStaffListForLogin();
-      return;
-    }
+    const res = await fetch('/api/data');
     if(!res.ok) throw new Error('bad response');
     const json = await res.json();
     state.data = json.data;
@@ -953,16 +950,9 @@ async function saveData(){
   try{
     const res = await fetch('/api/data', {
       method:'PUT',
-      credentials:'same-origin',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({version: dataVersion, data: state.data})
     });
-    if(res.status === 401){
-      state.saveError = 'Your session has expired — please log in again.';
-      state.session.staffName = null;
-      render();
-      return false;
-    }
     if(res.status === 409){
       const server = await res.json();
       state.data = server.data;
@@ -1016,17 +1006,75 @@ function go(route, params){
 }
 
 /* ============================= AUTH ============================= */
-// Actual PIN verification now happens server-side (see /api/login in
-// server.js) — the server checks the real stored hash and issues a signed
-// session cookie; the browser is never trusted to self-certify who it is.
-// hashPin() still runs client-side only for the narrow, already-logged-in-
-// as-owner cases of setting a NEW pin (addStaff, resetStaffPin) — the
-// resulting unsalted hash is transparently upgraded to a salted one
-// server-side the first time that staff member actually logs in with it.
+// Staff PINs are stored as SHA-256 hashes, not plain text (matters since
+// the data backup export makes the raw record easy to open). Accounts
+// created before this existed still have a plain 4-digit PIN on file;
+// verifyPin() accepts either, and silently upgrades a legacy account to a
+// hash the next time that PIN is used successfully.
 async function hashPin(pin){
   const enc = new TextEncoder().encode(pin);
   const buf = await crypto.subtle.digest('SHA-256', enc);
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+function looksHashed(pin){ return typeof pin === 'string' && pin.length === 64 && /^[0-9a-f]+$/.test(pin); }
+async function verifyPin(staff, enteredPin){
+  if(looksHashed(staff.pin)) return (await hashPin(enteredPin)) === staff.pin;
+  return staff.pin === enteredPin;
+}
+
+// Password login is an alternative to the PIN — same hashing, no length/
+// digit restriction. hashPin is really just "hash this secret", so it's
+// reused here rather than duplicated.
+const hashSecret = hashPin;
+async function verifyPassword(staff, enteredPassword){
+  if(!staff || !staff.password) return false;
+  if(looksHashed(staff.password)) return (await hashSecret(enteredPassword||'')) === staff.password;
+  return staff.password === enteredPassword;
+}
+
+// Security question, answered at account setup, is how a staff member
+// resets their own PIN/password without needing another staff member to
+// do it for them. The answer is normalized (trimmed, lowercased) before
+// hashing so a recovery attempt isn't sunk by capitalization.
+const SECURITY_QUESTIONS = [
+  "What was the name of your first pet?",
+  "What is your mother's maiden name?",
+  "What city were you born in?",
+  "What was your childhood nickname?",
+  "What is the name of your favorite teacher?"
+];
+function normalizeSecurityAnswer(a){ return (a||'').trim().toLowerCase(); }
+async function verifySecurityAnswer(staff, enteredAnswer){
+  if(!staff || !staff.securityAnswer) return false;
+  return (await hashSecret(normalizeSecurityAnswer(enteredAnswer))) === staff.securityAnswer;
+}
+// Wire up a "security question" <select> (with a "write my own" option) to
+// its companion custom-text <input>, toggling visibility on change.
+function onSecurityQuestionChange(selId, customId){
+  const sel = document.getElementById(selId);
+  const custom = document.getElementById(customId);
+  if(!sel || !custom) return;
+  custom.style.display = sel.value === '__custom__' ? '' : 'none';
+}
+function resolvedSecurityQuestion(selId, customId){
+  const sel = document.getElementById(selId);
+  if(!sel) return '';
+  if(sel.value === '__custom__'){
+    const custom = document.getElementById(customId);
+    return custom ? custom.value.trim() : '';
+  }
+  return sel.value;
+}
+function securityQuestionFieldsHTML(selId, customId, required){
+  return `
+    <div class="field"><label>Security question${required?'':' (optional)'}</label>
+      <select id="${selId}" onchange="onSecurityQuestionChange('${selId}','${customId}')">
+        ${required ? '' : `<option value="">— No recovery question —</option>`}
+        ${SECURITY_QUESTIONS.map(q=>`<option>${esc(q)}</option>`).join('')}
+        <option value="__custom__">Write my own question…</option>
+      </select>
+      <input id="${customId}" type="text" placeholder="Type your own question" style="display:none;margin-top:6px;">
+    </div>`;
 }
 
 /* ============================= PIN LOCKOUT ============================= */
@@ -1082,30 +1130,30 @@ async function doSetup(){
   const name = document.getElementById('setup-name').value.trim();
   const role = document.getElementById('setup-role').value;
   const pin = document.getElementById('setup-pin').value.trim();
+  const password = document.getElementById('setup-password').value;
+  const secQ = resolvedSecurityQuestion('setup-secq','setup-secq-custom');
+  const secA = document.getElementById('setup-seca').value.trim();
   const err = document.getElementById('setup-error');
   if(!name || !/^\d{4}$/.test(pin)){
     err.textContent = 'Enter your name and a 4-digit PIN.'; return;
   }
-  try{
-    const res = await fetch('/api/setup', {
-      method:'POST', credentials:'same-origin',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({name, role, pin})
-    });
-    const json = await res.json().catch(()=>({}));
-    if(!res.ok){
-      err.textContent = json.error || 'Could not complete setup — try again.';
-      return;
-    }
-    state.session.staffName = json.name;
-    state.loading = true;
-    render();
-    await loadData();
-    logAudit('Clinic set up', `First account: ${json.name} (${json.role})`, json.name);
-    await saveData();
-  } catch(e){
-    err.textContent = 'Could not reach the clinic server. Check your connection and try again.';
+  if(!password || password.length < 4){
+    err.textContent = 'Choose a password with at least 4 characters.'; return;
   }
+  if(!secQ || !secA){
+    err.textContent = "Set a security question and answer — since you're the first account, this is how you'll reset your PIN or password if you forget them (there's no other admin to do it for you)."; return;
+  }
+  state.data.staff.push({
+    name, role, pin: await hashPin(pin), password: await hashSecret(password),
+    securityQuestion: secQ, securityAnswer: await hashSecret(normalizeSecurityAnswer(secA)),
+    owner: true, qualification: ''
+  });
+  logAudit('Clinic set up', `First account: ${name} (${role})`, name);
+  const ok = await saveData();
+  if(!ok){ err.textContent = state.saveError; render(); return; }
+  state.session.staffName = name;
+  saveSessionToStorage();
+  go('dashboard');
 }
 
 // Whoever's logged in — used to gate doctor-only actions like "Continue".
@@ -1195,91 +1243,213 @@ function logAudit(action, details, actor){
 
 async function doLogin(){
   const name = document.getElementById('login-select').value;
-  const pin = document.getElementById('login-pin').value.trim();
+  const method = state.loginAuthMethod || 'pin';
   const lock = pinLockStatus(name);
   if(lock.locked){
     state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil(lock.remainingMs/1000)}s.`;
     render();
     return;
   }
-  try{
-    const res = await fetch('/api/login', {
-      method:'POST', credentials:'same-origin',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({staffName: name, pin})
-    });
-    if(res.ok){
-      clearPinAttempts(name);
-      const json = await res.json();
-      state.session.staffName = json.name;
-      state.loginError = '';
-      state.loading = true;
+  const staff = state.data.staff.find(s => s.name === name);
+
+  if(method === 'password'){
+    if(!staff || !staff.password){
+      state.loginError = 'No password is set for this account yet. Log in with PIN instead, or ask the clinic admin to set one from Settings → Staff accounts.';
       render();
-      await loadData();
       return;
     }
-    if(res.status === 429){
-      const json = await res.json().catch(()=>({}));
-      state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil((json.remainingMs||30000)/1000)}s.`;
-    } else {
-      const rec = recordFailedPin(name);
-      if(rec.lockedUntil && Date.now() < rec.lockedUntil){
-        state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil((rec.lockedUntil-Date.now())/1000)}s.`;
-      } else {
-        const left = PIN_LOCK_THRESHOLD - rec.fails;
-        state.loginError = `Incorrect PIN. Try again.${left<=2 ? ` (${left} attempt${left===1?'':'s'} left before a cooldown)` : ''}`;
-      }
+    const password = document.getElementById('login-password').value;
+    if(await verifyPassword(staff, password)){
+      clearPinAttempts(name);
+      state.session.staffName = name;
+      state.loginError = '';
+      saveSessionToStorage();
+      go('dashboard');
+      return;
     }
-  } catch(e){
-    state.loginError = 'Could not reach the clinic server. Check your connection and try again.';
+    const rec = recordFailedPin(name);
+    if(rec.lockedUntil && Date.now() < rec.lockedUntil){
+      state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil((rec.lockedUntil-Date.now())/1000)}s.`;
+    } else {
+      const left = PIN_LOCK_THRESHOLD - rec.fails;
+      state.loginError = `Incorrect password. Try again.${left<=2 ? ` (${left} attempt${left===1?'':'s'} left before a cooldown)` : ''}`;
+    }
+    render();
+    return;
   }
+
+  const pin = document.getElementById('login-pin').value.trim();
+  if(staff && await verifyPin(staff, pin)){
+    clearPinAttempts(name);
+    state.session.staffName = name;
+    state.loginError = '';
+    saveSessionToStorage();
+    if(!looksHashed(staff.pin)){ staff.pin = await hashPin(pin); saveData(); }
+    go('dashboard');
+  } else {
+    const rec = recordFailedPin(name);
+    if(rec.lockedUntil && Date.now() < rec.lockedUntil){
+      state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil((rec.lockedUntil-Date.now())/1000)}s.`;
+    } else {
+      const left = PIN_LOCK_THRESHOLD - rec.fails;
+      state.loginError = `Incorrect PIN. Try again.${left<=2 ? ` (${left} attempt${left===1?'':'s'} left before a cooldown)` : ''}`;
+    }
+    render();
+  }
+}
+
+function toggleLoginMethod(method){
+  state.loginAuthMethod = method;
+  state.loginError = '';
+  render();
+}
+
+function toggleAddFromLogin(){
+  state.loginMode = state.loginMode === 'login' ? 'addFromLogin' : 'login';
+  state.loginError = '';
+  render();
+}
+
+/* ---- Forgot PIN / password (self-service, via security question) ---- */
+function startForgotFlow(){
+  state.loginMode = 'forgot';
+  state.forgotStep = 1;
+  state.forgotName = state.loginSelectedName || (state.data.staff[0] && state.data.staff[0].name) || '';
+  state.forgotError = '';
+  render();
+}
+function cancelForgotFlow(){
+  state.loginMode = 'login';
+  state.forgotError = '';
+  render();
+}
+function onForgotStaffChange(name){
+  state.forgotName = name;
+  state.forgotError = '';
+  render();
+}
+async function submitForgotAnswer(){
+  const name = state.forgotName;
+  const staff = state.data.staff.find(s=>s.name===name);
+  const entered = (document.getElementById('forgot-answer').value || '').trim();
+  if(!staff || !staff.securityQuestion || !staff.securityAnswer){
+    state.forgotError = 'No recovery question is set up for this account. Ask the clinic admin to reset your PIN or password from Settings → Staff accounts.';
+    render();
+    return;
+  }
+  const lock = pinLockStatus('forgot:'+name);
+  if(lock.locked){
+    state.forgotError = `Too many incorrect answers. Try again in ${Math.ceil(lock.remainingMs/1000)}s.`;
+    render();
+    return;
+  }
+  if(await verifySecurityAnswer(staff, entered)){
+    clearPinAttempts('forgot:'+name);
+    state.forgotStep = 2;
+    state.forgotError = '';
+    render();
+  } else {
+    const rec = recordFailedPin('forgot:'+name);
+    state.forgotError = rec.lockedUntil && Date.now() < rec.lockedUntil
+      ? `Too many incorrect answers. Try again in ${Math.ceil((rec.lockedUntil-Date.now())/1000)}s.`
+      : "That answer doesn't match. Try again, or ask the clinic admin for help.";
+    render();
+  }
+}
+async function submitForgotReset(){
+  const name = state.forgotName;
+  const staff = state.data.staff.find(s=>s.name===name);
+  if(!staff) return;
+  const newPin = document.getElementById('forgot-new-pin').value.trim();
+  const newPass = document.getElementById('forgot-new-password').value;
+  const newPass2 = document.getElementById('forgot-new-password2').value;
+  if(!newPin && !newPass){ state.forgotError = 'Set a new PIN, a new password, or both.'; render(); return; }
+  if(newPin && !/^\d{4}$/.test(newPin)){ state.forgotError = 'PIN must be exactly 4 digits.'; render(); return; }
+  if(newPass && newPass.length < 4){ state.forgotError = 'Password must be at least 4 characters.'; render(); return; }
+  if(newPass && newPass !== newPass2){ state.forgotError = 'Passwords do not match.'; render(); return; }
+  if(newPin) staff.pin = await hashPin(newPin);
+  if(newPass) staff.password = await hashSecret(newPass);
+  clearPinAttempts(name);
+  logAudit('Reset own PIN/password via security question', name, name);
+  const ok = await saveData();
+  if(!ok){ state.forgotError = state.saveError; render(); return; }
+  state.loginMode = 'login';
+  state.loginSelectedName = name;
+  state.loginError = 'Updated — log in with your new credentials.';
+  render();
+}
+
+async function addStaffFromLogin(){
+  const name = document.getElementById('als-name').value.trim();
+  const role = document.getElementById('als-role').value;
+  const pin = document.getElementById('als-pin').value.trim();
+  const password = document.getElementById('als-password').value;
+  const secQ = resolvedSecurityQuestion('als-secq','als-secq-custom');
+  const secA = document.getElementById('als-seca').value.trim();
+  const err = document.getElementById('als-error');
+  if(!name || !/^\d{4}$/.test(pin)){
+    err.textContent = 'Enter a name and a 4-digit PIN.'; return;
+  }
+  if(state.data.staff.some(s=>s.name===name)){
+    err.textContent = 'That name is already registered.'; return;
+  }
+  if(password && password.length < 4){
+    err.textContent = 'Password must be at least 4 characters (or leave it blank).'; return;
+  }
+  if((secQ && !secA) || (!secQ && secA)){
+    err.textContent = 'Fill in both the security question and its answer, or leave both blank.'; return;
+  }
+  state.data.staff.push({
+    name, role, pin: await hashPin(pin),
+    password: password ? await hashSecret(password) : '',
+    securityQuestion: secQ || '',
+    securityAnswer: secA ? await hashSecret(normalizeSecurityAnswer(secA)) : '',
+    owner: false, qualification: ''
+  });
+  logAudit('Added staff account', `${name} (${role})`);
+  const ok = await saveData();
+  if(!ok){ err.textContent = state.saveError; render(); return; }
+  state.loginMode = 'login';
   render();
 }
 
 function logout(){
   state.session.staffName = null;
   state.loginMode = 'login';
+  clearSessionStorage();
   go('dashboard');
-  fetch('/api/logout', {method:'POST', credentials:'same-origin'}).catch(()=>{});
 }
 
-/* ============================= SESSION VERIFICATION ============================= */
-// "Logged in" is now whatever the server's signed session cookie says, not
-// anything read out of browser storage — that was the actual hole (a
-// staff name sitting in sessionStorage proved nothing to the server, which
-// had no server-side concept of sessions at all). On boot, ask the server;
-// its answer is authoritative.
-async function initSession(){
+/* ============================= SESSION PERSISTENCE ============================= */
+// Mobile/tablet browsers routinely discard a backgrounded tab to save memory
+// and reload it from scratch when you switch back — which used to wipe the
+// in-memory `state` object and drop the user back to the login screen even
+// though they'd been active seconds earlier. We mirror just the login name
+// and a last-activity timestamp into sessionStorage (cleared when the tab or
+// browser actually closes, unlike localStorage) so a reload can silently
+// restore the session instead of forcing a re-login — while still honoring
+// the real idle timeout if the time away exceeds it.
+const SESSION_KEY = 'mmc_session';
+function saveSessionToStorage(){
   try{
-    const res = await fetch('/api/session', {credentials:'same-origin'});
-    if(res.ok){
-      const json = await res.json();
-      state.session.staffName = json.name;
-      await loadData();
-      return;
-    }
-  } catch(e){ /* fall through to the logged-out path below */ }
-  state.session.staffName = null;
-  await loadStaffListForLogin();
+    if(!state.session.staffName){ sessionStorage.removeItem(SESSION_KEY); return; }
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify({staffName: state.session.staffName, lastActivity: Date.now()}));
+  } catch(e){ /* storage unavailable (e.g. private mode) — session just won't survive a reload */ }
 }
-// Not logged in yet — fetch just enough (staff names + roles, no PINs, no
-// patient data) to render the login or first-time-setup screen.
-async function loadStaffListForLogin(){
+function clearSessionStorage(){
+  try{ sessionStorage.removeItem(SESSION_KEY); } catch(e){}
+}
+function restoreSessionFromStorage(){
   try{
-    const res = await fetch('/api/staff-list', {credentials:'same-origin'});
-    if(res.ok){
-      const json = await res.json();
-      state.data = defaultData();
-      state.data.staff = json.staff;
-      state.loadError = null;
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if(!raw) return;
+    const saved = JSON.parse(raw);
+    if(saved && saved.staffName && (Date.now() - saved.lastActivity) < IDLE_TIMEOUT_MS){
+      state.session.staffName = saved.staffName;
     } else {
-      state.loadError = 'Could not reach the clinic server. Check your connection and reload the page.';
+      clearSessionStorage();
     }
-  } catch(e){
-    state.loadError = 'Could not reach the clinic server. Check your connection and reload the page.';
-  }
-  state.loading = false;
-  render();
+  } catch(e){ /* ignore malformed/unavailable storage */ }
 }
 
 /* ============================= IDLE AUTO-LOGOUT ============================= */
@@ -1290,6 +1460,7 @@ let idleTimer = null;
 function resetIdleTimer(){
   if(idleTimer){ clearTimeout(idleTimer); idleTimer = null; }
   if(!state.session.staffName) return;
+  saveSessionToStorage(); // stamp last-activity so a tab reload can restore correctly
   idleTimer = setTimeout(()=>{
     if(state.session.staffName){
       logout();
@@ -2049,7 +2220,7 @@ async function saveVisit(){
     patient = {
       id: newPatientId(), name: dv.newPatient.name, dob: dv.newPatient.dob||'', age: dv.newPatient.age, sex: dv.newPatient.sex,
       phone: dv.newPatient.phone, address: dv.newPatient.address, allergies: dv.newPatient.allergies||'', chronicConditions: dv.newPatient.chronicConditions||'',
-      registeredDate: todayStr(), visits: [], growthRecords: [], vaccinations: [], certificates: []
+      registeredDate: todayStr(), visits: [], growthRecords: [], vaccinations: []
     };
     state.data.patients.push(patient);
   } else {
@@ -2205,7 +2376,6 @@ function csvEscape(s){
   return t;
 }
 function exportPatientsCSV(){
-  if(!isOwner()){ alert('Only the clinic admin can export patient data.'); return; }
   const rows = [['ID','Name','DOB','Age','Sex','Phone','Address','Allergies','Registered']];
   (state.data.patients||[]).forEach(p=>{
     rows.push([p.id,p.name,p.dob||'',displayAge(p),p.sex||'',p.phone||'',p.address||'',p.allergies||'',p.registeredDate||'']);
@@ -2215,7 +2385,6 @@ function exportPatientsCSV(){
   logAudit('Exported patients CSV', rows.length-1+' patients');
 }
 function exportVisitsCSV(){
-  if(!isOwner()){ alert('Only the clinic admin can export visit data.'); return; }
   const rows = [['PatientID','PatientName','VisitID','Token','Date','Time','Doctor','Diagnosis','Complaints','Status','FollowUp']];
   (state.data.patients||[]).forEach(p=>{
     (p.visits||[]).forEach(v=>{
@@ -2228,7 +2397,6 @@ function exportVisitsCSV(){
 }
 
 function downloadBackup(){
-  if(!isOwner()){ alert('Only the clinic admin can download a full data backup.'); return; }
   const blob = new Blob([JSON.stringify(state.data, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -2238,16 +2406,10 @@ function downloadBackup(){
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
-  logAudit('Downloaded full backup', '');
 }
 async function restoreBackup(file){
   const msg = document.getElementById('restore-msg');
   if(!file) return;
-  if(!isOwner()){
-    if(msg) msg.textContent = 'Only the clinic admin can restore from a backup.';
-    document.getElementById('restore-file-input').value = '';
-    return;
-  }
   if(!confirm('This will replace every patient, visit, appointment and staff record currently in the system with the contents of this backup file. This cannot be undone. Continue?')){
     document.getElementById('restore-file-input').value = '';
     return;
@@ -2269,7 +2431,7 @@ async function restoreBackup(file){
     // The logged-in staff account may not exist in the restored data.
     if(!state.data.staff.some(s=>s.name===state.session.staffName)){
       state.session.staffName = null;
-      fetch('/api/logout', {method:'POST', credentials:'same-origin'}).catch(()=>{});
+      clearSessionStorage();
     }
     render();
   } catch(e){
@@ -2282,11 +2444,22 @@ async function addStaff(){
   const name = document.getElementById('st-name').value.trim();
   const role = document.getElementById('st-role').value;
   const pin = document.getElementById('st-pin').value.trim();
+  const password = document.getElementById('st-password').value;
+  const secQ = resolvedSecurityQuestion('st-secq','st-secq-custom');
+  const secA = document.getElementById('st-seca').value.trim();
   const qualification = (document.getElementById('st-qualification')||{}).value.trim() || '';
   const err = document.getElementById('st-error');
   if(!name || !/^\d{4}$/.test(pin)){ err.textContent = 'Enter a name and a 4-digit PIN.'; return; }
   if(state.data.staff.some(s=>s.name===name)){ err.textContent = 'That name is already registered.'; return; }
-  state.data.staff.push({name, role, pin: await hashPin(pin), qualification, owner: false});
+  if(password && password.length < 4){ err.textContent = 'Password must be at least 4 characters (or leave it blank).'; return; }
+  if((secQ && !secA) || (!secQ && secA)){ err.textContent = 'Fill in both the security question and its answer, or leave both blank.'; return; }
+  state.data.staff.push({
+    name, role, pin: await hashPin(pin),
+    password: password ? await hashSecret(password) : '',
+    securityQuestion: secQ || '',
+    securityAnswer: secA ? await hashSecret(normalizeSecurityAnswer(secA)) : '',
+    qualification, owner: false
+  });
   logAudit('Added staff account', `${name} (${role})${qualification?' · '+qualification:''}`);
   await saveData();
   render();
@@ -2345,6 +2518,39 @@ async function resetStaffPin(name){
   await saveData();
   render();
 }
+async function resetStaffPassword(name){
+  if(!isOwner()){ alert('Only the clinic admin can reset staff passwords.'); return; }
+  const s = state.data.staff.find(s=>s.name===name);
+  if(!s) return;
+  const entered = prompt(`New password for ${name} (at least 4 characters, leave blank to remove password login):`);
+  if(entered === null) return;
+  const password = entered;
+  if(password && password.length < 4){ alert('Password must be at least 4 characters (or leave it blank to remove it).'); return; }
+  s.password = password ? await hashSecret(password) : '';
+  logAudit('Reset staff password', name);
+  await saveData();
+  render();
+}
+async function resetStaffSecurityQA(name){
+  if(!isOwner()){ alert('Only the clinic admin can reset a staff security question.'); return; }
+  const s = state.data.staff.find(s=>s.name===name);
+  if(!s) return;
+  const q = prompt(`New security question for ${name} (leave blank to remove it):`, s.securityQuestion || '');
+  if(q === null) return;
+  const question = q.trim();
+  let answer = '';
+  if(question){
+    const a = prompt(`Answer to "${question}":`);
+    if(a === null) return;
+    answer = a.trim();
+    if(!answer){ alert('An answer is required if a security question is set.'); return; }
+  }
+  s.securityQuestion = question;
+  s.securityAnswer = question ? await hashSecret(normalizeSecurityAnswer(answer)) : '';
+  logAudit('Reset staff security question', name);
+  await saveData();
+  render();
+}
 async function saveStaffProfileEdit(name){
   if(!isOwner()){ alert('Only the clinic admin can edit staff profiles.'); return; }
   const s = state.data.staff.find(s=>s.name===name);
@@ -2393,7 +2599,7 @@ function setupView(){
   <div class="center-screen">
     <div class="auth-card">
       <div class="auth-brand">
-        <div class="brand-mark">MMC</div>
+        <div class="brand-mark">MM</div>
         <h1 style="font-size:19px;">Set up ${esc(state.data.clinicInfo.name)}</h1>
         <p class="muted" style="font-size:13px;">Create the first staff account to start using the clinic system.</p>
       </div>
@@ -2402,6 +2608,10 @@ function setupView(){
         <select id="setup-role"><option>Doctor</option><option>Receptionist</option><option>Staff</option></select>
       </div>
       <div class="field"><label>Choose a 4-digit PIN</label><input id="setup-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••"></div>
+      <div class="field"><label>Choose a password</label><input id="setup-password" type="password" placeholder="At least 4 characters"></div>
+      <p class="faint" style="margin:-4px 0 10px 0;">You'll be able to log in with either the PIN or the password.</p>
+      ${securityQuestionFieldsHTML('setup-secq','setup-secq-custom', true)}
+      <div class="field"><label>Answer</label><input id="setup-seca" type="text" placeholder="Used only to reset your PIN or password later"></div>
       <div id="setup-error" class="error-text"></div>
       <button class="btn btn-primary btn-block" onclick="doSetup()">Create account &amp; start</button>
     </div>
@@ -2412,19 +2622,85 @@ function loginView(){
   const selectedName = state.loginSelectedName || (state.data.staff[0] && state.data.staff[0].name) || '';
   const lock = pinLockStatus(selectedName);
   const staffOptions = state.data.staff.map(s=>`<option value="${esc(s.name)}" ${s.name===selectedName?'selected':''}>${esc(s.name)} — ${esc(s.role)}</option>`).join('');
+
+  if(state.loginMode === 'addFromLogin'){
+    return `
+    <div class="center-screen">
+      <div class="auth-card">
+        <div class="auth-brand"><div class="brand-mark">MM</div><h1 style="font-size:19px;">New staff account</h1></div>
+        <div class="field"><label>Name</label><input id="als-name" type="text"></div>
+        <div class="field"><label>Role</label><select id="als-role"><option>Doctor</option><option>Receptionist</option><option>Staff</option></select></div>
+        <div class="field"><label>4-digit PIN</label><input id="als-pin" type="password" inputmode="numeric" maxlength="4"></div>
+        <div class="field"><label>Password (optional)</label><input id="als-password" type="password" placeholder="At least 4 characters"></div>
+        ${securityQuestionFieldsHTML('als-secq','als-secq-custom', false)}
+        <div class="field"><label>Answer (optional)</label><input id="als-seca" type="text"></div>
+        <div id="als-error" class="error-text"></div>
+        <button class="btn btn-primary btn-block" onclick="addStaffFromLogin()">Add account</button>
+        <button class="btn btn-ghost btn-block" style="margin-top:6px;" onclick="toggleAddFromLogin()">Back to log in</button>
+      </div>
+    </div>`;
+  }
+
+  if(state.loginMode === 'forgot'){
+    return forgotFlowView();
+  }
+
+  const method = state.loginAuthMethod || 'pin';
   return `
   <div class="center-screen">
     <div class="auth-card">
       <div class="auth-brand">
-        <div class="brand-mark">MMC</div>
+        <div class="brand-mark">MM</div>
         <h1 style="font-size:19px;">${esc(state.data.clinicInfo.name)}</h1>
         <p class="muted" style="font-size:13px;">Log in to continue</p>
       </div>
       <div class="field"><label>Staff</label><select id="login-select" onchange="onLoginStaffChange(this.value)">${staffOptions}</select></div>
-      <div class="field"><label>PIN</label><input id="login-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" ${lock.locked?'disabled':''}></div>
+      <div class="row" style="gap:6px;margin-bottom:12px;">
+        <button type="button" class="btn btn-sm ${method==='pin'?'btn-primary':''}" style="flex:1;justify-content:center;" onclick="toggleLoginMethod('pin')">PIN</button>
+        <button type="button" class="btn btn-sm ${method==='password'?'btn-primary':''}" style="flex:1;justify-content:center;" onclick="toggleLoginMethod('password')">Password</button>
+      </div>
+      ${method==='password'
+        ? `<div class="field"><label>Password</label><input id="login-password" type="password" placeholder="••••••••" ${lock.locked?'disabled':''}></div>`
+        : `<div class="field"><label>PIN</label><input id="login-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" ${lock.locked?'disabled':''}></div>`}
       ${state.loginError ? `<div class="error-text">${esc(state.loginError)}</div>` : ''}
       <button class="btn btn-primary btn-block" ${lock.locked?'disabled':''} onclick="doLogin()">Log in</button>
-      <p class="faint" style="text-align:center;margin-top:14px;">Forgot your PIN, or need a new staff account added? Ask the clinic admin — accounts are added from Settings → Staff accounts once logged in.</p>
+      <button class="btn btn-ghost btn-block" style="margin-top:6px;" onclick="toggleAddFromLogin()">+ Add a staff account</button>
+      <p class="faint" style="text-align:center;margin-top:14px;"><a href="javascript:void(0)" onclick="startForgotFlow()">Forgot your PIN or password?</a></p>
+    </div>
+  </div>`;
+}
+
+function forgotFlowView(){
+  const name = state.forgotName || (state.data.staff[0] && state.data.staff[0].name) || '';
+  const staff = state.data.staff.find(s=>s.name===name);
+  const staffOptions = state.data.staff.map(s=>`<option value="${esc(s.name)}" ${s.name===name?'selected':''}>${esc(s.name)} — ${esc(s.role)}</option>`).join('');
+
+  if(state.forgotStep === 2 && staff){
+    return `
+    <div class="center-screen">
+      <div class="auth-card">
+        <div class="auth-brand"><div class="brand-mark">MM</div><h1 style="font-size:19px;">Set a new PIN / password</h1><p class="muted" style="font-size:13px;">for ${esc(name)}</p></div>
+        <div class="field"><label>New 4-digit PIN (optional)</label><input id="forgot-new-pin" type="password" inputmode="numeric" maxlength="4" placeholder="Leave blank to keep current PIN"></div>
+        <div class="field"><label>New password (optional)</label><input id="forgot-new-password" type="password" placeholder="Leave blank to keep current password"></div>
+        <div class="field"><label>Confirm new password</label><input id="forgot-new-password2" type="password"></div>
+        ${state.forgotError ? `<div class="error-text">${esc(state.forgotError)}</div>` : ''}
+        <button class="btn btn-primary btn-block" onclick="submitForgotReset()">Save new credentials</button>
+        <button class="btn btn-ghost btn-block" style="margin-top:6px;" onclick="cancelForgotFlow()">Cancel</button>
+      </div>
+    </div>`;
+  }
+
+  return `
+  <div class="center-screen">
+    <div class="auth-card">
+      <div class="auth-brand"><div class="brand-mark">MM</div><h1 style="font-size:19px;">Forgot your PIN or password?</h1><p class="muted" style="font-size:13px;">Answer your security question to reset them.</p></div>
+      <div class="field"><label>Staff</label><select id="forgot-select" onchange="onForgotStaffChange(this.value)">${staffOptions}</select></div>
+      ${staff && staff.securityQuestion
+        ? `<div class="field"><label>${esc(staff.securityQuestion)}</label><input id="forgot-answer" type="text"></div>
+           ${state.forgotError ? `<div class="error-text">${esc(state.forgotError)}</div>` : ''}
+           <button class="btn btn-primary btn-block" onclick="submitForgotAnswer()">Continue</button>`
+        : `<div class="banner banner-info">No recovery question is set up for this account. Ask the clinic admin to reset your PIN or password from Settings → Staff accounts.</div>`}
+      <button class="btn btn-ghost btn-block" style="margin-top:6px;" onclick="cancelForgotFlow()">Back to log in</button>
     </div>
   </div>`;
 }
@@ -2452,7 +2728,7 @@ function shellView(){
   <div class="shell">
     <div class="sidebar">
       <div class="brand">
-        <div class="brand-mark">MMC</div>
+        <div class="brand-mark">MM</div>
         <div class="brand-text"><div class="full">MM Clinic</div><div class="sub">Male Madeshwara Clinic</div></div>
       </div>
       <div class="nav-sec-lbl">Main</div>
@@ -5980,10 +6256,12 @@ function settingsView(){
                 <input id="edit-st-qualification" value="${esc(s.qualification||'')}" placeholder="e.g. M.B.B.S., M.D. Paediatrics">
               </div>
             </div>
-            <div class="row" style="gap:8px;">
-              <button class="btn btn-primary btn-sm" onclick="saveStaffProfileEdit(${jsAttr(s.name)})">Save profile</button>
+            <div class="row" style="gap:8px;flex-wrap:wrap;">
+              <button class="btn btn-primary btn-sm" onclick="saveStaffProfileEdit('${esc(s.name)}')">Save profile</button>
               <button class="btn btn-ghost btn-sm" onclick="cancelEditStaffProfile()">Cancel</button>
-              <button class="btn btn-ghost btn-sm" onclick="resetStaffPin(${jsAttr(s.name)})">Reset PIN</button>
+              <button class="btn btn-ghost btn-sm" onclick="resetStaffPin('${esc(s.name)}')">Reset PIN</button>
+              <button class="btn btn-ghost btn-sm" onclick="resetStaffPassword('${esc(s.name)}')">${s.password?'Reset':'Set'} password</button>
+              <button class="btn btn-ghost btn-sm" onclick="resetStaffSecurityQA('${esc(s.name)}')">${s.securityQuestion?'Change':'Set'} recovery question</button>
             </div>
           </div>
         </td>
@@ -5993,11 +6271,11 @@ function settingsView(){
       <td>${esc(s.name)}${s.owner?' <span class="pill" title="Can manage all staff accounts">Admin</span>':''}</td>
       <td>${esc(s.role)}</td>
       <td>${esc(s.qualification)||'<span class="faint">—</span>'}</td>
-      <td>••••</td>
+      <td>••••<br><span class="faint" style="font-size:11px;">${s.password?'Password set':'No password'} · ${s.securityQuestion?'Recovery Q set':'No recovery Q'}</span></td>
       <td style="white-space:nowrap;">
         ${canManageStaff ? `
-          <button class="btn btn-sm" onclick="startEditStaffProfile(${jsAttr(s.name)})">Edit</button>
-          ${s.name!==state.session.staffName && !s.owner ? `<button class="btn btn-ghost btn-sm" onclick="removeStaff(${jsAttr(s.name)})">Remove</button>` : (s.name===state.session.staffName?'<span class="faint">(you)</span>':'')}
+          <button class="btn btn-sm" onclick="startEditStaffProfile('${esc(s.name)}')">Edit</button>
+          ${s.name!==state.session.staffName && !s.owner ? `<button class="btn btn-ghost btn-sm" onclick="removeStaff('${esc(s.name)}')">Remove</button>` : (s.name===state.session.staffName?'<span class="faint">(you)</span>':'')}
         ` : `<span class="faint">${s.name===state.session.staffName?'(you)':'—'}</span>`}
       </td></tr>`;
   }).join('');
@@ -6034,10 +6312,9 @@ function settingsView(){
       <p id="logo-upload-msg" class="faint" style="margin-top:6px;"></p>
     </div>
 
-    ${isOwner() ? `
     <div class="card" style="margin-bottom:18px;max-width:520px;">
       <h2 style="margin-bottom:6px;">Backup &amp; export</h2>
-      <p class="muted" style="font-size:12.5px;">Downloads every patient, visit, and staff record as a single JSON file — keep a copy somewhere safe periodically, especially before any database change. Contains PHI (Aadhaar, diagnoses, contact details) — admin-only.</p>
+      <p class="muted" style="font-size:12.5px;">Downloads every patient, visit, and staff record as a single JSON file — keep a copy somewhere safe periodically, especially before any database change.</p>
       <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:8px;">
         <button class="btn btn-sm" onclick="downloadBackup()">⬇ Full backup (JSON)</button>
         <button class="btn btn-sm" onclick="exportPatientsCSV()">⬇ Patients list (CSV)</button>
@@ -6048,7 +6325,7 @@ function settingsView(){
       <input type="file" id="restore-file-input" accept="application/json" style="display:none;" onchange="restoreBackup(this.files[0])">
       <button class="btn btn-sm btn-danger" onclick="document.getElementById('restore-file-input').click()">⬆ Restore from backup…</button>
       <div id="restore-msg" class="error-text"></div>
-    </div>` : ''}
+    </div>
 
     <div class="card" style="margin-bottom:18px;max-width:520px;">
       <h2 style="margin-bottom:6px;">Activity log</h2>
@@ -6078,13 +6355,18 @@ function settingsView(){
       ${canManageStaff
         ? `<p class="muted" style="font-size:12.5px;margin-bottom:12px;">As clinic admin you can edit every profile — role, qualification (shown on OPD cards), and PIN.</p>`
         : `<p class="muted" style="font-size:12.5px;margin-bottom:12px;">Only the clinic admin can edit staff profiles. Contact them to update your qualification or role.</p>`}
-      <table><thead><tr><th>Name</th><th>Role</th><th>Qualification</th><th>PIN</th><th></th></tr></thead><tbody>${staffRows}</tbody></table>
+      <table><thead><tr><th>Name</th><th>Role</th><th>Qualification</th><th>Login</th><th></th></tr></thead><tbody>${staffRows}</tbody></table>
       ${canManageStaff ? `
       <div class="row" style="margin-top:14px;">
         <div class="field"><label>Name</label><input id="st-name"></div>
         <div class="field"><label>Role</label><select id="st-role"><option>Doctor</option><option>Receptionist</option><option>Staff</option></select></div>
         <div class="field"><label>Qualification / course</label><input id="st-qualification" placeholder="e.g. M.B.B.S."></div>
         <div class="field"><label>4-digit PIN</label><input id="st-pin" inputmode="numeric" maxlength="4"></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Password (optional)</label><input id="st-password" type="password" placeholder="At least 4 characters"></div>
+        ${securityQuestionFieldsHTML('st-secq','st-secq-custom', false)}
+        <div class="field"><label>Answer (optional)</label><input id="st-seca" type="text"></div>
       </div>
       <div id="st-error" class="error-text"></div>
       <button class="btn btn-sm" onclick="addStaff()">+ Add staff</button>
@@ -6163,18 +6445,13 @@ async function removeCustomMedicine(idx){
 
 function connectionErrorView(){
   return `<div class="center-screen"><div class="auth-card" style="text-align:center;">
-    <div class="brand-mark" style="margin:0 auto 12px auto;">MMC</div>
+    <div class="brand-mark" style="margin:0 auto 12px auto;">MM</div>
     <h1 style="font-size:18px;">Can't reach the clinic server</h1>
     <p class="muted" style="font-size:13px;">${esc(state.loadError)}</p>
     <button class="btn btn-primary btn-block" onclick="retryLoad()">Try again</button>
   </div></div>`;
 }
-function retryLoad(){
-  state.loading = true;
-  render();
-  if(state.session.staffName) loadData();
-  else initSession();
-}
+function retryLoad(){ state.loading = true; render(); loadData(); }
 
 /* ============================= ROOT RENDER ============================= */
 function render(){
@@ -6190,7 +6467,8 @@ function render(){
   if(state.route==='certificates') applyPendingCertFields();
 }
 
-initSession();
+restoreSessionFromStorage();
+loadData();
 </script>
 <script>
   if ('serviceWorker' in navigator) {
