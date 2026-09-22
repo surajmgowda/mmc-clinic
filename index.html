@@ -1196,8 +1196,17 @@ function clearPinAttempts(name){
   delete all[name];
   savePinAttempts(all);
 }
+function staffAuthMethod(name){
+  const s = (state.data && state.data.staff || []).find(x=>x.name===name);
+  if(!s) return 'pin';
+  if(s.authMethod === 'password' || s.authMethod === 'pin') return s.authMethod;
+  // Legacy accounts: prefer password if only password hash exists
+  if(s.password && !s.pin) return 'password';
+  return 'pin';
+}
 function onLoginStaffChange(name){
   state.loginSelectedName = name;
+  state.loginAuthMethod = staffAuthMethod(name);
   const lock = pinLockStatus(name);
   state.loginError = lock.locked ? `Too many incorrect attempts. Try again in ${Math.ceil(lock.remainingMs/1000)}s.` : '';
   render();
@@ -1206,20 +1215,26 @@ function onLoginStaffChange(name){
 async function doSetup(){
   const name = document.getElementById('setup-name').value.trim();
   const role = document.getElementById('setup-role').value;
-  const pin = document.getElementById('setup-pin').value.trim();
+  const authMethod = (document.getElementById('setup-auth-method')||{}).value === 'password' ? 'password' : 'pin';
+  const pin = (document.getElementById('setup-pin')||{}).value.trim() || '';
   const password = (document.getElementById('setup-password')||{}).value || '';
   const password2 = (document.getElementById('setup-password2')||{}).value || '';
   const err = document.getElementById('setup-error');
   if(!name){ err.textContent = 'Enter your name.'; return; }
-  if(!/^\d{4}$/.test(pin)){ err.textContent = 'Choose a 4-digit PIN.'; return; }
-  if(password && password.length < 6){ err.textContent = 'Password must be at least 6 characters (or leave blank).'; return; }
-  if(password !== password2){ err.textContent = 'Passwords do not match.'; return; }
+  if(authMethod === 'pin'){
+    if(!/^\d{4}$/.test(pin)){ err.textContent = 'Enter a 4-digit PIN.'; return; }
+  } else {
+    if(password.length < 6){ err.textContent = 'Password must be at least 6 characters.'; return; }
+    if(password !== password2){ err.textContent = 'Passwords do not match.'; return; }
+  }
   const recoveryCode = generateRecoveryCode();
+  const body = {name, role, authMethod, recoveryCode};
+  if(authMethod === 'pin') body.pin = pin; else body.password = password;
   try{
     const res = await fetch('/api/setup', {
       method:'POST', credentials:'same-origin',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({name, role, pin, password: password || undefined, recoveryCode})
+      body: JSON.stringify(body)
     });
     const json = await res.json().catch(()=>({}));
     if(!res.ok){ err.textContent = json.error || 'Could not complete setup — try again.'; return; }
@@ -1229,15 +1244,24 @@ async function doSetup(){
     await loadData();
     const me = state.data.staff.find(s=>s.name===json.name);
     if(me){
-      if(password) me.password = await hashSecret(password);
+      me.authMethod = authMethod;
+      if(authMethod === 'pin'){ me.pin = await hashPin(pin); delete me.password; }
+      else { me.password = await hashSecret(password); delete me.pin; }
       me.recoveryHash = await hashSecret(recoveryCode.replace(/-/g,'').toUpperCase());
     }
-    logAudit('Clinic set up', `First account: ${json.name} (${json.role})`, json.name);
+    logAudit('Clinic set up', `First account: ${json.name} (${json.role}) · ${authMethod}`, json.name);
     await saveData();
-    alert('Account created.\n\nWrite down this recovery code — needed if you forget PIN or password:\n\n' + recoveryCode + '\n\nIt will not be shown again.');
+    alert('Account created.\n\nWrite down this recovery code — needed if you forget your login:\n\n' + recoveryCode + '\n\nIt will not be shown again.');
   } catch(e){
     err.textContent = 'Could not reach the clinic server. Check your connection and try again.';
   }
+}
+function onSetupAuthMethodChange(){
+  const method = (document.getElementById('setup-auth-method')||{}).value || 'pin';
+  const pinBlock = document.getElementById('setup-pin-block');
+  const passBlock = document.getElementById('setup-pass-block');
+  if(pinBlock) pinBlock.style.display = method === 'pin' ? '' : 'none';
+  if(passBlock) passBlock.style.display = method === 'password' ? '' : 'none';
 }
 
 // Whoever's logged in — used to gate doctor-only actions like "Continue".
@@ -1345,7 +1369,8 @@ function cancelForgotAuth(){
 
 async function doLogin(){
   const name = document.getElementById('login-select').value;
-  const method = state.loginAuthMethod || 'pin';
+  const method = staffAuthMethod(name);
+  state.loginAuthMethod = method;
   const pinEl = document.getElementById('login-pin');
   const passEl = document.getElementById('login-password');
   const pin = pinEl ? pinEl.value.trim() : '';
@@ -1367,40 +1392,74 @@ async function doLogin(){
     return;
   }
   const body = method === 'password' ? {staffName: name, password} : {staffName: name, pin};
-  try{
-    const res = await fetch('/api/login', {
-      method:'POST', credentials:'same-origin',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify(body)
-    });
-    if(res.ok){
-      clearPinAttempts(name);
-      const json = await res.json();
-      state.session.staffName = json.name;
-      state.loginError = '';
-      state.loginMode = 'login';
-      state.loading = true;
+  const btn = document.querySelector('.auth-card .btn-primary');
+  if(btn){ btn.disabled = true; btn.textContent = 'Signing in…'; }
+  state.loginError = '';
+  // Retry a couple of times on network / server wake-up without treating it as a wrong PIN
+  const maxAttempts = 3;
+  for(let attempt = 1; attempt <= maxAttempts; attempt++){
+    try{
+      const res = await fetch('/api/login', {
+        method:'POST', credentials:'same-origin',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify(body)
+      });
+      if(res.ok){
+        clearPinAttempts(name);
+        const json = await res.json();
+        state.session.staffName = json.name;
+        state.loginError = '';
+        state.loginMode = 'login';
+        state.loading = true;
+        render();
+        await loadData();
+        return;
+      }
+      // Real wrong credentials only
+      if(res.status === 401 || res.status === 403){
+        const rec = recordFailedPin(name);
+        if(rec.lockedUntil && Date.now() < rec.lockedUntil){
+          state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil((rec.lockedUntil-Date.now())/1000)}s.`;
+        } else {
+          const left = PIN_LOCK_THRESHOLD - rec.fails;
+          const what = method === 'password' ? 'password' : 'PIN';
+          state.loginError = `Incorrect ${what}. Try again.${left<=2 ? ` (${left} attempt${left===1?'':'s'} left before a cooldown)` : ''}`;
+        }
+        render();
+        return;
+      }
+      if(res.status === 429){
+        const json = await res.json().catch(()=>({}));
+        state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil((json.remainingMs||30000)/1000)}s.`;
+        render();
+        return;
+      }
+      // 5xx / other: server issue, not wrong PIN — retry
+      if(attempt < maxAttempts){
+        state.loginError = 'Server is waking up… retrying (' + attempt + '/' + maxAttempts + ')';
+        render();
+        const btn2 = document.querySelector('.auth-card .btn-primary');
+        if(btn2){ btn2.disabled = true; btn2.textContent = 'Signing in…'; }
+        await new Promise(r=>setTimeout(r, 1500 * attempt));
+        continue;
+      }
+      state.loginError = 'Could not reach the clinic server (HTTP ' + res.status + '). Wait a moment and try again — this is not a wrong PIN.';
       render();
-      await loadData();
+      return;
+    } catch(e){
+      if(attempt < maxAttempts){
+        state.loginError = 'Connecting… retrying (' + attempt + '/' + maxAttempts + ')';
+        render();
+        const btn2 = document.querySelector('.auth-card .btn-primary');
+        if(btn2){ btn2.disabled = true; btn2.textContent = 'Signing in…'; }
+        await new Promise(r=>setTimeout(r, 1500 * attempt));
+        continue;
+      }
+      state.loginError = 'Could not reach the clinic server. Check your connection and try again — this is not a wrong PIN.';
+      render();
       return;
     }
-    if(res.status === 429){
-      const json = await res.json().catch(()=>({}));
-      state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil((json.remainingMs||30000)/1000)}s.`;
-    } else {
-      const rec = recordFailedPin(name);
-      if(rec.lockedUntil && Date.now() < rec.lockedUntil){
-        state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil((rec.lockedUntil-Date.now())/1000)}s.`;
-      } else {
-        const left = PIN_LOCK_THRESHOLD - rec.fails;
-        const what = method === 'password' ? 'password' : 'PIN';
-        state.loginError = `Incorrect ${what}. Try again.${left<=2 ? ` (${left} attempt${left===1?'':'s'} left before a cooldown)` : ''}`;
-      }
-    }
-  } catch(e){
-    state.loginError = 'Could not reach the clinic server. Check your connection and try again.';
   }
-  render();
 }
 
 async function doVerifyRecoveryCode(){
@@ -1456,34 +1515,48 @@ async function doVerifyRecoveryCode(){
 async function doResetCredentials(){
   const name = state.pendingRecoveryStaff;
   if(!name){ cancelForgotAuth(); return; }
-  const pin = (document.getElementById('reset-pin')||{}).value || '';
+  const authMethod = (document.getElementById('reset-auth-method')||{}).value === 'password' ? 'password' : 'pin';
+  const pin = ((document.getElementById('reset-pin')||{}).value || '').trim();
   const password = (document.getElementById('reset-password')||{}).value || '';
   const password2 = (document.getElementById('reset-password2')||{}).value || '';
   const err = document.getElementById('reset-error');
-  if(!/^\d{4}$/.test(pin)){ if(err) err.textContent = 'Enter a new 4-digit PIN.'; return; }
-  if(password && password.length < 6){ if(err) err.textContent = 'Password must be at least 6 characters (or leave blank).'; return; }
-  if(password !== password2){ if(err) err.textContent = 'Passwords do not match.'; return; }
+  if(authMethod === 'pin'){
+    if(!/^\d{4}$/.test(pin)){ if(err) err.textContent = 'Enter a new 4-digit PIN.'; return; }
+  } else {
+    if(password.length < 6){ if(err) err.textContent = 'Password must be at least 6 characters.'; return; }
+    if(password !== password2){ if(err) err.textContent = 'Passwords do not match.'; return; }
+  }
   const newRecovery = generateRecoveryCode();
+  const body = {staffName: name, authMethod, recoveryCode: newRecovery};
+  if(authMethod === 'pin') body.pin = pin; else body.password = password;
   try{
     const res = await fetch('/api/reset-credentials', {
       method:'POST', credentials:'same-origin',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({staffName: name, pin, password: password || undefined, recoveryCode: newRecovery})
+      body: JSON.stringify(body)
     });
     if(res.ok){
       clearPinAttempts(name);
+      // Keep local staff list in sync for next login field type
+      const s = (state.data.staff||[]).find(x=>x.name===name);
+      if(s){
+        s.authMethod = authMethod;
+        if(authMethod === 'pin'){ delete s.password; }
+        else { delete s.pin; }
+      }
       alert('Login updated.\n\nNew recovery code (write it down — shown only once):\n\n' + newRecovery);
       state.loginMode = 'login';
       state.pendingRecoveryStaff = null;
       state.loginSelectedName = name;
-      state.loginError = 'PIN / password updated. You can log in now.';
+      state.loginAuthMethod = authMethod;
+      state.loginError = 'Login updated. You can sign in now.';
       render();
       return;
     }
     const json = await res.json().catch(()=>({}));
     if(err) err.textContent = json.error || 'Could not reset credentials. Ask the clinic admin to reset your login from Settings.';
   } catch(e){
-    if(err) err.textContent = 'Could not reach the clinic server. Ask the clinic admin to reset your PIN/password from Settings → Staff accounts.';
+    if(err) err.textContent = 'Could not reach the clinic server. Ask the clinic admin to reset your login from Settings → Staff accounts.';
   }
 }
 
@@ -1535,7 +1608,7 @@ async function loadStaffListForLogin(){
         state.data = defaultData();
         state.data.staff = json.staff || [];
         state.loadError = null;
-        try{ localStorage.setItem('mmc_staff_cache', JSON.stringify(state.data.staff.map(s=>({name:s.name,role:s.role,owner:!!s.owner,recoveryHash:s.recoveryHash||null})))); }catch(e){}
+        try{ localStorage.setItem('mmc_staff_cache', JSON.stringify(state.data.staff.map(s=>({name:s.name,role:s.role,owner:!!s.owner,authMethod:s.authMethod||'pin',recoveryHash:s.recoveryHash||null})))); }catch(e){}
         state.loading = false;
         render();
         return;
@@ -2562,27 +2635,39 @@ async function addStaff(){
   if(!isOwner()){ alert('Only the clinic admin can add staff accounts.'); return; }
   const name = document.getElementById('st-name').value.trim();
   const role = document.getElementById('st-role').value;
-  const pin = document.getElementById('st-pin').value.trim();
+  const authMethod = (document.getElementById('st-auth-method')||{}).value === 'password' ? 'password' : 'pin';
+  const pin = ((document.getElementById('st-pin')||{}).value || '').trim();
   const password = (document.getElementById('st-password')||{}).value || '';
   const qualification = (document.getElementById('st-qualification')||{}).value.trim() || '';
   const err = document.getElementById('st-error');
-  if(!name || !/^\d{4}$/.test(pin)){ err.textContent = 'Enter a name and a 4-digit PIN.'; return; }
-  if(password && password.length < 6){ err.textContent = 'Password must be at least 6 characters (or leave blank).'; return; }
+  if(!name){ err.textContent = 'Enter a name.'; return; }
+  if(authMethod === 'pin'){
+    if(!/^\d{4}$/.test(pin)){ err.textContent = 'Enter a 4-digit PIN.'; return; }
+  } else {
+    if(password.length < 6){ err.textContent = 'Password must be at least 6 characters.'; return; }
+  }
   if(state.data.staff.some(s=>s.name===name)){ err.textContent = 'That name is already registered.'; return; }
   const recoveryCode = generateRecoveryCode();
   const record = {
-    name, role,
-    pin: await hashPin(pin),
+    name, role, authMethod,
     qualification,
     owner: false,
     recoveryHash: await hashSecret(recoveryCode.replace(/-/g,'').toUpperCase())
   };
-  if(password) record.password = await hashSecret(password);
+  if(authMethod === 'pin') record.pin = await hashPin(pin);
+  else record.password = await hashSecret(password);
   state.data.staff.push(record);
-  logAudit('Added staff account', `${name} (${role})${qualification?' · '+qualification:''}`);
+  logAudit('Added staff account', `${name} (${role}) · ${authMethod}${qualification?' · '+qualification:''}`);
   await saveData();
   alert(`Account created for ${name}.\n\nRecovery code (give this to them once — it will not be shown again):\n\n${recoveryCode}`);
   render();
+}
+function onStaffAuthMethodChange(){
+  const method = (document.getElementById('st-auth-method')||{}).value || 'pin';
+  const pinBlock = document.getElementById('st-pin-block');
+  const passBlock = document.getElementById('st-pass-block');
+  if(pinBlock) pinBlock.style.display = method === 'pin' ? '' : 'none';
+  if(passBlock) passBlock.style.display = method === 'password' ? '' : 'none';
 }
 async function editStaffQualification(name){
   if(!isOwner()){ alert('Only the clinic admin can edit staff profiles.'); return; }
@@ -2626,29 +2711,33 @@ async function changeStaffRole(name){
   render();
 }
 async function resetStaffPin(name){
-  if(!isOwner()){ alert('Only the clinic admin can reset staff PINs.'); return; }
+  if(!isOwner()){ alert('Only the clinic admin can reset staff logins.'); return; }
   const s = state.data.staff.find(s=>s.name===name);
   if(!s) return;
-  const entered = prompt(`New 4-digit PIN for ${name}:`);
-  if(entered === null) return;
-  const pin = entered.trim();
-  if(!/^\d{4}$/.test(pin)){ alert('PIN must be exactly 4 digits.'); return; }
-  s.pin = await hashPin(pin);
-  const wantPass = confirm('Also set a new password for this account?\n\nOK = set password, Cancel = PIN only (existing password kept if any).');
-  if(wantPass){
-    const p = prompt(`New password for ${name} (min 6 characters), or leave blank to clear password:`);
-    if(p !== null){
-      const pw = p.trim();
-      if(pw === ''){ delete s.password; }
-      else if(pw.length < 6){ alert('Password must be at least 6 characters. PIN was still updated.'); }
-      else { s.password = await hashSecret(pw); }
-    }
+  const methodChoice = prompt(`Login type for ${name}: type PIN or PASSWORD`, (s.authMethod==='password'?'PASSWORD':'PIN'));
+  if(methodChoice === null) return;
+  const authMethod = /pass/i.test(methodChoice) ? 'password' : 'pin';
+  if(authMethod === 'pin'){
+    const entered = prompt(`New 4-digit PIN for ${name}:`);
+    if(entered === null) return;
+    const pin = entered.trim();
+    if(!/^\d{4}$/.test(pin)){ alert('PIN must be exactly 4 digits.'); return; }
+    s.pin = await hashPin(pin);
+    delete s.password;
+  } else {
+    const entered = prompt(`New password for ${name} (min 6 characters):`);
+    if(entered === null) return;
+    const pw = entered.trim();
+    if(pw.length < 6){ alert('Password must be at least 6 characters.'); return; }
+    s.password = await hashSecret(pw);
+    delete s.pin;
   }
+  s.authMethod = authMethod;
   const recoveryCode = generateRecoveryCode();
   s.recoveryHash = await hashSecret(recoveryCode.replace(/-/g,'').toUpperCase());
-  logAudit('Reset staff credentials', name);
+  logAudit('Reset staff credentials', `${name} · ${authMethod}`);
   await saveData();
-  alert(`Login updated for ${name}.\n\nNew recovery code (show them once):\n\n${recoveryCode}`);
+  alert(`Login updated for ${name} (${authMethod}).\n\nNew recovery code (show them once):\n\n${recoveryCode}`);
   render();
 }
 async function saveStaffProfileEdit(name){
@@ -2707,10 +2796,20 @@ function setupView(){
       <div class="field"><label>Role</label>
         <select id="setup-role"><option>Doctor</option><option>Receptionist</option><option>Staff</option></select>
       </div>
-      <div class="field"><label>4-digit PIN *</label><input id="setup-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="new-password"></div>
-      <div class="field"><label>Password (optional)</label><input id="setup-password" type="password" placeholder="At least 6 characters" autocomplete="new-password"></div>
-      <div class="field"><label>Confirm password</label><input id="setup-password2" type="password" placeholder="Same as above" autocomplete="new-password"></div>
-      <p class="faint" style="margin-bottom:10px;">You can log in with either the PIN or the password. A recovery code will be shown once after setup — save it to reset login later.</p>
+      <div class="field"><label>Login type</label>
+        <select id="setup-auth-method" onchange="onSetupAuthMethodChange()">
+          <option value="pin">4-digit PIN</option>
+          <option value="password">Password</option>
+        </select>
+      </div>
+      <div id="setup-pin-block">
+        <div class="field"><label>4-digit PIN</label><input id="setup-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="new-password"></div>
+      </div>
+      <div id="setup-pass-block" style="display:none;">
+        <div class="field"><label>Password</label><input id="setup-password" type="password" placeholder="At least 6 characters" autocomplete="new-password"></div>
+        <div class="field"><label>Confirm password</label><input id="setup-password2" type="password" placeholder="Same as above" autocomplete="new-password"></div>
+      </div>
+      <p class="faint" style="margin-bottom:10px;">Choose either a PIN or a password — not both. A recovery code will be shown once after setup.</p>
       <div id="setup-error" class="error-text"></div>
       <button class="btn btn-primary btn-block" onclick="doSetup()">Create account &amp; start</button>
     </div>
@@ -2722,11 +2821,13 @@ function loginView(){
   if(state.loginMode === 'reset') return resetAuthView();
   const selectedName = state.loginSelectedName || (state.data.staff[0] && state.data.staff[0].name) || '';
   const lock = pinLockStatus(selectedName);
-  const method = state.loginAuthMethod || 'pin';
+  const method = staffAuthMethod(selectedName);
+  state.loginAuthMethod = method;
   const staffOptions = state.data.staff.map(s=>`<option value="${esc(s.name)}" ${s.name===selectedName?'selected':''}>${esc(s.name)} — ${esc(s.role)}</option>`).join('');
   const credField = method === 'password'
     ? `<div class="field"><label>Password</label><input id="login-password" type="password" placeholder="Your password" autocomplete="current-password" ${lock.locked?'disabled':''} onkeydown="if(event.key==='Enter')doLogin()"></div>`
     : `<div class="field"><label>PIN</label><input id="login-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="one-time-code" ${lock.locked?'disabled':''} onkeydown="if(event.key==='Enter')doLogin()"></div>`;
+  const forgotLabel = method === 'password' ? 'Forgot password?' : 'Forgot PIN?';
   return `
   <div class="center-screen">
     <div class="auth-card">
@@ -2736,15 +2837,10 @@ function loginView(){
         <p class="muted" style="font-size:13px;">Log in to continue</p>
       </div>
       <div class="field"><label>Staff</label><select id="login-select" onchange="onLoginStaffChange(this.value)">${staffOptions}</select></div>
-      <div class="auth-method-toggle">
-        <button type="button" class="${method==='pin'?'on':''}" onclick="setLoginAuthMethod('pin')">PIN</button>
-        <button type="button" class="${method==='password'?'on':''}" onclick="setLoginAuthMethod('password')">Password</button>
-      </div>
       ${credField}
       ${state.loginError ? `<div class="error-text">${esc(state.loginError)}</div>` : ''}
       <button class="btn btn-primary btn-block" ${lock.locked?'disabled':''} onclick="doLogin()">Log in</button>
-      <button type="button" class="auth-link" onclick="showForgotAuth()">Forgot PIN or password?</button>
-      <p class="faint" style="text-align:center;margin-top:12px;">Need a new staff account? Ask the clinic admin — accounts are added from Settings → Staff accounts once logged in.</p>
+      <button type="button" class="auth-link" onclick="showForgotAuth()">${forgotLabel}</button>
     </div>
   </div>`;
 }
@@ -2772,22 +2868,40 @@ function forgotAuthView(){
 
 function resetAuthView(){
   const name = state.pendingRecoveryStaff || '';
+  const method = staffAuthMethod(name);
   return `
   <div class="center-screen">
     <div class="auth-card">
       <div class="auth-brand">
         <div class="brand-mark">MMC</div>
         <h1 style="font-size:19px;">Set new login</h1>
-        <p class="muted" style="font-size:13px;">Choose a new PIN (required) and optional password for <strong>${esc(name)}</strong>.</p>
+        <p class="muted" style="font-size:13px;">Set a new ${method==='password'?'password':'PIN'} for <strong>${esc(name)}</strong>.</p>
       </div>
-      <div class="field"><label>New 4-digit PIN *</label><input id="reset-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="new-password"></div>
-      <div class="field"><label>New password (optional)</label><input id="reset-password" type="password" placeholder="At least 6 characters" autocomplete="new-password"></div>
-      <div class="field"><label>Confirm password</label><input id="reset-password2" type="password" placeholder="Same as above" autocomplete="new-password"></div>
+      <div class="field"><label>Login type</label>
+        <select id="reset-auth-method" onchange="onResetAuthMethodChange()">
+          <option value="pin" ${method==='pin'?'selected':''}>4-digit PIN</option>
+          <option value="password" ${method==='password'?'selected':''}>Password</option>
+        </select>
+      </div>
+      <div id="reset-pin-block" style="${method==='password'?'display:none':''}">
+        <div class="field"><label>New 4-digit PIN</label><input id="reset-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="new-password"></div>
+      </div>
+      <div id="reset-pass-block" style="${method==='pin'?'display:none':''}">
+        <div class="field"><label>New password</label><input id="reset-password" type="password" placeholder="At least 6 characters" autocomplete="new-password"></div>
+        <div class="field"><label>Confirm password</label><input id="reset-password2" type="password" placeholder="Same as above" autocomplete="new-password"></div>
+      </div>
       <div id="reset-error" class="error-text"></div>
       <button class="btn btn-primary btn-block" onclick="doResetCredentials()">Save &amp; continue</button>
       <button type="button" class="auth-link" onclick="cancelForgotAuth()">Cancel</button>
     </div>
   </div>`;
+}
+function onResetAuthMethodChange(){
+  const method = (document.getElementById('reset-auth-method')||{}).value || 'pin';
+  const pinBlock = document.getElementById('reset-pin-block');
+  const passBlock = document.getElementById('reset-pass-block');
+  if(pinBlock) pinBlock.style.display = method === 'pin' ? '' : 'none';
+  if(passBlock) passBlock.style.display = method === 'password' ? '' : 'none';
 }
 
 function shellView(){
@@ -6386,17 +6500,18 @@ function settingsView(){
             <div class="row" style="gap:8px;">
               <button class="btn btn-primary btn-sm" onclick="saveStaffProfileEdit(${jsAttr(s.name)})">Save profile</button>
               <button class="btn btn-ghost btn-sm" onclick="cancelEditStaffProfile()">Cancel</button>
-              <button class="btn btn-ghost btn-sm" onclick="resetStaffPin(${jsAttr(s.name)})">Reset PIN / password</button>
+              <button class="btn btn-ghost btn-sm" onclick="resetStaffPin(${jsAttr(s.name)})">Reset login</button>
             </div>
           </div>
         </td>
       </tr>`;
     }
+    const loginType = (s.authMethod === 'password' || (s.password && !s.pin)) ? 'Password' : 'PIN';
     return `<tr>
       <td>${esc(s.name)}${s.owner?' <span class="pill" title="Can manage all staff accounts">Admin</span>':''}</td>
       <td>${esc(s.role)}</td>
       <td>${esc(s.qualification)||'<span class="faint">—</span>'}</td>
-      <td>••••</td>
+      <td>${loginType}</td>
       <td style="white-space:nowrap;">
         ${canManageStaff ? `
           <button class="btn btn-sm" onclick="startEditStaffProfile(${jsAttr(s.name)})">Edit</button>
@@ -6479,7 +6594,7 @@ function settingsView(){
     <div class="card" style="margin-bottom:18px;max-width:720px;">
       <h2 style="margin-bottom:6px;">Staff accounts</h2>
       ${canManageStaff
-        ? `<p class="muted" style="font-size:12.5px;margin-bottom:12px;">As clinic admin you can edit every profile — role, qualification (shown on OPD cards), PIN and password. Each new account gets a one-time recovery code for self-service reset.</p>`
+        ? `<p class="muted" style="font-size:12.5px;margin-bottom:12px;">As clinic admin you can edit every profile — role, qualification, and login (PIN <em>or</em> password — not both). Each new account gets a one-time recovery code.</p>`
         : `<p class="muted" style="font-size:12.5px;margin-bottom:12px;">Only the clinic admin can edit staff profiles. Contact them to update your qualification, role, or reset your login.</p>`}
       <table><thead><tr><th>Name</th><th>Role</th><th>Qualification</th><th>Login</th><th></th></tr></thead><tbody>${staffRows}</tbody></table>
       ${canManageStaff ? `
@@ -6488,9 +6603,17 @@ function settingsView(){
         <div class="field"><label>Role</label><select id="st-role"><option>Doctor</option><option>Receptionist</option><option>Staff</option></select></div>
         <div class="field"><label>Qualification / course</label><input id="st-qualification" placeholder="e.g. M.B.B.S."></div>
       </div>
-      <div class="row">
-        <div class="field"><label>4-digit PIN *</label><input id="st-pin" inputmode="numeric" maxlength="4" placeholder="••••"></div>
-        <div class="field"><label>Password (optional)</label><input id="st-password" type="password" placeholder="Min 6 characters"></div>
+      <div class="field"><label>Login type</label>
+        <select id="st-auth-method" onchange="onStaffAuthMethodChange()">
+          <option value="pin">4-digit PIN</option>
+          <option value="password">Password</option>
+        </select>
+      </div>
+      <div id="st-pin-block">
+        <div class="field"><label>4-digit PIN</label><input id="st-pin" inputmode="numeric" maxlength="4" placeholder="••••"></div>
+      </div>
+      <div id="st-pass-block" style="display:none;">
+        <div class="field"><label>Password</label><input id="st-password" type="password" placeholder="Min 6 characters"></div>
       </div>
       <div id="st-error" class="error-text"></div>
       <button class="btn btn-sm" onclick="addStaff()">+ Add staff</button>
