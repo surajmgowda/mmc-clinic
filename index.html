@@ -148,11 +148,31 @@
   }
   .brand{display:flex;align-items:center;gap:10px;margin-bottom:26px;padding:0 6px;}
   .brand-mark{
-    width:40px;height:40px;border-radius:11px;
+    width:42px;height:42px;border-radius:11px;
     background:linear-gradient(145deg, #E8B923 0%, #D4A017 50%, #C4920F 100%);
     display:flex;align-items:center;justify-content:center;
-    font-family:'Source Serif 4',serif;font-weight:700;color:#1A2744;font-size:15px;flex-shrink:0;
+    font-family:'Source Serif 4',serif;font-weight:700;color:#1A2744;font-size:12px;letter-spacing:0.02em;flex-shrink:0;
     box-shadow:0 3px 10px rgba(212,160,23,0.4);
+  }
+  .auth-method-toggle{
+    display:flex;gap:4px;background:var(--bg);border-radius:10px;padding:3px;margin-bottom:14px;
+  }
+  .auth-method-toggle button{
+    flex:1;border:none;background:transparent;padding:8px 10px;font-size:13px;font-weight:600;
+    border-radius:8px;color:var(--ink-soft);cursor:pointer;
+  }
+  .auth-method-toggle button.on{
+    background:var(--surface);color:var(--primary-dark);box-shadow:var(--shadow-sm);
+  }
+  .auth-link{
+    display:block;text-align:center;margin-top:12px;font-size:13px;font-weight:600;
+    color:var(--primary-mid);background:none;border:none;cursor:pointer;padding:0;
+  }
+  .auth-link:hover{text-decoration:underline;}
+  .recovery-code-box{
+    background:var(--accent-tint);border:1px solid rgba(212,160,23,0.35);border-radius:10px;
+    padding:12px 14px;margin:12px 0;font-family:ui-monospace,monospace;font-size:15px;
+    font-weight:700;letter-spacing:0.08em;text-align:center;color:var(--primary-dark);
   }
   .brand-text{line-height:1.25;}
   .brand-text .full{font-family:'Source Serif 4',serif;font-size:14px;color:#fff;font-weight:600;}
@@ -185,8 +205,142 @@
   .stat-num{font-family:'Source Serif 4',serif;font-size:30px;color:var(--primary-dark);font-weight:600;line-height:1;}
   .stat-label{font-size:12.5px;color:var(--ink-soft);margin-top:6px;}
 
-  /* ---- Dashboard redesign (v2) ---- */
-  .dbx-topline{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:20px;}
+  /* ---- Dashboard redesign (v3 — mockup-inspired, site colors) ---- */
+  .dbx-hero{
+    background:linear-gradient(165deg, var(--primary-dark) 0%, #152038 55%, #0F1A2E 100%);
+    border-radius:18px;padding:20px 22px 22px;margin-bottom:18px;color:#fff;
+    box-shadow:var(--shadow-md);position:relative;overflow:hidden;
+  }
+  .dbx-hero::after{
+    content:"";position:absolute;right:-40px;top:-40px;width:140px;height:140px;
+    border-radius:50%;background:rgba(42,157,143,0.12);pointer-events:none;
+  }
+  .dbx-hero-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;gap:10px;}
+  .dbx-hero-brand{display:flex;align-items:center;gap:10px;}
+  .dbx-hero-mark{
+    width:36px;height:36px;border-radius:10px;
+    background:linear-gradient(145deg, #E8B923 0%, #D4A017 50%, #C4920F 100%);
+    display:flex;align-items:center;justify-content:center;
+    font-family:'Source Serif 4',serif;font-weight:700;color:var(--primary-dark);font-size:12px;letter-spacing:0.02em;
+    box-shadow:0 2px 8px rgba(212,160,23,0.35);
+  }
+  .dbx-hero-clinic{font-family:'Source Serif 4',serif;font-size:15px;font-weight:600;color:#fff;}
+  .dbx-hero-bell{
+    width:34px;height:34px;border-radius:50%;background:rgba(255,255,255,0.1);
+    display:flex;align-items:center;justify-content:center;border:none;color:rgba(255,255,255,0.85);cursor:pointer;
+  }
+  .dbx-hero-bell svg{width:16px;height:16px;}
+  .dbx-hero-greet-eyebrow{font-size:12px;font-weight:500;color:rgba(255,255,255,0.65);margin-bottom:2px;}
+  .dbx-hero-greet-name{font-family:'Source Serif 4',serif;font-size:22px;font-weight:700;color:#fff;line-height:1.2;}
+  .dbx-hero-stats{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px;}
+  .dbx-hero-stat{
+    background:rgba(255,255,255,0.97);border-radius:14px;padding:14px 16px;
+    display:flex;align-items:center;gap:12px;box-shadow:0 2px 8px rgba(0,0,0,0.06);
+  }
+  .dbx-hero-stat-icon{
+    width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  }
+  .dbx-hero-stat-icon svg{width:18px;height:18px;}
+  .dbx-hero-stat-icon.wait{background:var(--primary-tint);color:var(--primary);}
+  .dbx-hero-stat-icon.visits{background:var(--accent-tint);color:var(--accent-dark);}
+  .dbx-hero-stat-num{font-family:'Source Serif 4',serif;font-size:24px;font-weight:700;color:var(--primary-dark);line-height:1.1;}
+  .dbx-hero-stat-label{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
+  .dbx-section-head{
+    display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding:0 2px;
+  }
+  .dbx-section-head h2{font-size:14px;font-weight:700;color:var(--ink-soft);margin:0;font-family:inherit;}
+  .dbx-section-head a,.dbx-section-head button.link{
+    font-size:12.5px;font-weight:600;color:var(--primary-mid);background:none;border:none;cursor:pointer;padding:0;
+  }
+  .dbx-queue-card{
+    background:var(--surface);border:1px solid var(--line);border-radius:16px;
+    box-shadow:var(--shadow-sm);overflow:hidden;margin-bottom:16px;
+  }
+  .dbx-qrow{
+    display:flex;align-items:center;gap:12px;padding:12px 16px;
+    border-top:1px solid var(--line);
+  }
+  .dbx-qrow:first-child{border-top:none;}
+  .dbx-qrow.dbx-clickable{cursor:pointer;}
+  .dbx-qrow.dbx-clickable:hover{background:rgba(30,78,107,0.03);}
+  .dbx-avatar{
+    width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-weight:700;font-size:13px;flex-shrink:0;
+  }
+  .dbx-a1{background:var(--primary-tint);color:var(--primary);}
+  .dbx-a2{background:var(--teal-tint);color:#1B6E63;}
+  .dbx-a3{background:var(--accent-tint);color:var(--accent-dark);}
+  .dbx-a4{background:var(--primary-tint-strong);color:var(--primary-dark);}
+  .dbx-qtext{min-width:0;flex:1;}
+  .dbx-qname{font-weight:600;font-size:14px;color:var(--ink);}
+  .dbx-qsub{font-size:12px;color:var(--ink-faint);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .dbx-qtoken{font-family:'Source Serif 4',serif;font-weight:700;color:var(--primary-dark);font-size:15px;width:28px;text-align:center;flex-shrink:0;}
+  .dbx-qtime{font-size:11.5px;color:var(--ink-soft);width:54px;flex-shrink:0;}
+  .dbx-qstatus{font-size:11px;font-weight:700;padding:5px 12px;border-radius:99px;flex-shrink:0;}
+  .dbx-qstatus.wait{background:var(--accent-tint);color:var(--accent-dark);}
+  .dbx-qstatus.done{background:var(--teal-tint);color:var(--teal);}
+  .dbx-qbtn{
+    border:1px solid var(--line);background:var(--surface);border-radius:8px;
+    padding:7px 12px;font-size:12px;font-weight:600;color:var(--primary-dark);cursor:pointer;flex-shrink:0;
+  }
+  .dbx-qbtn:hover{border-color:var(--primary-mid);background:var(--primary-tint);}
+  .dbx-qbtn.ghost{background:transparent;}
+  .dbx-qbtn.wide{width:100%;text-align:left;padding:11px 14px;}
+  .dbx-cta-row{display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;}
+  .dbx-cta-primary{
+    flex:1;min-width:140px;display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    padding:12px 18px;border-radius:12px;border:none;
+    background:var(--primary-dark);color:#fff;font-size:14px;font-weight:600;cursor:pointer;
+    box-shadow:0 2px 8px rgba(26,39,68,0.25);
+  }
+  .dbx-cta-primary:hover{background:#152038;}
+  .dbx-cta-secondary{
+    flex:1;min-width:140px;display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    padding:12px 18px;border-radius:12px;border:1.5px solid var(--line);
+    background:var(--surface);color:var(--primary-dark);font-size:14px;font-weight:600;cursor:pointer;
+  }
+  .dbx-cta-secondary:hover{border-color:var(--primary-mid);background:var(--primary-tint);}
+  .dbx-two-col{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;align-items:start;}
+  @media (max-width:980px){ .dbx-two-col{grid-template-columns:1fr;} }
+  .dbx-panel{
+    background:var(--surface);border:1px solid var(--line);border-radius:16px;
+    box-shadow:var(--shadow-sm);margin-bottom:16px;overflow:hidden;
+  }
+  .dbx-panel-head{
+    display:flex;justify-content:space-between;align-items:center;padding:14px 16px 10px;gap:8px;flex-wrap:wrap;
+  }
+  .dbx-panel-head h2{font-size:14px;font-weight:700;color:var(--primary-dark);margin:0;font-family:inherit;}
+  .dbx-panel-head .count{
+    font-size:10.5px;font-weight:700;background:var(--primary-tint);color:var(--primary);
+    padding:2px 8px;border-radius:99px;margin-left:7px;
+  }
+  .dbx-seg{display:flex;gap:4px;background:var(--bg);border-radius:8px;padding:3px;}
+  .dbx-seg button{
+    border:none;background:transparent;padding:5px 10px;font-size:11px;font-weight:600;
+    border-radius:6px;color:var(--ink-soft);cursor:pointer;
+  }
+  .dbx-seg button.on{background:var(--surface);color:var(--primary-dark);box-shadow:var(--shadow-sm);}
+  .dbx-followup-item{display:flex;align-items:center;gap:11px;padding:10px 16px;border-top:1px solid var(--line);}
+  .dbx-followup-item:first-of-type{border-top:none;}
+  .dbx-fdate{width:46px;text-align:center;background:var(--teal-tint);border-radius:8px;padding:5px 0;flex-shrink:0;}
+  .dbx-fdate .d{font-family:'Source Serif 4',serif;font-weight:700;color:var(--teal);font-size:14px;line-height:1;}
+  .dbx-fdate .m{font-size:8.5px;font-weight:700;color:var(--teal);text-transform:uppercase;}
+  .dbx-followup-actions{display:flex;gap:6px;margin-left:auto;flex-shrink:0;}
+  .dbx-quick-actions{padding:4px 16px 16px;display:flex;flex-direction:column;gap:8px;}
+  .dbx-stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:18px;}
+  .dbx-stat-card{
+    background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px 16px;
+    display:flex;align-items:center;gap:12px;box-shadow:var(--shadow-sm);
+  }
+  .dbx-stat-icon{width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+  .dbx-stat-icon svg{width:18px;height:18px;}
+  .dbx-stat-icon.blue{background:var(--primary-tint);color:var(--primary);}
+  .dbx-stat-icon.gold{background:var(--accent-tint);color:var(--accent-dark);}
+  .dbx-stat-icon.teal{background:var(--teal-tint);color:var(--teal);}
+  .dbx-stat-icon.navy{background:var(--primary-tint-strong);color:var(--primary-dark);}
+  .dbx-stat-num{font-family:'Source Serif 4',serif;font-size:22px;font-weight:700;color:var(--primary-dark);line-height:1.1;}
+  .dbx-stat-label{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
+  .dbx-topline{display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap;margin-bottom:16px;}
   .dbx-greet-eyebrow{font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--teal);margin-bottom:3px;}
   .dbx-greet h1{font-family:'Source Serif 4',serif;font-size:21px;color:var(--primary-dark);margin:0;}
   .dbx-greet p{color:var(--ink-faint);font-size:12.5px;margin:4px 0 0;}
@@ -194,56 +348,13 @@
   .dbx-search{display:flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:99px;padding:8px 14px;box-shadow:var(--shadow-sm);}
   .dbx-search svg{width:14px;height:14px;color:var(--ink-faint);flex-shrink:0;}
   .dbx-search input{border:none;outline:none;font-size:13px;color:var(--ink);width:150px;background:transparent;font-family:inherit;}
-
-  .dbx-stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:14px;margin-bottom:22px;}
-  .dbx-stat-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:15px 17px;display:flex;align-items:center;gap:13px;box-shadow:var(--shadow-sm);}
-  .dbx-stat-icon{width:40px;height:40px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
-  .dbx-stat-icon svg{width:19px;height:19px;}
-  .dbx-stat-icon.blue{background:var(--primary-tint);color:var(--primary);}
-  .dbx-stat-icon.gold{background:var(--accent-tint);color:var(--accent-dark);}
-  .dbx-stat-icon.teal{background:var(--teal-tint);color:var(--teal);}
-  .dbx-stat-icon.navy{background:var(--primary-tint-strong);color:var(--primary-dark);}
-  .dbx-stat-num{font-family:'Source Serif 4',serif;font-size:23px;font-weight:700;color:var(--primary-dark);line-height:1.1;}
-  .dbx-stat-label{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
-
-  .dbx-two-col{display:grid;grid-template-columns:1.4fr 1fr;gap:16px;align-items:start;}
-  @media (max-width:980px){ .dbx-two-col{grid-template-columns:1fr;} }
-
-  .dbx-panel{background:var(--surface);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow-sm);margin-bottom:16px;overflow:hidden;}
-  .dbx-panel-head{display:flex;justify-content:space-between;align-items:center;padding:15px 18px 11px;gap:8px;flex-wrap:wrap;}
-  .dbx-panel-head h2{font-size:14px;font-weight:700;color:var(--primary-dark);margin:0;}
-  .dbx-panel-head .count{font-size:10.5px;font-weight:700;background:var(--primary-tint);color:var(--primary);padding:2px 8px;border-radius:99px;margin-left:7px;}
-  .dbx-seg{display:flex;gap:4px;background:var(--bg);border-radius:8px;padding:3px;}
-  .dbx-seg button{border:none;background:transparent;padding:5px 10px;font-size:11px;font-weight:600;border-radius:6px;color:var(--ink-soft);cursor:pointer;}
-  .dbx-seg button.on{background:var(--surface);color:var(--primary-dark);box-shadow:var(--shadow-sm);}
-
-  .dbx-qrow{display:flex;align-items:center;gap:11px;padding:10px 18px;border-top:1px solid var(--line);}
-  .dbx-qrow:first-of-type{border-top:none;}
-  .dbx-qrow.dbx-clickable{cursor:pointer;}
-  .dbx-qrow.dbx-clickable:hover{background:rgba(30,78,107,0.03);}
-  .dbx-avatar{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12.5px;flex-shrink:0;}
-  .dbx-a1{background:var(--primary-tint);color:var(--primary);} .dbx-a2{background:var(--teal-tint);color:#1B6E63;}
-  .dbx-a3{background:var(--accent-tint);color:var(--accent-dark);} .dbx-a4{background:var(--primary-tint-strong);color:var(--primary-dark);}
-  .dbx-qtext{min-width:0;flex:1;}
-  .dbx-qname{font-weight:600;font-size:13.5px;color:var(--ink);}
-  .dbx-qsub{font-size:11.5px;color:var(--ink-faint);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-  .dbx-qtoken{font-family:'Source Serif 4',serif;font-weight:700;color:var(--primary-dark);font-size:15px;width:30px;text-align:center;flex-shrink:0;}
-  .dbx-qtime{font-size:11.5px;color:var(--ink-soft);width:54px;flex-shrink:0;}
-  .dbx-qstatus{font-size:10.5px;font-weight:700;padding:4px 10px;border-radius:99px;flex-shrink:0;}
-  .dbx-qstatus.wait{background:var(--accent-tint);color:var(--accent-dark);}
-  .dbx-qstatus.done{background:var(--teal-tint);color:var(--teal);}
-  .dbx-qbtn{border:1px solid var(--line);background:var(--surface);border-radius:7px;padding:6px 11px;font-size:11.5px;font-weight:600;color:var(--primary-dark);cursor:pointer;flex-shrink:0;}
-  .dbx-qbtn.ghost{background:transparent;}
-  .dbx-qbtn.wide{width:100%;text-align:left;padding:10px 12px;}
-
-  .dbx-followup-item{display:flex;align-items:center;gap:11px;padding:10px 18px;border-top:1px solid var(--line);}
-  .dbx-followup-item:first-of-type{border-top:none;}
-  .dbx-fdate{width:46px;text-align:center;background:var(--teal-tint);border-radius:8px;padding:5px 0;flex-shrink:0;}
-  .dbx-fdate .d{font-family:'Source Serif 4',serif;font-weight:700;color:var(--teal);font-size:14px;line-height:1;}
-  .dbx-fdate .m{font-size:8.5px;font-weight:700;color:var(--teal);text-transform:uppercase;}
-  .dbx-followup-actions{display:flex;gap:6px;margin-left:auto;flex-shrink:0;}
-  .dbx-quick-actions{padding:4px 18px 16px;display:flex;flex-direction:column;gap:8px;}
-
+  @media (max-width:520px){
+    .dbx-hero{padding:16px 16px 18px;border-radius:16px;}
+    .dbx-hero-greet-name{font-size:19px;}
+    .dbx-hero-stats{gap:10px;}
+    .dbx-cta-row{flex-direction:column;}
+    .dbx-cta-primary,.dbx-cta-secondary{width:100%;}
+  }
 
   .search-wrap{position:relative;max-width:340px;}
 
@@ -263,7 +374,8 @@
   }
   .auth-card{width:100%;max-width:360px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:28px;}
   .auth-brand{text-align:center;margin-bottom:20px;}
-  .auth-brand .brand-mark{margin:0 auto 10px auto;width:44px;height:44px;font-size:18px;}
+  .auth-brand .brand-mark{margin:0 auto 10px auto;width:48px;height:48px;font-size:13px;letter-spacing:0.02em;}
+  .opdx-crest{font-size:11px !important;letter-spacing:0.02em;}
 
   /* ---- Print sheets ---- */
   .print-sheet{
@@ -615,11 +727,9 @@ let state = {
   routeParams: {},
   search: '',
   loginError: '',
-  loginMode: 'login', // 'login' | 'addFromLogin' | 'forgot'
+  loginMode: 'login', // 'login' | 'forgot' | 'reset'
   loginAuthMethod: 'pin', // 'pin' | 'password'
-  forgotStep: 1, // 1 = answer security question, 2 = set new PIN/password
-  forgotName: '',
-  forgotError: '',
+  pendingRecoveryStaff: null,
   draftVisit: null,
   apptDate: null, // selected day on the Appointments screen, defaults to today
   draftAppt: null,
@@ -639,7 +749,7 @@ let state = {
 
 function defaultData(){
   return {
-    clinicInfo: { name: 'Male Madeshwara Clinic', shortName: 'MM', address: '', phone: '', logoDataUrl: '' },
+    clinicInfo: { name: 'Male Madeshwara Clinic', shortName: 'MMC', address: '', phone: '', logoDataUrl: '' },
     nextPatientSeq: 1,
     nextCertSeq: 1,
     nextTokenSeq: 1,
@@ -925,7 +1035,14 @@ let dataVersion = 0;
 
 async function loadData(){
   try{
-    const res = await fetch('/api/data');
+    const res = await fetch('/api/data', {credentials:'same-origin'});
+    if(res.status === 401){
+      // Session cookie missing/expired — the server no longer recognizes us,
+      // regardless of what the local UI thinks. Back to the login screen.
+      state.session.staffName = null;
+      await loadStaffListForLogin();
+      return;
+    }
     if(!res.ok) throw new Error('bad response');
     const json = await res.json();
     state.data = json.data;
@@ -950,9 +1067,16 @@ async function saveData(){
   try{
     const res = await fetch('/api/data', {
       method:'PUT',
+      credentials:'same-origin',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify({version: dataVersion, data: state.data})
     });
+    if(res.status === 401){
+      state.saveError = 'Your session has expired — please log in again.';
+      state.session.staffName = null;
+      render();
+      return false;
+    }
     if(res.status === 409){
       const server = await res.json();
       state.data = server.data;
@@ -1006,75 +1130,28 @@ function go(route, params){
 }
 
 /* ============================= AUTH ============================= */
-// Staff PINs are stored as SHA-256 hashes, not plain text (matters since
-// the data backup export makes the raw record easy to open). Accounts
-// created before this existed still have a plain 4-digit PIN on file;
-// verifyPin() accepts either, and silently upgrades a legacy account to a
-// hash the next time that PIN is used successfully.
+// Actual PIN verification now happens server-side (see /api/login in
+// server.js) — the server checks the real stored hash and issues a signed
+// session cookie; the browser is never trusted to self-certify who it is.
+// hashPin() still runs client-side only for the narrow, already-logged-in-
+// as-owner cases of setting a NEW pin (addStaff, resetStaffPin) — the
+// resulting unsalted hash is transparently upgraded to a salted one
+// server-side the first time that staff member actually logs in with it.
 async function hashPin(pin){
-  const enc = new TextEncoder().encode(pin);
+  return hashSecret(pin);
+}
+async function hashSecret(value){
+  const enc = new TextEncoder().encode(String(value||''));
   const buf = await crypto.subtle.digest('SHA-256', enc);
   return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
-function looksHashed(pin){ return typeof pin === 'string' && pin.length === 64 && /^[0-9a-f]+$/.test(pin); }
-async function verifyPin(staff, enteredPin){
-  if(looksHashed(staff.pin)) return (await hashPin(enteredPin)) === staff.pin;
-  return staff.pin === enteredPin;
-}
-
-// Password login is an alternative to the PIN — same hashing, no length/
-// digit restriction. hashPin is really just "hash this secret", so it's
-// reused here rather than duplicated.
-const hashSecret = hashPin;
-async function verifyPassword(staff, enteredPassword){
-  if(!staff || !staff.password) return false;
-  if(looksHashed(staff.password)) return (await hashSecret(enteredPassword||'')) === staff.password;
-  return staff.password === enteredPassword;
-}
-
-// Security question, answered at account setup, is how a staff member
-// resets their own PIN/password without needing another staff member to
-// do it for them. The answer is normalized (trimmed, lowercased) before
-// hashing so a recovery attempt isn't sunk by capitalization.
-const SECURITY_QUESTIONS = [
-  "What was the name of your first pet?",
-  "What is your mother's maiden name?",
-  "What city were you born in?",
-  "What was your childhood nickname?",
-  "What is the name of your favorite teacher?"
-];
-function normalizeSecurityAnswer(a){ return (a||'').trim().toLowerCase(); }
-async function verifySecurityAnswer(staff, enteredAnswer){
-  if(!staff || !staff.securityAnswer) return false;
-  return (await hashSecret(normalizeSecurityAnswer(enteredAnswer))) === staff.securityAnswer;
-}
-// Wire up a "security question" <select> (with a "write my own" option) to
-// its companion custom-text <input>, toggling visibility on change.
-function onSecurityQuestionChange(selId, customId){
-  const sel = document.getElementById(selId);
-  const custom = document.getElementById(customId);
-  if(!sel || !custom) return;
-  custom.style.display = sel.value === '__custom__' ? '' : 'none';
-}
-function resolvedSecurityQuestion(selId, customId){
-  const sel = document.getElementById(selId);
-  if(!sel) return '';
-  if(sel.value === '__custom__'){
-    const custom = document.getElementById(customId);
-    return custom ? custom.value.trim() : '';
-  }
-  return sel.value;
-}
-function securityQuestionFieldsHTML(selId, customId, required){
-  return `
-    <div class="field"><label>Security question${required?'':' (optional)'}</label>
-      <select id="${selId}" onchange="onSecurityQuestionChange('${selId}','${customId}')">
-        ${required ? '' : `<option value="">— No recovery question —</option>`}
-        ${SECURITY_QUESTIONS.map(q=>`<option>${esc(q)}</option>`).join('')}
-        <option value="__custom__">Write my own question…</option>
-      </select>
-      <input id="${customId}" type="text" placeholder="Type your own question" style="display:none;margin-top:6px;">
-    </div>`;
+function generateRecoveryCode(){
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let out = '';
+  const arr = new Uint8Array(8);
+  crypto.getRandomValues(arr);
+  for(let i=0;i<8;i++) out += alphabet[arr[i] % alphabet.length];
+  return out.slice(0,4) + '-' + out.slice(4);
 }
 
 /* ============================= PIN LOCKOUT ============================= */
@@ -1130,30 +1207,37 @@ async function doSetup(){
   const name = document.getElementById('setup-name').value.trim();
   const role = document.getElementById('setup-role').value;
   const pin = document.getElementById('setup-pin').value.trim();
-  const password = document.getElementById('setup-password').value;
-  const secQ = resolvedSecurityQuestion('setup-secq','setup-secq-custom');
-  const secA = document.getElementById('setup-seca').value.trim();
+  const password = (document.getElementById('setup-password')||{}).value || '';
+  const password2 = (document.getElementById('setup-password2')||{}).value || '';
   const err = document.getElementById('setup-error');
-  if(!name || !/^\d{4}$/.test(pin)){
-    err.textContent = 'Enter your name and a 4-digit PIN.'; return;
+  if(!name){ err.textContent = 'Enter your name.'; return; }
+  if(!/^\d{4}$/.test(pin)){ err.textContent = 'Choose a 4-digit PIN.'; return; }
+  if(password && password.length < 6){ err.textContent = 'Password must be at least 6 characters (or leave blank).'; return; }
+  if(password !== password2){ err.textContent = 'Passwords do not match.'; return; }
+  const recoveryCode = generateRecoveryCode();
+  try{
+    const res = await fetch('/api/setup', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({name, role, pin, password: password || undefined, recoveryCode})
+    });
+    const json = await res.json().catch(()=>({}));
+    if(!res.ok){ err.textContent = json.error || 'Could not complete setup — try again.'; return; }
+    state.session.staffName = json.name;
+    state.loading = true;
+    render();
+    await loadData();
+    const me = state.data.staff.find(s=>s.name===json.name);
+    if(me){
+      if(password) me.password = await hashSecret(password);
+      me.recoveryHash = await hashSecret(recoveryCode.replace(/-/g,'').toUpperCase());
+    }
+    logAudit('Clinic set up', `First account: ${json.name} (${json.role})`, json.name);
+    await saveData();
+    alert('Account created.\n\nWrite down this recovery code — needed if you forget PIN or password:\n\n' + recoveryCode + '\n\nIt will not be shown again.');
+  } catch(e){
+    err.textContent = 'Could not reach the clinic server. Check your connection and try again.';
   }
-  if(!password || password.length < 4){
-    err.textContent = 'Choose a password with at least 4 characters.'; return;
-  }
-  if(!secQ || !secA){
-    err.textContent = "Set a security question and answer — since you're the first account, this is how you'll reset your PIN or password if you forget them (there's no other admin to do it for you)."; return;
-  }
-  state.data.staff.push({
-    name, role, pin: await hashPin(pin), password: await hashSecret(password),
-    securityQuestion: secQ, securityAnswer: await hashSecret(normalizeSecurityAnswer(secA)),
-    owner: true, qualification: ''
-  });
-  logAudit('Clinic set up', `First account: ${name} (${role})`, name);
-  const ok = await saveData();
-  if(!ok){ err.textContent = state.saveError; render(); return; }
-  state.session.staffName = name;
-  saveSessionToStorage();
-  go('dashboard');
 }
 
 // Whoever's logged in — used to gate doctor-only actions like "Continue".
@@ -1241,215 +1325,242 @@ function logAudit(action, details, actor){
   if(state.data.auditLog.length > 1000) state.data.auditLog = state.data.auditLog.slice(-1000);
 }
 
+function setLoginAuthMethod(method){
+  state.loginAuthMethod = method === 'password' ? 'password' : 'pin';
+  state.loginError = '';
+  render();
+}
+function showForgotAuth(){
+  state.loginMode = 'forgot';
+  state.loginError = '';
+  state.pendingRecoveryStaff = null;
+  render();
+}
+function cancelForgotAuth(){
+  state.loginMode = 'login';
+  state.loginError = '';
+  state.pendingRecoveryStaff = null;
+  render();
+}
+
 async function doLogin(){
   const name = document.getElementById('login-select').value;
   const method = state.loginAuthMethod || 'pin';
+  const pinEl = document.getElementById('login-pin');
+  const passEl = document.getElementById('login-password');
+  const pin = pinEl ? pinEl.value.trim() : '';
+  const password = passEl ? passEl.value : '';
   const lock = pinLockStatus(name);
   if(lock.locked){
     state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil(lock.remainingMs/1000)}s.`;
     render();
     return;
   }
-  const staff = state.data.staff.find(s => s.name === name);
+  if(method === 'pin' && !/^\d{4}$/.test(pin)){
+    state.loginError = 'Enter your 4-digit PIN.';
+    render();
+    return;
+  }
+  if(method === 'password' && !password){
+    state.loginError = 'Enter your password.';
+    render();
+    return;
+  }
+  const body = method === 'password' ? {staffName: name, password} : {staffName: name, pin};
+  try{
+    const res = await fetch('/api/login', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    if(res.ok){
+      clearPinAttempts(name);
+      const json = await res.json();
+      state.session.staffName = json.name;
+      state.loginError = '';
+      state.loginMode = 'login';
+      state.loading = true;
+      render();
+      await loadData();
+      return;
+    }
+    if(res.status === 429){
+      const json = await res.json().catch(()=>({}));
+      state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil((json.remainingMs||30000)/1000)}s.`;
+    } else {
+      const rec = recordFailedPin(name);
+      if(rec.lockedUntil && Date.now() < rec.lockedUntil){
+        state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil((rec.lockedUntil-Date.now())/1000)}s.`;
+      } else {
+        const left = PIN_LOCK_THRESHOLD - rec.fails;
+        const what = method === 'password' ? 'password' : 'PIN';
+        state.loginError = `Incorrect ${what}. Try again.${left<=2 ? ` (${left} attempt${left===1?'':'s'} left before a cooldown)` : ''}`;
+      }
+    }
+  } catch(e){
+    state.loginError = 'Could not reach the clinic server. Check your connection and try again.';
+  }
+  render();
+}
 
-  if(method === 'password'){
-    if(!staff || !staff.password){
-      state.loginError = 'No password is set for this account yet. Log in with PIN instead, or ask the clinic admin to set one from Settings → Staff accounts.';
+async function doVerifyRecoveryCode(){
+  const name = document.getElementById('forgot-select').value;
+  const codeRaw = (document.getElementById('forgot-code')||{}).value || '';
+  const code = codeRaw.replace(/[^A-Za-z0-9]/g,'').toUpperCase();
+  const err = document.getElementById('forgot-error');
+  if(!name || code.length < 6){
+    if(err) err.textContent = 'Select your name and enter the recovery code.';
+    return;
+  }
+  try{
+    const res = await fetch('/api/verify-recovery', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({staffName: name, recoveryCode: code})
+    });
+    if(res.ok){
+      state.pendingRecoveryStaff = name;
+      state.loginMode = 'reset';
+      state.loginError = '';
       render();
       return;
     }
-    const password = document.getElementById('login-password').value;
-    if(await verifyPassword(staff, password)){
+    const staff = (state.data.staff||[]).find(s=>s.name===name);
+    if(staff && staff.recoveryHash){
+      const h = await hashSecret(code);
+      if(h === staff.recoveryHash){
+        state.pendingRecoveryStaff = name;
+        state.loginMode = 'reset';
+        state.loginError = '';
+        render();
+        return;
+      }
+    }
+    if(err) err.textContent = 'Invalid recovery code. Check the code saved when the account was created, or ask the clinic admin to reset your login from Settings.';
+  } catch(e){
+    const staff = (state.data.staff||[]).find(s=>s.name===name);
+    if(staff && staff.recoveryHash){
+      const h = await hashSecret(code);
+      if(h === staff.recoveryHash){
+        state.pendingRecoveryStaff = name;
+        state.loginMode = 'reset';
+        state.loginError = '';
+        render();
+        return;
+      }
+    }
+    if(err) err.textContent = 'Could not verify recovery code. Check your connection, or ask the clinic admin to reset your login from Settings → Staff accounts.';
+  }
+}
+
+async function doResetCredentials(){
+  const name = state.pendingRecoveryStaff;
+  if(!name){ cancelForgotAuth(); return; }
+  const pin = (document.getElementById('reset-pin')||{}).value || '';
+  const password = (document.getElementById('reset-password')||{}).value || '';
+  const password2 = (document.getElementById('reset-password2')||{}).value || '';
+  const err = document.getElementById('reset-error');
+  if(!/^\d{4}$/.test(pin)){ if(err) err.textContent = 'Enter a new 4-digit PIN.'; return; }
+  if(password && password.length < 6){ if(err) err.textContent = 'Password must be at least 6 characters (or leave blank).'; return; }
+  if(password !== password2){ if(err) err.textContent = 'Passwords do not match.'; return; }
+  const newRecovery = generateRecoveryCode();
+  try{
+    const res = await fetch('/api/reset-credentials', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({staffName: name, pin, password: password || undefined, recoveryCode: newRecovery})
+    });
+    if(res.ok){
       clearPinAttempts(name);
-      state.session.staffName = name;
-      state.loginError = '';
-      saveSessionToStorage();
-      go('dashboard');
+      alert('Login updated.\n\nNew recovery code (write it down — shown only once):\n\n' + newRecovery);
+      state.loginMode = 'login';
+      state.pendingRecoveryStaff = null;
+      state.loginSelectedName = name;
+      state.loginError = 'PIN / password updated. You can log in now.';
+      render();
       return;
     }
-    const rec = recordFailedPin(name);
-    if(rec.lockedUntil && Date.now() < rec.lockedUntil){
-      state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil((rec.lockedUntil-Date.now())/1000)}s.`;
-    } else {
-      const left = PIN_LOCK_THRESHOLD - rec.fails;
-      state.loginError = `Incorrect password. Try again.${left<=2 ? ` (${left} attempt${left===1?'':'s'} left before a cooldown)` : ''}`;
-    }
-    render();
-    return;
+    const json = await res.json().catch(()=>({}));
+    if(err) err.textContent = json.error || 'Could not reset credentials. Ask the clinic admin to reset your login from Settings.';
+  } catch(e){
+    if(err) err.textContent = 'Could not reach the clinic server. Ask the clinic admin to reset your PIN/password from Settings → Staff accounts.';
   }
-
-  const pin = document.getElementById('login-pin').value.trim();
-  if(staff && await verifyPin(staff, pin)){
-    clearPinAttempts(name);
-    state.session.staffName = name;
-    state.loginError = '';
-    saveSessionToStorage();
-    if(!looksHashed(staff.pin)){ staff.pin = await hashPin(pin); saveData(); }
-    go('dashboard');
-  } else {
-    const rec = recordFailedPin(name);
-    if(rec.lockedUntil && Date.now() < rec.lockedUntil){
-      state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil((rec.lockedUntil-Date.now())/1000)}s.`;
-    } else {
-      const left = PIN_LOCK_THRESHOLD - rec.fails;
-      state.loginError = `Incorrect PIN. Try again.${left<=2 ? ` (${left} attempt${left===1?'':'s'} left before a cooldown)` : ''}`;
-    }
-    render();
-  }
-}
-
-function toggleLoginMethod(method){
-  state.loginAuthMethod = method;
-  state.loginError = '';
-  render();
-}
-
-function toggleAddFromLogin(){
-  state.loginMode = state.loginMode === 'login' ? 'addFromLogin' : 'login';
-  state.loginError = '';
-  render();
-}
-
-/* ---- Forgot PIN / password (self-service, via security question) ---- */
-function startForgotFlow(){
-  state.loginMode = 'forgot';
-  state.forgotStep = 1;
-  state.forgotName = state.loginSelectedName || (state.data.staff[0] && state.data.staff[0].name) || '';
-  state.forgotError = '';
-  render();
-}
-function cancelForgotFlow(){
-  state.loginMode = 'login';
-  state.forgotError = '';
-  render();
-}
-function onForgotStaffChange(name){
-  state.forgotName = name;
-  state.forgotError = '';
-  render();
-}
-async function submitForgotAnswer(){
-  const name = state.forgotName;
-  const staff = state.data.staff.find(s=>s.name===name);
-  const entered = (document.getElementById('forgot-answer').value || '').trim();
-  if(!staff || !staff.securityQuestion || !staff.securityAnswer){
-    state.forgotError = 'No recovery question is set up for this account. Ask the clinic admin to reset your PIN or password from Settings → Staff accounts.';
-    render();
-    return;
-  }
-  const lock = pinLockStatus('forgot:'+name);
-  if(lock.locked){
-    state.forgotError = `Too many incorrect answers. Try again in ${Math.ceil(lock.remainingMs/1000)}s.`;
-    render();
-    return;
-  }
-  if(await verifySecurityAnswer(staff, entered)){
-    clearPinAttempts('forgot:'+name);
-    state.forgotStep = 2;
-    state.forgotError = '';
-    render();
-  } else {
-    const rec = recordFailedPin('forgot:'+name);
-    state.forgotError = rec.lockedUntil && Date.now() < rec.lockedUntil
-      ? `Too many incorrect answers. Try again in ${Math.ceil((rec.lockedUntil-Date.now())/1000)}s.`
-      : "That answer doesn't match. Try again, or ask the clinic admin for help.";
-    render();
-  }
-}
-async function submitForgotReset(){
-  const name = state.forgotName;
-  const staff = state.data.staff.find(s=>s.name===name);
-  if(!staff) return;
-  const newPin = document.getElementById('forgot-new-pin').value.trim();
-  const newPass = document.getElementById('forgot-new-password').value;
-  const newPass2 = document.getElementById('forgot-new-password2').value;
-  if(!newPin && !newPass){ state.forgotError = 'Set a new PIN, a new password, or both.'; render(); return; }
-  if(newPin && !/^\d{4}$/.test(newPin)){ state.forgotError = 'PIN must be exactly 4 digits.'; render(); return; }
-  if(newPass && newPass.length < 4){ state.forgotError = 'Password must be at least 4 characters.'; render(); return; }
-  if(newPass && newPass !== newPass2){ state.forgotError = 'Passwords do not match.'; render(); return; }
-  if(newPin) staff.pin = await hashPin(newPin);
-  if(newPass) staff.password = await hashSecret(newPass);
-  clearPinAttempts(name);
-  logAudit('Reset own PIN/password via security question', name, name);
-  const ok = await saveData();
-  if(!ok){ state.forgotError = state.saveError; render(); return; }
-  state.loginMode = 'login';
-  state.loginSelectedName = name;
-  state.loginError = 'Updated — log in with your new credentials.';
-  render();
-}
-
-async function addStaffFromLogin(){
-  const name = document.getElementById('als-name').value.trim();
-  const role = document.getElementById('als-role').value;
-  const pin = document.getElementById('als-pin').value.trim();
-  const password = document.getElementById('als-password').value;
-  const secQ = resolvedSecurityQuestion('als-secq','als-secq-custom');
-  const secA = document.getElementById('als-seca').value.trim();
-  const err = document.getElementById('als-error');
-  if(!name || !/^\d{4}$/.test(pin)){
-    err.textContent = 'Enter a name and a 4-digit PIN.'; return;
-  }
-  if(state.data.staff.some(s=>s.name===name)){
-    err.textContent = 'That name is already registered.'; return;
-  }
-  if(password && password.length < 4){
-    err.textContent = 'Password must be at least 4 characters (or leave it blank).'; return;
-  }
-  if((secQ && !secA) || (!secQ && secA)){
-    err.textContent = 'Fill in both the security question and its answer, or leave both blank.'; return;
-  }
-  state.data.staff.push({
-    name, role, pin: await hashPin(pin),
-    password: password ? await hashSecret(password) : '',
-    securityQuestion: secQ || '',
-    securityAnswer: secA ? await hashSecret(normalizeSecurityAnswer(secA)) : '',
-    owner: false, qualification: ''
-  });
-  logAudit('Added staff account', `${name} (${role})`);
-  const ok = await saveData();
-  if(!ok){ err.textContent = state.saveError; render(); return; }
-  state.loginMode = 'login';
-  render();
 }
 
 function logout(){
   state.session.staffName = null;
   state.loginMode = 'login';
-  clearSessionStorage();
   go('dashboard');
+  fetch('/api/logout', {method:'POST', credentials:'same-origin'}).catch(()=>{});
 }
 
-/* ============================= SESSION PERSISTENCE ============================= */
-// Mobile/tablet browsers routinely discard a backgrounded tab to save memory
-// and reload it from scratch when you switch back — which used to wipe the
-// in-memory `state` object and drop the user back to the login screen even
-// though they'd been active seconds earlier. We mirror just the login name
-// and a last-activity timestamp into sessionStorage (cleared when the tab or
-// browser actually closes, unlike localStorage) so a reload can silently
-// restore the session instead of forcing a re-login — while still honoring
-// the real idle timeout if the time away exceeds it.
-const SESSION_KEY = 'mmc_session';
-function saveSessionToStorage(){
+/* ============================= SESSION VERIFICATION ============================= */
+// "Logged in" is now whatever the server's signed session cookie says, not
+// anything read out of browser storage — that was the actual hole (a
+// staff name sitting in sessionStorage proved nothing to the server, which
+// had no server-side concept of sessions at all). On boot, ask the server;
+// its answer is authoritative.
+async function initSession(){
   try{
-    if(!state.session.staffName){ sessionStorage.removeItem(SESSION_KEY); return; }
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify({staffName: state.session.staffName, lastActivity: Date.now()}));
-  } catch(e){ /* storage unavailable (e.g. private mode) — session just won't survive a reload */ }
-}
-function clearSessionStorage(){
-  try{ sessionStorage.removeItem(SESSION_KEY); } catch(e){}
-}
-function restoreSessionFromStorage(){
-  try{
-    const raw = sessionStorage.getItem(SESSION_KEY);
-    if(!raw) return;
-    const saved = JSON.parse(raw);
-    if(saved && saved.staffName && (Date.now() - saved.lastActivity) < IDLE_TIMEOUT_MS){
-      state.session.staffName = saved.staffName;
-    } else {
-      clearSessionStorage();
+    const res = await fetch('/api/session', {credentials:'same-origin'});
+    if(res.ok){
+      const json = await res.json();
+      state.session.staffName = json.name;
+      await loadData();
+      return;
     }
-  } catch(e){ /* ignore malformed/unavailable storage */ }
+  } catch(e){ /* fall through to the logged-out path below */ }
+  state.session.staffName = null;
+  await loadStaffListForLogin();
+}
+// Not logged in yet — fetch just enough (staff names + roles, no PINs, no
+// patient data) to render the login or first-time-setup screen.
+async function fetchWithTimeout(url, options, ms){
+  const controller = new AbortController();
+  const t = setTimeout(()=>controller.abort(), ms || 20000);
+  try{
+    return await fetch(url, {...options, signal: controller.signal});
+  } finally {
+    clearTimeout(t);
+  }
+}
+async function loadStaffListForLogin(){
+  const attempts = 3;
+  let lastErr = null;
+  for(let i=0;i<attempts;i++){
+    try{
+      const res = await fetchWithTimeout('/api/staff-list', {credentials:'same-origin'}, 25000);
+      if(res.ok){
+        const json = await res.json();
+        state.data = defaultData();
+        state.data.staff = json.staff || [];
+        state.loadError = null;
+        try{ localStorage.setItem('mmc_staff_cache', JSON.stringify(state.data.staff.map(s=>({name:s.name,role:s.role,owner:!!s.owner,recoveryHash:s.recoveryHash||null})))); }catch(e){}
+        state.loading = false;
+        render();
+        return;
+      }
+      lastErr = 'Server responded with ' + res.status;
+    } catch(e){
+      lastErr = e && e.name === 'AbortError' ? 'Request timed out' : (e && e.message) || 'Network error';
+    }
+    if(i < attempts-1) await new Promise(r=>setTimeout(r, 1500 * (i+1)));
+  }
+  try{
+    const cached = JSON.parse(localStorage.getItem('mmc_staff_cache')||'null');
+    if(cached && Array.isArray(cached) && cached.length){
+      state.data = defaultData();
+      state.data.staff = cached;
+      state.loadError = null;
+      state.loginError = 'Using a cached staff list — the server may still be waking up. Log in, or tap Try again if login fails.';
+      state.loading = false;
+      render();
+      return;
+    }
+  }catch(e){}
+  state.loadError = 'Could not reach the clinic server' + (lastErr ? ' ('+lastErr+').' : '.') + ' If this site is on a free host it may take up to a minute to wake up — wait and try again.';
+  state.loading = false;
+  render();
 }
 
 /* ============================= IDLE AUTO-LOGOUT ============================= */
@@ -1460,7 +1571,6 @@ let idleTimer = null;
 function resetIdleTimer(){
   if(idleTimer){ clearTimeout(idleTimer); idleTimer = null; }
   if(!state.session.staffName) return;
-  saveSessionToStorage(); // stamp last-activity so a tab reload can restore correctly
   idleTimer = setTimeout(()=>{
     if(state.session.staffName){
       logout();
@@ -2220,7 +2330,7 @@ async function saveVisit(){
     patient = {
       id: newPatientId(), name: dv.newPatient.name, dob: dv.newPatient.dob||'', age: dv.newPatient.age, sex: dv.newPatient.sex,
       phone: dv.newPatient.phone, address: dv.newPatient.address, allergies: dv.newPatient.allergies||'', chronicConditions: dv.newPatient.chronicConditions||'',
-      registeredDate: todayStr(), visits: [], growthRecords: [], vaccinations: []
+      registeredDate: todayStr(), visits: [], growthRecords: [], vaccinations: [], certificates: []
     };
     state.data.patients.push(patient);
   } else {
@@ -2334,8 +2444,8 @@ function letterheadCrestHTML(ci){
   if(ci && ci.logoDataUrl){
     return `<img src="${ci.logoDataUrl}" alt="" style="width:38px;height:38px;border-radius:50%;object-fit:cover;flex-shrink:0;">`;
   }
-  const source = (ci && ci.shortName) ? ci.shortName : ((ci && ci.name) ? ci.name : '');
-  const initials = source.replace(/[^A-Za-z]/g,'').slice(0,2).toUpperCase() || '•';
+  const source = (ci && ci.shortName) ? ci.shortName : ((ci && ci.name) ? ci.name : 'MMC');
+  const initials = source.replace(/[^A-Za-z]/g,'').slice(0,3).toUpperCase() || 'MMC';
   return `<div class="opdx-crest">${esc(initials)}</div>`;
 }
 // Shared prescription list card used on both the combined OPD card and the
@@ -2376,6 +2486,7 @@ function csvEscape(s){
   return t;
 }
 function exportPatientsCSV(){
+  if(!isOwner()){ alert('Only the clinic admin can export patient data.'); return; }
   const rows = [['ID','Name','DOB','Age','Sex','Phone','Address','Allergies','Registered']];
   (state.data.patients||[]).forEach(p=>{
     rows.push([p.id,p.name,p.dob||'',displayAge(p),p.sex||'',p.phone||'',p.address||'',p.allergies||'',p.registeredDate||'']);
@@ -2385,6 +2496,7 @@ function exportPatientsCSV(){
   logAudit('Exported patients CSV', rows.length-1+' patients');
 }
 function exportVisitsCSV(){
+  if(!isOwner()){ alert('Only the clinic admin can export visit data.'); return; }
   const rows = [['PatientID','PatientName','VisitID','Token','Date','Time','Doctor','Diagnosis','Complaints','Status','FollowUp']];
   (state.data.patients||[]).forEach(p=>{
     (p.visits||[]).forEach(v=>{
@@ -2397,6 +2509,7 @@ function exportVisitsCSV(){
 }
 
 function downloadBackup(){
+  if(!isOwner()){ alert('Only the clinic admin can download a full data backup.'); return; }
   const blob = new Blob([JSON.stringify(state.data, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -2406,10 +2519,16 @@ function downloadBackup(){
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+  logAudit('Downloaded full backup', '');
 }
 async function restoreBackup(file){
   const msg = document.getElementById('restore-msg');
   if(!file) return;
+  if(!isOwner()){
+    if(msg) msg.textContent = 'Only the clinic admin can restore from a backup.';
+    document.getElementById('restore-file-input').value = '';
+    return;
+  }
   if(!confirm('This will replace every patient, visit, appointment and staff record currently in the system with the contents of this backup file. This cannot be undone. Continue?')){
     document.getElementById('restore-file-input').value = '';
     return;
@@ -2431,7 +2550,7 @@ async function restoreBackup(file){
     // The logged-in staff account may not exist in the restored data.
     if(!state.data.staff.some(s=>s.name===state.session.staffName)){
       state.session.staffName = null;
-      clearSessionStorage();
+      fetch('/api/logout', {method:'POST', credentials:'same-origin'}).catch(()=>{});
     }
     render();
   } catch(e){
@@ -2444,24 +2563,25 @@ async function addStaff(){
   const name = document.getElementById('st-name').value.trim();
   const role = document.getElementById('st-role').value;
   const pin = document.getElementById('st-pin').value.trim();
-  const password = document.getElementById('st-password').value;
-  const secQ = resolvedSecurityQuestion('st-secq','st-secq-custom');
-  const secA = document.getElementById('st-seca').value.trim();
+  const password = (document.getElementById('st-password')||{}).value || '';
   const qualification = (document.getElementById('st-qualification')||{}).value.trim() || '';
   const err = document.getElementById('st-error');
   if(!name || !/^\d{4}$/.test(pin)){ err.textContent = 'Enter a name and a 4-digit PIN.'; return; }
+  if(password && password.length < 6){ err.textContent = 'Password must be at least 6 characters (or leave blank).'; return; }
   if(state.data.staff.some(s=>s.name===name)){ err.textContent = 'That name is already registered.'; return; }
-  if(password && password.length < 4){ err.textContent = 'Password must be at least 4 characters (or leave it blank).'; return; }
-  if((secQ && !secA) || (!secQ && secA)){ err.textContent = 'Fill in both the security question and its answer, or leave both blank.'; return; }
-  state.data.staff.push({
-    name, role, pin: await hashPin(pin),
-    password: password ? await hashSecret(password) : '',
-    securityQuestion: secQ || '',
-    securityAnswer: secA ? await hashSecret(normalizeSecurityAnswer(secA)) : '',
-    qualification, owner: false
-  });
+  const recoveryCode = generateRecoveryCode();
+  const record = {
+    name, role,
+    pin: await hashPin(pin),
+    qualification,
+    owner: false,
+    recoveryHash: await hashSecret(recoveryCode.replace(/-/g,'').toUpperCase())
+  };
+  if(password) record.password = await hashSecret(password);
+  state.data.staff.push(record);
   logAudit('Added staff account', `${name} (${role})${qualification?' · '+qualification:''}`);
   await saveData();
+  alert(`Account created for ${name}.\n\nRecovery code (give this to them once — it will not be shown again):\n\n${recoveryCode}`);
   render();
 }
 async function editStaffQualification(name){
@@ -2514,41 +2634,21 @@ async function resetStaffPin(name){
   const pin = entered.trim();
   if(!/^\d{4}$/.test(pin)){ alert('PIN must be exactly 4 digits.'); return; }
   s.pin = await hashPin(pin);
-  logAudit('Reset staff PIN', name);
-  await saveData();
-  render();
-}
-async function resetStaffPassword(name){
-  if(!isOwner()){ alert('Only the clinic admin can reset staff passwords.'); return; }
-  const s = state.data.staff.find(s=>s.name===name);
-  if(!s) return;
-  const entered = prompt(`New password for ${name} (at least 4 characters, leave blank to remove password login):`);
-  if(entered === null) return;
-  const password = entered;
-  if(password && password.length < 4){ alert('Password must be at least 4 characters (or leave it blank to remove it).'); return; }
-  s.password = password ? await hashSecret(password) : '';
-  logAudit('Reset staff password', name);
-  await saveData();
-  render();
-}
-async function resetStaffSecurityQA(name){
-  if(!isOwner()){ alert('Only the clinic admin can reset a staff security question.'); return; }
-  const s = state.data.staff.find(s=>s.name===name);
-  if(!s) return;
-  const q = prompt(`New security question for ${name} (leave blank to remove it):`, s.securityQuestion || '');
-  if(q === null) return;
-  const question = q.trim();
-  let answer = '';
-  if(question){
-    const a = prompt(`Answer to "${question}":`);
-    if(a === null) return;
-    answer = a.trim();
-    if(!answer){ alert('An answer is required if a security question is set.'); return; }
+  const wantPass = confirm('Also set a new password for this account?\n\nOK = set password, Cancel = PIN only (existing password kept if any).');
+  if(wantPass){
+    const p = prompt(`New password for ${name} (min 6 characters), or leave blank to clear password:`);
+    if(p !== null){
+      const pw = p.trim();
+      if(pw === ''){ delete s.password; }
+      else if(pw.length < 6){ alert('Password must be at least 6 characters. PIN was still updated.'); }
+      else { s.password = await hashSecret(pw); }
+    }
   }
-  s.securityQuestion = question;
-  s.securityAnswer = question ? await hashSecret(normalizeSecurityAnswer(answer)) : '';
-  logAudit('Reset staff security question', name);
+  const recoveryCode = generateRecoveryCode();
+  s.recoveryHash = await hashSecret(recoveryCode.replace(/-/g,'').toUpperCase());
+  logAudit('Reset staff credentials', name);
   await saveData();
+  alert(`Login updated for ${name}.\n\nNew recovery code (show them once):\n\n${recoveryCode}`);
   render();
 }
 async function saveStaffProfileEdit(name){
@@ -2599,7 +2699,7 @@ function setupView(){
   <div class="center-screen">
     <div class="auth-card">
       <div class="auth-brand">
-        <div class="brand-mark">MM</div>
+        <div class="brand-mark">MMC</div>
         <h1 style="font-size:19px;">Set up ${esc(state.data.clinicInfo.name)}</h1>
         <p class="muted" style="font-size:13px;">Create the first staff account to start using the clinic system.</p>
       </div>
@@ -2607,11 +2707,10 @@ function setupView(){
       <div class="field"><label>Role</label>
         <select id="setup-role"><option>Doctor</option><option>Receptionist</option><option>Staff</option></select>
       </div>
-      <div class="field"><label>Choose a 4-digit PIN</label><input id="setup-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••"></div>
-      <div class="field"><label>Choose a password</label><input id="setup-password" type="password" placeholder="At least 4 characters"></div>
-      <p class="faint" style="margin:-4px 0 10px 0;">You'll be able to log in with either the PIN or the password.</p>
-      ${securityQuestionFieldsHTML('setup-secq','setup-secq-custom', true)}
-      <div class="field"><label>Answer</label><input id="setup-seca" type="text" placeholder="Used only to reset your PIN or password later"></div>
+      <div class="field"><label>4-digit PIN *</label><input id="setup-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="new-password"></div>
+      <div class="field"><label>Password (optional)</label><input id="setup-password" type="password" placeholder="At least 6 characters" autocomplete="new-password"></div>
+      <div class="field"><label>Confirm password</label><input id="setup-password2" type="password" placeholder="Same as above" autocomplete="new-password"></div>
+      <p class="faint" style="margin-bottom:10px;">You can log in with either the PIN or the password. A recovery code will be shown once after setup — save it to reset login later.</p>
       <div id="setup-error" class="error-text"></div>
       <button class="btn btn-primary btn-block" onclick="doSetup()">Create account &amp; start</button>
     </div>
@@ -2619,88 +2718,74 @@ function setupView(){
 }
 
 function loginView(){
+  if(state.loginMode === 'forgot') return forgotAuthView();
+  if(state.loginMode === 'reset') return resetAuthView();
   const selectedName = state.loginSelectedName || (state.data.staff[0] && state.data.staff[0].name) || '';
   const lock = pinLockStatus(selectedName);
-  const staffOptions = state.data.staff.map(s=>`<option value="${esc(s.name)}" ${s.name===selectedName?'selected':''}>${esc(s.name)} — ${esc(s.role)}</option>`).join('');
-
-  if(state.loginMode === 'addFromLogin'){
-    return `
-    <div class="center-screen">
-      <div class="auth-card">
-        <div class="auth-brand"><div class="brand-mark">MM</div><h1 style="font-size:19px;">New staff account</h1></div>
-        <div class="field"><label>Name</label><input id="als-name" type="text"></div>
-        <div class="field"><label>Role</label><select id="als-role"><option>Doctor</option><option>Receptionist</option><option>Staff</option></select></div>
-        <div class="field"><label>4-digit PIN</label><input id="als-pin" type="password" inputmode="numeric" maxlength="4"></div>
-        <div class="field"><label>Password (optional)</label><input id="als-password" type="password" placeholder="At least 4 characters"></div>
-        ${securityQuestionFieldsHTML('als-secq','als-secq-custom', false)}
-        <div class="field"><label>Answer (optional)</label><input id="als-seca" type="text"></div>
-        <div id="als-error" class="error-text"></div>
-        <button class="btn btn-primary btn-block" onclick="addStaffFromLogin()">Add account</button>
-        <button class="btn btn-ghost btn-block" style="margin-top:6px;" onclick="toggleAddFromLogin()">Back to log in</button>
-      </div>
-    </div>`;
-  }
-
-  if(state.loginMode === 'forgot'){
-    return forgotFlowView();
-  }
-
   const method = state.loginAuthMethod || 'pin';
+  const staffOptions = state.data.staff.map(s=>`<option value="${esc(s.name)}" ${s.name===selectedName?'selected':''}>${esc(s.name)} — ${esc(s.role)}</option>`).join('');
+  const credField = method === 'password'
+    ? `<div class="field"><label>Password</label><input id="login-password" type="password" placeholder="Your password" autocomplete="current-password" ${lock.locked?'disabled':''} onkeydown="if(event.key==='Enter')doLogin()"></div>`
+    : `<div class="field"><label>PIN</label><input id="login-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="one-time-code" ${lock.locked?'disabled':''} onkeydown="if(event.key==='Enter')doLogin()"></div>`;
   return `
   <div class="center-screen">
     <div class="auth-card">
       <div class="auth-brand">
-        <div class="brand-mark">MM</div>
+        <div class="brand-mark">MMC</div>
         <h1 style="font-size:19px;">${esc(state.data.clinicInfo.name)}</h1>
         <p class="muted" style="font-size:13px;">Log in to continue</p>
       </div>
       <div class="field"><label>Staff</label><select id="login-select" onchange="onLoginStaffChange(this.value)">${staffOptions}</select></div>
-      <div class="row" style="gap:6px;margin-bottom:12px;">
-        <button type="button" class="btn btn-sm ${method==='pin'?'btn-primary':''}" style="flex:1;justify-content:center;" onclick="toggleLoginMethod('pin')">PIN</button>
-        <button type="button" class="btn btn-sm ${method==='password'?'btn-primary':''}" style="flex:1;justify-content:center;" onclick="toggleLoginMethod('password')">Password</button>
+      <div class="auth-method-toggle">
+        <button type="button" class="${method==='pin'?'on':''}" onclick="setLoginAuthMethod('pin')">PIN</button>
+        <button type="button" class="${method==='password'?'on':''}" onclick="setLoginAuthMethod('password')">Password</button>
       </div>
-      ${method==='password'
-        ? `<div class="field"><label>Password</label><input id="login-password" type="password" placeholder="••••••••" ${lock.locked?'disabled':''}></div>`
-        : `<div class="field"><label>PIN</label><input id="login-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" ${lock.locked?'disabled':''}></div>`}
+      ${credField}
       ${state.loginError ? `<div class="error-text">${esc(state.loginError)}</div>` : ''}
       <button class="btn btn-primary btn-block" ${lock.locked?'disabled':''} onclick="doLogin()">Log in</button>
-      <button class="btn btn-ghost btn-block" style="margin-top:6px;" onclick="toggleAddFromLogin()">+ Add a staff account</button>
-      <p class="faint" style="text-align:center;margin-top:14px;"><a href="javascript:void(0)" onclick="startForgotFlow()">Forgot your PIN or password?</a></p>
+      <button type="button" class="auth-link" onclick="showForgotAuth()">Forgot PIN or password?</button>
+      <p class="faint" style="text-align:center;margin-top:12px;">Need a new staff account? Ask the clinic admin — accounts are added from Settings → Staff accounts once logged in.</p>
     </div>
   </div>`;
 }
 
-function forgotFlowView(){
-  const name = state.forgotName || (state.data.staff[0] && state.data.staff[0].name) || '';
-  const staff = state.data.staff.find(s=>s.name===name);
-  const staffOptions = state.data.staff.map(s=>`<option value="${esc(s.name)}" ${s.name===name?'selected':''}>${esc(s.name)} — ${esc(s.role)}</option>`).join('');
-
-  if(state.forgotStep === 2 && staff){
-    return `
-    <div class="center-screen">
-      <div class="auth-card">
-        <div class="auth-brand"><div class="brand-mark">MM</div><h1 style="font-size:19px;">Set a new PIN / password</h1><p class="muted" style="font-size:13px;">for ${esc(name)}</p></div>
-        <div class="field"><label>New 4-digit PIN (optional)</label><input id="forgot-new-pin" type="password" inputmode="numeric" maxlength="4" placeholder="Leave blank to keep current PIN"></div>
-        <div class="field"><label>New password (optional)</label><input id="forgot-new-password" type="password" placeholder="Leave blank to keep current password"></div>
-        <div class="field"><label>Confirm new password</label><input id="forgot-new-password2" type="password"></div>
-        ${state.forgotError ? `<div class="error-text">${esc(state.forgotError)}</div>` : ''}
-        <button class="btn btn-primary btn-block" onclick="submitForgotReset()">Save new credentials</button>
-        <button class="btn btn-ghost btn-block" style="margin-top:6px;" onclick="cancelForgotFlow()">Cancel</button>
-      </div>
-    </div>`;
-  }
-
+function forgotAuthView(){
+  const selectedName = state.loginSelectedName || (state.data.staff[0] && state.data.staff[0].name) || '';
+  const staffOptions = state.data.staff.map(s=>`<option value="${esc(s.name)}" ${s.name===selectedName?'selected':''}>${esc(s.name)} — ${esc(s.role)}</option>`).join('');
   return `
   <div class="center-screen">
     <div class="auth-card">
-      <div class="auth-brand"><div class="brand-mark">MM</div><h1 style="font-size:19px;">Forgot your PIN or password?</h1><p class="muted" style="font-size:13px;">Answer your security question to reset them.</p></div>
-      <div class="field"><label>Staff</label><select id="forgot-select" onchange="onForgotStaffChange(this.value)">${staffOptions}</select></div>
-      ${staff && staff.securityQuestion
-        ? `<div class="field"><label>${esc(staff.securityQuestion)}</label><input id="forgot-answer" type="text"></div>
-           ${state.forgotError ? `<div class="error-text">${esc(state.forgotError)}</div>` : ''}
-           <button class="btn btn-primary btn-block" onclick="submitForgotAnswer()">Continue</button>`
-        : `<div class="banner banner-info">No recovery question is set up for this account. Ask the clinic admin to reset your PIN or password from Settings → Staff accounts.</div>`}
-      <button class="btn btn-ghost btn-block" style="margin-top:6px;" onclick="cancelForgotFlow()">Back to log in</button>
+      <div class="auth-brand">
+        <div class="brand-mark">MMC</div>
+        <h1 style="font-size:19px;">Reset login</h1>
+        <p class="muted" style="font-size:13px;">Enter the recovery code that was shown when your account was created (or last reset).</p>
+      </div>
+      <div class="field"><label>Staff</label><select id="forgot-select">${staffOptions}</select></div>
+      <div class="field"><label>Recovery code</label><input id="forgot-code" type="text" placeholder="e.g. AB12-CD34" autocomplete="off" style="text-transform:uppercase;letter-spacing:0.06em;"></div>
+      <div id="forgot-error" class="error-text"></div>
+      <button class="btn btn-primary btn-block" onclick="doVerifyRecoveryCode()">Verify code</button>
+      <button type="button" class="auth-link" onclick="cancelForgotAuth()">Back to log in</button>
+      <p class="faint" style="text-align:center;margin-top:12px;">No recovery code? Ask the clinic admin to reset your PIN or password from Settings → Staff accounts.</p>
+    </div>
+  </div>`;
+}
+
+function resetAuthView(){
+  const name = state.pendingRecoveryStaff || '';
+  return `
+  <div class="center-screen">
+    <div class="auth-card">
+      <div class="auth-brand">
+        <div class="brand-mark">MMC</div>
+        <h1 style="font-size:19px;">Set new login</h1>
+        <p class="muted" style="font-size:13px;">Choose a new PIN (required) and optional password for <strong>${esc(name)}</strong>.</p>
+      </div>
+      <div class="field"><label>New 4-digit PIN *</label><input id="reset-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="new-password"></div>
+      <div class="field"><label>New password (optional)</label><input id="reset-password" type="password" placeholder="At least 6 characters" autocomplete="new-password"></div>
+      <div class="field"><label>Confirm password</label><input id="reset-password2" type="password" placeholder="Same as above" autocomplete="new-password"></div>
+      <div id="reset-error" class="error-text"></div>
+      <button class="btn btn-primary btn-block" onclick="doResetCredentials()">Save &amp; continue</button>
+      <button type="button" class="auth-link" onclick="cancelForgotAuth()">Cancel</button>
     </div>
   </div>`;
 }
@@ -2728,7 +2813,7 @@ function shellView(){
   <div class="shell">
     <div class="sidebar">
       <div class="brand">
-        <div class="brand-mark">MM</div>
+        <div class="brand-mark">MMC</div>
         <div class="brand-text"><div class="full">MM Clinic</div><div class="sub">Male Madeshwara Clinic</div></div>
       </div>
       <div class="nav-sec-lbl">Main</div>
@@ -2784,13 +2869,45 @@ function dashboardView(){
     });
   });
   todaysVisits.sort((a,b)=> (b.visit.time||'').localeCompare(a.visit.time||''));
-  waitingVisits.sort((a,b)=> (b.visit.date+b.visit.time).localeCompare(a.visit.date+a.visit.time));
+  waitingVisits.sort((a,b)=>{
+    const ta = a.visit.token||9999, tb = b.visit.token||9999;
+    if(ta!==tb) return ta-tb;
+    return (a.visit.time||'').localeCompare(b.visit.time||'');
+  });
   followUps.sort((a,b)=> a.visit.followUpDate.localeCompare(b.visit.followUpDate));
 
   const showClinical = isDoctor();
   const myVisitsOnly = isDoctor() && state.dashboardMineOnly;
   const shownTodaysVisits = myVisitsOnly ? todaysVisits.filter(({visit})=> visit.doctorName===state.session.staffName) : todaysVisits;
-  const rows = shownTodaysVisits.map(({patient,visit})=>{
+  const ci = state.data.clinicInfo || {};
+  const shortName = ((ci.shortName || 'MMC').replace(/[^A-Za-z]/g,'').slice(0,3) || 'MMC').toUpperCase();
+
+  function waitingMins(visit){
+    if(!visit.time) return null;
+    try{
+      const [hh,mm] = visit.time.split(':').map(Number);
+      const then = new Date(); then.setHours(hh, mm||0, 0, 0);
+      return Math.max(0, Math.round((Date.now() - then.getTime()) / 60000));
+    }catch(e){ return null; }
+  }
+
+  const waitingRows = waitingVisits.slice(0, 8).map(({patient,visit})=>{
+    const mins = waitingMins(visit);
+    const waitLabel = mins!=null ? `waiting ${mins} min` : (visit.time || '');
+    return `
+    <div class="dbx-qrow dbx-clickable" onclick="go('patient',{patientId:'${patient.id}'})">
+      <div class="dbx-avatar ${avatarColorClass(patient.name)}">${esc(initialsOf(patient.name))}</div>
+      <div class="dbx-qtext">
+        <div class="dbx-qname">${esc(patient.name)}</div>
+        <div class="dbx-qsub">${esc(patient.id)}${waitLabel ? ' · '+esc(waitLabel) : ''}${visit.token!=null ? ' · #'+visit.token : ''}</div>
+      </div>
+      ${isDoctor()
+        ? `<button class="dbx-qbtn" onclick="event.stopPropagation();go('newVisit',{patientId:'${patient.id}',editVisitId:'${visit.id}'})">Continue</button>`
+        : `<span class="dbx-qstatus wait">Waiting</span>`}
+    </div>`;
+  }).join('');
+
+  const rows = shownTodaysVisits.slice(0, 10).map(({patient,visit})=>{
     const st = visitStatus(visit);
     return `
     <div class="dbx-qrow dbx-clickable" onclick="go('visitPrint',{patientId:'${patient.id}',visitId:'${visit.id}'})">
@@ -2803,25 +2920,6 @@ function dashboardView(){
       <span class="dbx-qstatus ${st==='waiting'?'wait':'done'}">${st==='waiting'?'Waiting':'Completed'}</span>
     </div>`;
   }).join('');
-
-  // Queue sorted by token (then time) so the board matches the waiting room
-  waitingVisits.sort((a,b)=>{
-    const ta = a.visit.token||9999, tb = b.visit.token||9999;
-    if(ta!==tb) return ta-tb;
-    return (a.visit.time||'').localeCompare(b.visit.time||'');
-  });
-  const waitingRows = waitingVisits.map(({patient,visit})=>`
-    <div class="dbx-qrow">
-      <div class="dbx-qtoken">${visit.token!=null?visit.token:'—'}</div>
-      <div class="dbx-avatar ${avatarColorClass(patient.name)}">${esc(initialsOf(patient.name))}</div>
-      <div class="dbx-qtext">
-        <div class="dbx-qname">${esc(patient.name)} <span class="pill">${patient.id}</span></div>
-        <div class="dbx-qsub">${fmtDate(visit.date)} ${esc(visit.time||'')}${visit.assignedDoctor?' · for '+esc(visit.assignedDoctor):''}${showClinical && visit.complaints ? ' · '+esc(visit.complaints) : ''}</div>
-      </div>
-      ${isDoctor()
-        ? `<button class="dbx-qbtn" onclick="go('newVisit',{patientId:'${patient.id}',editVisitId:'${visit.id}'})">Continue</button>`
-        : `<span class="dbx-qstatus wait">Waiting</span>`}
-    </div>`).join('');
 
   const followUpRows = followUps.map(({patient,visit})=>{
     const d = new Date(visit.followUpDate+'T00:00:00');
@@ -2844,7 +2942,7 @@ function dashboardView(){
     <div class="dbx-panel">
       <div class="dbx-panel-head"><h2>Follow-ups due${followUps.length?` <span class="count">${followUps.length}</span>`:''}</h2></div>
       ${followUps.length ? followUpRows
-        : `<div style="padding:0 4px;">${emptyState('✅', 'No follow-ups due', 'Follow-up dates set during a visit will surface here when they\'re due.')}</div>`}
+        : `<div style="padding:0 4px;">${emptyState('✅', 'No follow-ups due', 'Follow-up dates set during a visit will surface here when they are due.')}</div>`}
     </div>` : '';
 
   const pedDueList = pediatricPatients().map(p=>{
@@ -2881,39 +2979,68 @@ function dashboardView(){
       </div>
     </div>`;
 
-  return `
-    <div class="dbx-topline">
-      <div class="dbx-greet">
-        <div class="dbx-greet-eyebrow">${fmtDate(today)}</div>
-        <h1>${greetingWord()}, ${esc(state.session.staffName)}</h1>
-        <p>${waitingVisits.length} patient${waitingVisits.length===1?'':'s'} waiting${isDoctor()?` · ${followUps.length} follow-up${followUps.length===1?'':'s'} due today`:''}</p>
-      </div>
-      <div class="dbx-actions">
-        <div class="dbx-search">
-          ${navIcon('search')}
-          <input placeholder="Search patients…" onkeydown="if(event.key==='Enter'){dashboardSearchGo(this);}">
+  const hero = `
+    <div class="dbx-hero">
+      <div class="dbx-hero-top">
+        <div class="dbx-hero-brand">
+          <div class="dbx-hero-mark">${esc(shortName)}</div>
+          <div class="dbx-hero-clinic">${esc(ci.name || 'Male Madeshwara Clinic')}</div>
         </div>
-        <button class="btn" onclick="go('appointments')">📅 Appointments</button>
-        <button class="btn btn-accent" onclick="go('newVisit')">+ New OPD Visit</button>
+        <button class="dbx-hero-bell" title="Appointments" onclick="go('appointments')" aria-label="Appointments">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+        </button>
       </div>
+      <div class="dbx-hero-greet-eyebrow">${greetingWord()}</div>
+      <div class="dbx-hero-greet-name">${esc(state.session.staffName)}</div>
+      <div class="dbx-hero-stats">
+        <div class="dbx-hero-stat">
+          <div class="dbx-hero-stat-icon wait">${navIcon('statPatients')}</div>
+          <div>
+            <div class="dbx-hero-stat-num">${waitingVisits.length}</div>
+            <div class="dbx-hero-stat-label">Waiting now</div>
+          </div>
+        </div>
+        <div class="dbx-hero-stat">
+          <div class="dbx-hero-stat-icon visits">${navIcon('statVisits')}</div>
+          <div>
+            <div class="dbx-hero-stat-num">${todaysVisits.length}</div>
+            <div class="dbx-hero-stat-label">Today's visits</div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  const ctaRow = `
+    <div class="dbx-cta-row">
+      <button class="dbx-cta-primary" onclick="go('newVisit')">+ New visit</button>
+      <button class="dbx-cta-secondary" onclick="go('newAppointment')">Book appointment</button>
+    </div>`;
+
+  const queueSection = `
+    <div class="dbx-section-head">
+      <h2>Waiting queue</h2>
+      <button class="link" onclick="go('patients')">View all</button>
     </div>
+    <div class="dbx-queue-card">
+      ${waitingVisits.length
+        ? waitingRows
+        : `<div style="padding:8px 4px;">${emptyState('🪑', 'No one waiting', 'Check in a patient to add them to today’s queue.',
+            `<button class="btn btn-accent btn-sm" onclick="go('newVisit')">+ New visit</button>`)}</div>`}
+    </div>`;
+
+  return `
+    ${hero}
+    ${ctaRow}
+    ${queueSection}
 
     <div class="dbx-stat-grid">
       <div class="dbx-stat-card"><div class="dbx-stat-icon blue">${navIcon('statPatients')}</div><div><div class="dbx-stat-num">${state.data.patients.length}</div><div class="dbx-stat-label">Total patients</div></div></div>
-      <div class="dbx-stat-card"><div class="dbx-stat-icon teal">${navIcon('statVisits')}</div><div><div class="dbx-stat-num">${todaysVisits.length}</div><div class="dbx-stat-label">Visits today</div></div></div>
-      <div class="dbx-stat-card"><div class="dbx-stat-icon gold">${navIcon('statWaiting')}</div><div><div class="dbx-stat-num">${waitingVisits.length}</div><div class="dbx-stat-label">Waiting for doctor</div></div></div>
-      <div class="dbx-stat-card"><div class="dbx-stat-icon navy">${navIcon('statAppt')}</div><div><div class="dbx-stat-num">${appointmentsForDate(today).filter(a=>a.status==='booked').length}</div><div class="dbx-stat-label">Appointments booked today</div></div></div>
+      <div class="dbx-stat-card"><div class="dbx-stat-icon navy">${navIcon('statAppt')}</div><div><div class="dbx-stat-num">${appointmentsForDate(today).filter(a=>a.status==='booked').length}</div><div class="dbx-stat-label">Appointments today</div></div></div>
       <div class="dbx-stat-card"><div class="dbx-stat-icon teal">${navIcon('pediatrics')}</div><div><div class="dbx-stat-num">${pediatricPatients().length}</div><div class="dbx-stat-label">Pediatric patients</div></div></div>
     </div>
 
     <div class="dbx-two-col">
       <div>
-        <div class="dbx-panel">
-          <div class="dbx-panel-head"><h2>Waiting for doctor${waitingVisits.length?` <span class="count">${waitingVisits.length}</span>`:''}</h2></div>
-          ${waitingVisits.length ? waitingRows
-            : `<div style="padding:0 4px;">${emptyState('🪑', 'No waiting patients', 'Check in a patient to add them to today\'s queue.',
-                `<button class="btn btn-accent btn-sm" onclick="go('newVisit')">+ New OPD Visit</button>`)}</div>`}
-        </div>
         <div class="dbx-panel">
           <div class="dbx-panel-head">
             <h2>Today's visits${shownTodaysVisits.length?` <span class="count">${shownTodaysVisits.length}</span>`:''}</h2>
@@ -2925,7 +3052,7 @@ function dashboardView(){
           ${shownTodaysVisits.length ? rows
             : `<div style="padding:0 4px;">${emptyState('📋', myVisitsOnly ? 'No visits of yours recorded yet today' : 'No visits recorded yet today',
                 myVisitsOnly ? 'Visits you attend today will show up here.' : 'Once a patient is checked in and seen, their visit appears here.',
-                `<button class="btn btn-accent btn-sm" onclick="go('newVisit')">+ New OPD Visit</button>`)}</div>`}
+                `<button class="btn btn-accent btn-sm" onclick="go('newVisit')">+ New visit</button>`)}</div>`}
         </div>
       </div>
       <div>
@@ -6256,12 +6383,10 @@ function settingsView(){
                 <input id="edit-st-qualification" value="${esc(s.qualification||'')}" placeholder="e.g. M.B.B.S., M.D. Paediatrics">
               </div>
             </div>
-            <div class="row" style="gap:8px;flex-wrap:wrap;">
-              <button class="btn btn-primary btn-sm" onclick="saveStaffProfileEdit('${esc(s.name)}')">Save profile</button>
+            <div class="row" style="gap:8px;">
+              <button class="btn btn-primary btn-sm" onclick="saveStaffProfileEdit(${jsAttr(s.name)})">Save profile</button>
               <button class="btn btn-ghost btn-sm" onclick="cancelEditStaffProfile()">Cancel</button>
-              <button class="btn btn-ghost btn-sm" onclick="resetStaffPin('${esc(s.name)}')">Reset PIN</button>
-              <button class="btn btn-ghost btn-sm" onclick="resetStaffPassword('${esc(s.name)}')">${s.password?'Reset':'Set'} password</button>
-              <button class="btn btn-ghost btn-sm" onclick="resetStaffSecurityQA('${esc(s.name)}')">${s.securityQuestion?'Change':'Set'} recovery question</button>
+              <button class="btn btn-ghost btn-sm" onclick="resetStaffPin(${jsAttr(s.name)})">Reset PIN / password</button>
             </div>
           </div>
         </td>
@@ -6271,11 +6396,11 @@ function settingsView(){
       <td>${esc(s.name)}${s.owner?' <span class="pill" title="Can manage all staff accounts">Admin</span>':''}</td>
       <td>${esc(s.role)}</td>
       <td>${esc(s.qualification)||'<span class="faint">—</span>'}</td>
-      <td>••••<br><span class="faint" style="font-size:11px;">${s.password?'Password set':'No password'} · ${s.securityQuestion?'Recovery Q set':'No recovery Q'}</span></td>
+      <td>••••</td>
       <td style="white-space:nowrap;">
         ${canManageStaff ? `
-          <button class="btn btn-sm" onclick="startEditStaffProfile('${esc(s.name)}')">Edit</button>
-          ${s.name!==state.session.staffName && !s.owner ? `<button class="btn btn-ghost btn-sm" onclick="removeStaff('${esc(s.name)}')">Remove</button>` : (s.name===state.session.staffName?'<span class="faint">(you)</span>':'')}
+          <button class="btn btn-sm" onclick="startEditStaffProfile(${jsAttr(s.name)})">Edit</button>
+          ${s.name!==state.session.staffName && !s.owner ? `<button class="btn btn-ghost btn-sm" onclick="removeStaff(${jsAttr(s.name)})">Remove</button>` : (s.name===state.session.staffName?'<span class="faint">(you)</span>':'')}
         ` : `<span class="faint">${s.name===state.session.staffName?'(you)':'—'}</span>`}
       </td></tr>`;
   }).join('');
@@ -6312,9 +6437,10 @@ function settingsView(){
       <p id="logo-upload-msg" class="faint" style="margin-top:6px;"></p>
     </div>
 
+    ${isOwner() ? `
     <div class="card" style="margin-bottom:18px;max-width:520px;">
       <h2 style="margin-bottom:6px;">Backup &amp; export</h2>
-      <p class="muted" style="font-size:12.5px;">Downloads every patient, visit, and staff record as a single JSON file — keep a copy somewhere safe periodically, especially before any database change.</p>
+      <p class="muted" style="font-size:12.5px;">Downloads every patient, visit, and staff record as a single JSON file — keep a copy somewhere safe periodically, especially before any database change. Contains PHI (Aadhaar, diagnoses, contact details) — admin-only.</p>
       <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:8px;">
         <button class="btn btn-sm" onclick="downloadBackup()">⬇ Full backup (JSON)</button>
         <button class="btn btn-sm" onclick="exportPatientsCSV()">⬇ Patients list (CSV)</button>
@@ -6325,7 +6451,7 @@ function settingsView(){
       <input type="file" id="restore-file-input" accept="application/json" style="display:none;" onchange="restoreBackup(this.files[0])">
       <button class="btn btn-sm btn-danger" onclick="document.getElementById('restore-file-input').click()">⬆ Restore from backup…</button>
       <div id="restore-msg" class="error-text"></div>
-    </div>
+    </div>` : ''}
 
     <div class="card" style="margin-bottom:18px;max-width:520px;">
       <h2 style="margin-bottom:6px;">Activity log</h2>
@@ -6353,20 +6479,18 @@ function settingsView(){
     <div class="card" style="margin-bottom:18px;max-width:720px;">
       <h2 style="margin-bottom:6px;">Staff accounts</h2>
       ${canManageStaff
-        ? `<p class="muted" style="font-size:12.5px;margin-bottom:12px;">As clinic admin you can edit every profile — role, qualification (shown on OPD cards), and PIN.</p>`
-        : `<p class="muted" style="font-size:12.5px;margin-bottom:12px;">Only the clinic admin can edit staff profiles. Contact them to update your qualification or role.</p>`}
+        ? `<p class="muted" style="font-size:12.5px;margin-bottom:12px;">As clinic admin you can edit every profile — role, qualification (shown on OPD cards), PIN and password. Each new account gets a one-time recovery code for self-service reset.</p>`
+        : `<p class="muted" style="font-size:12.5px;margin-bottom:12px;">Only the clinic admin can edit staff profiles. Contact them to update your qualification, role, or reset your login.</p>`}
       <table><thead><tr><th>Name</th><th>Role</th><th>Qualification</th><th>Login</th><th></th></tr></thead><tbody>${staffRows}</tbody></table>
       ${canManageStaff ? `
       <div class="row" style="margin-top:14px;">
         <div class="field"><label>Name</label><input id="st-name"></div>
         <div class="field"><label>Role</label><select id="st-role"><option>Doctor</option><option>Receptionist</option><option>Staff</option></select></div>
         <div class="field"><label>Qualification / course</label><input id="st-qualification" placeholder="e.g. M.B.B.S."></div>
-        <div class="field"><label>4-digit PIN</label><input id="st-pin" inputmode="numeric" maxlength="4"></div>
       </div>
       <div class="row">
-        <div class="field"><label>Password (optional)</label><input id="st-password" type="password" placeholder="At least 4 characters"></div>
-        ${securityQuestionFieldsHTML('st-secq','st-secq-custom', false)}
-        <div class="field"><label>Answer (optional)</label><input id="st-seca" type="text"></div>
+        <div class="field"><label>4-digit PIN *</label><input id="st-pin" inputmode="numeric" maxlength="4" placeholder="••••"></div>
+        <div class="field"><label>Password (optional)</label><input id="st-password" type="password" placeholder="Min 6 characters"></div>
       </div>
       <div id="st-error" class="error-text"></div>
       <button class="btn btn-sm" onclick="addStaff()">+ Add staff</button>
@@ -6445,13 +6569,20 @@ async function removeCustomMedicine(idx){
 
 function connectionErrorView(){
   return `<div class="center-screen"><div class="auth-card" style="text-align:center;">
-    <div class="brand-mark" style="margin:0 auto 12px auto;">MM</div>
+    <div class="brand-mark" style="margin:0 auto 12px auto;">MMC</div>
     <h1 style="font-size:18px;">Can't reach the clinic server</h1>
-    <p class="muted" style="font-size:13px;">${esc(state.loadError)}</p>
+    <p class="muted" style="font-size:13px;">${esc(state.loadError || 'Could not reach the clinic server. Check your connection and reload the page.')}</p>
+    <p class="faint" style="margin:10px 0 14px;">On free hosting the app can sleep after idle time. The first request after wake often takes 20–60 seconds — wait a moment, then try again.</p>
     <button class="btn btn-primary btn-block" onclick="retryLoad()">Try again</button>
   </div></div>`;
 }
-function retryLoad(){ state.loading = true; render(); loadData(); }
+function retryLoad(){
+  state.loading = true;
+  state.loadError = null;
+  render();
+  if(state.session.staffName) loadData();
+  else initSession();
+}
 
 /* ============================= ROOT RENDER ============================= */
 function render(){
@@ -6467,8 +6598,7 @@ function render(){
   if(state.route==='certificates') applyPendingCertFields();
 }
 
-restoreSessionFromStorage();
-loadData();
+initSession();
 </script>
 <script>
   if ('serviceWorker' in navigator) {
