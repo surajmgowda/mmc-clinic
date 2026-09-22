@@ -101,20 +101,22 @@ function requireSession(req, res, next) {
   next();
 }
 
-// ---- Salted password hashing (scrypt), with transparent migration off the
+// ---- Salted secret hashing (scrypt), with transparent migration off the
 // old client-computed, unsalted SHA-256 hashes the first time each staff
-// member logs in through this endpoint. ----
-function hashPinSalted(pin) {
+// member authenticates through this endpoint. Used for PIN, password, and
+// recovery codes. ----
+function hashSecretSalted(secret) {
   const salt = crypto.randomBytes(16).toString('hex');
-  const hash = crypto.scryptSync(pin, salt, 64).toString('hex');
+  const hash = crypto.scryptSync(String(secret), salt, 64).toString('hex');
   return `scrypt$${salt}$${hash}`;
 }
-function verifyPinSalted(pin, stored) {
+function hashPinSalted(pin) { return hashSecretSalted(pin); }
+function verifySecretSalted(secret, stored) {
   if (typeof stored !== 'string' || !stored.startsWith('scrypt$')) return false;
   const parts = stored.split('$');
   if (parts.length !== 3) return false;
   const [, salt, hash] = parts;
-  const check = crypto.scryptSync(pin, salt, 64).toString('hex');
+  const check = crypto.scryptSync(String(secret), salt, 64).toString('hex');
   const a = Buffer.from(hash, 'hex');
   const b = Buffer.from(check, 'hex');
   return a.length === b.length && crypto.timingSafeEqual(a, b);
@@ -122,11 +124,25 @@ function verifyPinSalted(pin, stored) {
 function looksLegacyHash(stored) {
   return typeof stored === 'string' && stored.length === 64 && /^[0-9a-f]+$/.test(stored);
 }
-function verifyPinLegacy(pin, stored) {
-  const hash = crypto.createHash('sha256').update(pin).digest('hex');
+function verifySecretLegacy(secret, stored) {
+  const hash = crypto.createHash('sha256').update(String(secret)).digest('hex');
   const a = Buffer.from(hash);
   const b = Buffer.from(stored);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+function verifySecret(secret, stored) {
+  if (!stored) return false;
+  if (looksLegacyHash(stored)) return verifySecretLegacy(secret, stored);
+  return verifySecretSalted(secret, stored);
+}
+function normalizeRecoveryCode(code) {
+  return String(code || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+}
+function staffAuthMethodOf(s) {
+  if (!s) return 'pin';
+  if (s.authMethod === 'password' || s.authMethod === 'pin') return s.authMethod;
+  if (s.password && !s.pin) return 'password';
+  return 'pin';
 }
 
 // ---- Server-side login rate limiting ----
@@ -212,8 +228,9 @@ app.use(express.json({ limit: '5mb' }));
 // The PIN now gets checked here, server-side, against the real stored hash
 // — not in the browser against a copy of the data the browser was handed.
 app.post('/api/login', async (req, res) => {
-  const { staffName, pin } = req.body || {};
-  if (!staffName || !pin) return res.status(400).json({ error: 'staffName and pin are required' });
+  const { staffName, pin, password } = req.body || {};
+  if (!staffName) return res.status(400).json({ error: 'staffName is required' });
+  if (!pin && !password) return res.status(400).json({ error: 'pin or password is required' });
 
   const remainingMs = msLockedFor(staffName);
   if (remainingMs > 0) {
@@ -230,25 +247,48 @@ app.post('/api/login', async (req, res) => {
       return res.status(401).json({ error: 'invalid credentials' });
     }
 
+    const method = staffAuthMethodOf(staff);
     let ok = false;
-    if (looksLegacyHash(staff.pin)) {
-      ok = verifyPinLegacy(pin, staff.pin);
-      if (ok) {
-        // First real server-side verification for this account — upgrade
-        // the stored hash to a salted one now that we've confirmed the PIN.
-        staff.pin = hashPinSalted(pin);
-        await pool.query(
-          'UPDATE clinic_store SET data = $1, version = version + 1, updated_at = now() WHERE id = 1',
-          [clinicData]
-        );
+    let upgraded = false;
+
+    if (password) {
+      // Password login — only valid if this account uses password
+      if (method !== 'password' || !staff.password) {
+        recordFailedLogin(staffName);
+        return res.status(401).json({ error: 'invalid credentials' });
+      }
+      ok = verifySecret(password, staff.password);
+      if (ok && looksLegacyHash(staff.password)) {
+        staff.password = hashSecretSalted(password);
+        upgraded = true;
       }
     } else {
-      ok = verifyPinSalted(pin, staff.pin);
+      // PIN login
+      if (method === 'password' && !staff.pin) {
+        recordFailedLogin(staffName);
+        return res.status(401).json({ error: 'invalid credentials' });
+      }
+      if (!staff.pin) {
+        recordFailedLogin(staffName);
+        return res.status(401).json({ error: 'invalid credentials' });
+      }
+      ok = verifySecret(pin, staff.pin);
+      if (ok && looksLegacyHash(staff.pin)) {
+        staff.pin = hashSecretSalted(pin);
+        upgraded = true;
+      }
     }
 
     if (!ok) {
       recordFailedLogin(staffName);
       return res.status(401).json({ error: 'invalid credentials' });
+    }
+
+    if (upgraded) {
+      await pool.query(
+        'UPDATE clinic_store SET data = $1, version = version + 1, updated_at = now() WHERE id = 1',
+        [clinicData]
+      );
     }
 
     clearFailedLogins(staffName);
@@ -284,7 +324,13 @@ app.get('/api/staff-list', async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT data FROM clinic_store WHERE id = 1');
     if (rows.length === 0) return res.status(500).json({ error: 'store not initialized' });
-    const staff = (rows[0].data.staff || []).map(s => ({ name: s.name, role: s.role }));
+    const staff = (rows[0].data.staff || []).map(s => ({
+      name: s.name,
+      role: s.role,
+      owner: !!s.owner,
+      authMethod: staffAuthMethodOf(s)
+      // never expose pin, password, or recoveryHash
+    }));
     res.json({ staff, setupNeeded: staff.length === 0 });
   } catch (e) {
     console.error('GET /api/staff-list failed:', e);
@@ -297,8 +343,13 @@ app.get('/api/staff-list', async (req, res) => {
 // this can never be used to add a second account. That's what closed the
 // addStaffFromLogin() hole; this must not reopen an equivalent one.
 app.post('/api/setup', async (req, res) => {
-  const { name, role, pin } = req.body || {};
-  if (!name || !role || !pin) return res.status(400).json({ error: 'name, role and pin are required' });
+  const { name, role, pin, password, authMethod, recoveryCode } = req.body || {};
+  const method = authMethod === 'password' ? 'password' : 'pin';
+  if (!name || !role) return res.status(400).json({ error: 'name and role are required' });
+  if (method === 'pin' && !pin) return res.status(400).json({ error: 'pin is required' });
+  if (method === 'password' && (!password || String(password).length < 6)) {
+    return res.status(400).json({ error: 'password (min 6 characters) is required' });
+  }
   try {
     const { rows } = await pool.query('SELECT data, version FROM clinic_store WHERE id = 1');
     if (rows.length === 0) return res.status(500).json({ error: 'store not initialized' });
@@ -306,7 +357,18 @@ app.post('/api/setup', async (req, res) => {
     if ((clinicData.staff || []).length > 0) {
       return res.status(403).json({ error: 'setup already completed — ask an existing admin to add your account' });
     }
-    const staffRecord = { name, role, pin: hashPinSalted(pin), owner: true, qualification: '' };
+    const staffRecord = {
+      name,
+      role,
+      authMethod: method,
+      owner: true,
+      qualification: ''
+    };
+    if (method === 'pin') staffRecord.pin = hashSecretSalted(pin);
+    else staffRecord.password = hashSecretSalted(password);
+    if (recoveryCode) {
+      staffRecord.recoveryHash = hashSecretSalted(normalizeRecoveryCode(recoveryCode));
+    }
     clinicData.staff = [staffRecord];
     await pool.query(
       'UPDATE clinic_store SET data = $1, version = version + 1, updated_at = now() WHERE id = 1',
@@ -317,6 +379,109 @@ app.post('/api/setup', async (req, res) => {
     res.json({ ok: true, name, role, owner: true });
   } catch (e) {
     console.error('POST /api/setup failed:', e);
+    res.status(500).json({ error: 'server error' });
+  }
+});
+
+// Verify a one-time recovery code (shown when the account was created / last reset).
+// Does not log the user in — only unlocks the reset-credentials step on the client.
+app.post('/api/verify-recovery', async (req, res) => {
+  const { staffName, recoveryCode } = req.body || {};
+  const code = normalizeRecoveryCode(recoveryCode);
+  if (!staffName || code.length < 6) {
+    return res.status(400).json({ error: 'staffName and recoveryCode are required' });
+  }
+  const remainingMs = msLockedFor('recovery:' + staffName);
+  if (remainingMs > 0) {
+    return res.status(429).json({ error: 'locked', remainingMs });
+  }
+  try {
+    const { rows } = await pool.query('SELECT data FROM clinic_store WHERE id = 1');
+    if (rows.length === 0) return res.status(500).json({ error: 'store not initialized' });
+    const staff = (rows[0].data.staff || []).find(s => s.name === staffName);
+    if (!staff || !staff.recoveryHash) {
+      recordFailedLogin('recovery:' + staffName);
+      return res.status(401).json({ error: 'invalid recovery code' });
+    }
+    const ok = verifySecret(code, staff.recoveryHash);
+    if (!ok) {
+      recordFailedLogin('recovery:' + staffName);
+      return res.status(401).json({ error: 'invalid recovery code' });
+    }
+    clearFailedLogins('recovery:' + staffName);
+    // Short-lived signed token proves recovery was verified for this staff member
+    const token = signSession({
+      recoveryFor: staff.name,
+      exp: Date.now() + 15 * 60 * 1000 // 15 minutes to complete reset
+    });
+    res.json({ ok: true, recoveryToken: token, name: staff.name });
+  } catch (e) {
+    console.error('POST /api/verify-recovery failed:', e);
+    res.status(500).json({ error: 'server error' });
+  }
+});
+
+// After recovery verification (or from a future admin flow), set a new PIN *or* password.
+app.post('/api/reset-credentials', async (req, res) => {
+  const { staffName, pin, password, authMethod, recoveryCode, recoveryToken } = req.body || {};
+  const method = authMethod === 'password' ? 'password' : 'pin';
+  if (!staffName) return res.status(400).json({ error: 'staffName is required' });
+  if (method === 'pin' && !pin) return res.status(400).json({ error: 'pin is required' });
+  if (method === 'password' && (!password || String(password).length < 6)) {
+    return res.status(400).json({ error: 'password (min 6 characters) is required' });
+  }
+
+  try {
+    // Must prove recovery: short-lived token from /api/verify-recovery, or the current recovery code
+    let authorized = false;
+    if (recoveryToken) {
+      const payload = verifySession(recoveryToken);
+      if (payload && payload.recoveryFor === staffName && payload.exp > Date.now()) {
+        authorized = true;
+      }
+    }
+
+    const { rows } = await pool.query('SELECT data FROM clinic_store WHERE id = 1');
+    if (rows.length === 0) return res.status(500).json({ error: 'store not initialized' });
+    const clinicData = rows[0].data;
+    const staff = (clinicData.staff || []).find(s => s.name === staffName);
+    if (!staff) return res.status(404).json({ error: 'staff not found' });
+
+    if (!authorized) {
+      const code = normalizeRecoveryCode(recoveryCode);
+      if (!code || !staff.recoveryHash || !verifySecret(code, staff.recoveryHash)) {
+        return res.status(401).json({ error: 'recovery verification required' });
+      }
+      authorized = true;
+    }
+
+    staff.authMethod = method;
+    if (method === 'pin') {
+      staff.pin = hashSecretSalted(pin);
+      delete staff.password;
+    } else {
+      staff.password = hashSecretSalted(password);
+      delete staff.pin;
+    }
+
+    // Rotate recovery secret: client sends a new recovery code in newRecoveryCode
+    // (or recoveryCode when authorized via token — frontend uses recoveryCode for the new code)
+    const newCodeRaw = (req.body && req.body.newRecoveryCode) || (recoveryToken ? recoveryCode : null);
+    if (newCodeRaw) {
+      const newCode = normalizeRecoveryCode(newCodeRaw);
+      if (newCode.length >= 6) {
+        staff.recoveryHash = hashSecretSalted(newCode);
+      }
+    }
+
+    await pool.query(
+      'UPDATE clinic_store SET data = $1, version = version + 1, updated_at = now() WHERE id = 1',
+      [clinicData]
+    );
+    clearFailedLogins(staffName);
+    res.json({ ok: true, name: staff.name, authMethod: method });
+  } catch (e) {
+    console.error('POST /api/reset-credentials failed:', e);
     res.status(500).json({ error: 'server error' });
   }
 });

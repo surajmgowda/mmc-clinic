@@ -730,6 +730,7 @@ let state = {
   loginMode: 'login', // 'login' | 'forgot' | 'reset'
   loginAuthMethod: 'pin', // 'pin' | 'password'
   pendingRecoveryStaff: null,
+  pendingRecoveryToken: null,
   loginInProgress: false,
   draftVisit: null,
   apptDate: null, // selected day on the Appointments screen, defaults to today
@@ -1292,13 +1293,10 @@ function ensureOwnerExists(){
 function ensureStaffAuthMethods(){
   if(!state.data || !state.data.staff) return;
   state.data.staff.forEach(s=>{
-    if(s.authMethod === 'password' || s.authMethod === 'pin'){
-      if(s.authMethod === 'pin') delete s.password;
-      else delete s.pin;
-      return;
-    }
-    if(s.password && !s.pin){ s.authMethod = 'password'; delete s.pin; }
-    else { s.authMethod = 'pin'; delete s.password; }
+    if(s.authMethod === 'password' || s.authMethod === 'pin') return;
+    // Infer only — do not delete hashes here (avoids wiping a secret on a normal save)
+    if(s.password && !s.pin) s.authMethod = 'password';
+    else s.authMethod = 'pin';
   });
 }
 function displayStaffRole(s){
@@ -1374,12 +1372,14 @@ function showForgotAuth(){
   state.loginMode = 'forgot';
   state.loginError = '';
   state.pendingRecoveryStaff = null;
+  state.pendingRecoveryToken = null;
   render();
 }
 function cancelForgotAuth(){
   state.loginMode = 'login';
   state.loginError = '';
   state.pendingRecoveryStaff = null;
+  state.pendingRecoveryToken = null;
   render();
 }
 
@@ -1434,8 +1434,8 @@ async function doLogin(){
         await loadData();
         return;
       }
-      // Real wrong credentials only
-      if(res.status === 401 || res.status === 403){
+      // Real wrong credentials (401/403, and 400 which some servers use for bad PIN)
+      if(res.status === 401 || res.status === 403 || res.status === 400){
         const rec = recordFailedPin(name);
         if(rec.lockedUntil && Date.now() < rec.lockedUntil){
           state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil((rec.lockedUntil-Date.now())/1000)}s.`;
@@ -1502,7 +1502,9 @@ async function doVerifyRecoveryCode(){
       body: JSON.stringify({staffName: name, recoveryCode: code})
     });
     if(res.ok){
+      const json = await res.json().catch(()=>({}));
       state.pendingRecoveryStaff = name;
+      state.pendingRecoveryToken = json.recoveryToken || null;
       state.loginMode = 'reset';
       state.loginError = '';
       render();
@@ -1551,7 +1553,13 @@ async function doResetCredentials(){
     if(password !== password2){ if(err) err.textContent = 'Passwords do not match.'; return; }
   }
   const newRecovery = generateRecoveryCode();
-  const body = {staffName: name, authMethod, recoveryCode: newRecovery};
+  const body = {
+    staffName: name,
+    authMethod,
+    recoveryToken: state.pendingRecoveryToken || undefined,
+    recoveryCode: newRecovery,
+    newRecoveryCode: newRecovery
+  };
   if(authMethod === 'pin') body.pin = pin; else body.password = password;
   try{
     const res = await fetch('/api/reset-credentials', {
@@ -1561,7 +1569,6 @@ async function doResetCredentials(){
     });
     if(res.ok){
       clearPinAttempts(name);
-      // Keep local staff list in sync for next login field type
       const s = (state.data.staff||[]).find(x=>x.name===name);
       if(s){
         s.authMethod = authMethod;
@@ -1571,6 +1578,7 @@ async function doResetCredentials(){
       alert('Login updated.\n\nNew recovery code (write it down — shown only once):\n\n' + newRecovery);
       state.loginMode = 'login';
       state.pendingRecoveryStaff = null;
+      state.pendingRecoveryToken = null;
       state.loginSelectedName = name;
       state.loginAuthMethod = authMethod;
       state.loginError = 'Login updated. You can sign in now.';
@@ -2653,7 +2661,7 @@ async function restoreBackup(file){
     render();
   } catch(e){
     document.getElementById('restore-file-input').value = '';
-    msg.textContent = "Couldn't read that file — make sure it's an MM backup JSON file.";
+    msg.textContent = "Couldn't read that file — make sure it's an MMC backup JSON file.";
   }
 }
 async function addStaff(){
