@@ -930,6 +930,8 @@ let state = {
 function defaultData(){
   return {
     clinicInfo: { name: 'Male Madeshwara Clinic', shortName: 'MMC', address: '', phone: '', logoDataUrl: '' },
+    rolePerms: JSON.parse(JSON.stringify(typeof ROLE_PERM_DEFAULTS!=='undefined'?ROLE_PERM_DEFAULTS:{})),
+
     nextPatientSeq: 1,
     nextCertSeq: 1,
     nextTokenSeq: 1,
@@ -1258,7 +1260,7 @@ async function loadData(){
     if(!state.data.ancRegister) state.data.ancRegister = [];
     dataVersion = json.version;
     state.loadError = null;
-    ensureOwnerExists();
+    bootClinicGuards();
     ensureStaffAuthMethods();
   } catch(e){
     state.loadError = 'Could not reach the clinic server. Check your connection and reload the page.';
@@ -1287,6 +1289,7 @@ async function saveData(){
     if(res.status === 409){
       const server = await res.json();
       state.data = server.data;
+      bootClinicGuards();
       dataVersion = server.version;
       state.saveError = 'Records were just updated from another device — showing the latest version. Please redo your last change.';
       return false;
@@ -1478,7 +1481,47 @@ function currentStaffRole(){
   const s = state.data.staff.find(s=>s.name===state.session.staffName);
   return s ? s.role : null;
 }
+
 function isDoctor(){ return currentStaffRole()==='Doctor'; }
+// Clinic-wide role permissions. Owner can change these in Settings.
+const ROLE_PERM_KEYS = [
+  {key:'checkIn', label:'Check in patients'},
+  {key:'clinicalVisit', label:'Full OPD visit (vitals, notes, Rx, labs)'},
+  {key:'viewClinical', label:'View clinical notes / diagnosis'},
+  {key:'deleteVisit', label:'Delete visits'},
+  {key:'certificates', label:'Issue medical certificates'},
+  {key:'billing', label:'Billing'},
+  {key:'reports', label:'Reports'},
+  {key:'pediatrics', label:'Pediatrics tools'},
+  {key:'recall', label:'Recall register'},
+  {key:'anc', label:'ANC register'},
+  {key:'expenses', label:'Expenses'},
+  {key:'stock', label:'Stock'},
+  {key:'roster', label:'Roster'},
+  {key:'mergePatients', label:'Merge duplicate patients'}
+];
+const ROLE_PERM_DEFAULTS = {
+  Doctor:       {checkIn:true, clinicalVisit:true, viewClinical:true, deleteVisit:true, certificates:true, billing:true, reports:true, pediatrics:true, recall:true, anc:true, expenses:true, stock:true, roster:true, mergePatients:true},
+  Receptionist: {checkIn:true, clinicalVisit:false, viewClinical:false, deleteVisit:false, certificates:false, billing:true, reports:false, pediatrics:false, recall:true, anc:true, expenses:false, stock:false, roster:true, mergePatients:false},
+  Staff:        {checkIn:true, clinicalVisit:false, viewClinical:false, deleteVisit:false, certificates:false, billing:false, reports:false, pediatrics:false, recall:false, anc:false, expenses:false, stock:true, roster:true, mergePatients:false}
+};
+function ensureRolePerms(){
+  if(!state.data) return;
+  if(!state.data.rolePerms) state.data.rolePerms = {};
+  ['Doctor','Receptionist','Staff'].forEach(role=>{
+    const cur = state.data.rolePerms[role] || {};
+    state.data.rolePerms[role] = Object.assign({}, ROLE_PERM_DEFAULTS[role], cur);
+  });
+}
+function can(perm){
+  if(isOwner()) return true;
+  const role = currentStaffRole();
+  if(!role) return false;
+  ensureRolePerms();
+  const row = state.data.rolePerms[role] || ROLE_PERM_DEFAULTS[role] || {};
+  if(perm==='clinicalVisit' && row.clinicalVisit) return true;
+  return !!row[perm];
+}
 // Clinic admin flag on a staff record — never used as a printed title on documents.
 function isOwner(){
   const s = state.data && state.data.staff
@@ -1486,6 +1529,7 @@ function isOwner(){
   return !!(s && s.owner);
 }
 // Ensure at least one owner exists (legacy data / first account).
+function bootClinicGuards(){ ensureOwnerExists(); if(typeof ensureRolePerms==='function') ensureRolePerms(); }
 function ensureOwnerExists(){
   if(!state.data || !state.data.staff || !state.data.staff.length) return;
   if(state.data.staff.some(s=>s.owner)) return;
@@ -1843,6 +1887,9 @@ async function loadStaffListForLogin(){
       if(res.ok){
         const json = await res.json();
         state.data = defaultData();
+  bootClinicGuards();
+      bootClinicGuards();
+        bootClinicGuards();
         state.data.staff = json.staff || [];
         ensureStaffAuthMethods();
         state.loadError = null;
@@ -1861,6 +1908,8 @@ async function loadStaffListForLogin(){
     const cached = JSON.parse(localStorage.getItem('mmc_staff_cache')||'null');
     if(cached && Array.isArray(cached) && cached.length){
       state.data = defaultData();
+  bootClinicGuards();
+      bootClinicGuards();
       state.data.staff = cached;
       state.loadError = null;
       state.loginError = 'Using a cached staff list — the server may still be waking up. Log in, or tap Try again if login fails.';
@@ -3163,6 +3212,7 @@ async function restoreBackup(file){
     const restored = Object.assign(defaultData(), parsed);
     const restoredBy = state.session.staffName || 'System';
     state.data = restored;
+    bootClinicGuards();
     logAudit('Restored data from backup', `File: ${file.name}`, restoredBy);
     const ok = await saveData();
     document.getElementById('restore-file-input').value = '';
@@ -3320,6 +3370,7 @@ function onResetConfirmInput(v){
 async function doReset(){
   if(state.ui.resetConfirmText !== 'RESET') return;
   state.data = defaultData();
+  bootClinicGuards();
   state.session.staffName = null;
   await saveData();
   state.ui.resetConfirmText = '';
@@ -5665,9 +5716,8 @@ function newVisitView(){
 
   const cancelBtn = `<button class="btn btn-ghost" onclick="cancelVisitFlow()">Cancel</button>`;
 
-  // Receptionist: patient check-in only — no vitals, history, diagnosis,
-  // prescription or investigations. The doctor fills all of that in.
-  if(!isDoctor()){
+  // Non-clinical roles: check-in only unless Settings grants "Full OPD visit".
+  if(!can('clinicalVisit')){
     const doctors = state.data.staff.filter(s=>s.role==='Doctor');
     return `
       <div class="page-head"><h1>Check In Patient</h1></div>
@@ -5823,8 +5873,8 @@ function visitPrintView(patientId, visitId){
   if(!p) return `<p class="error-text">Patient not found.</p>`;
   const v = (p.visits||[]).find(v=>v.id===visitId);
   if(!v) return `<p class="error-text">Visit not found.</p>`;
-  if(!isDoctor()){
-    return `<div class="page-head"><h1>Visit summary</h1></div><p class="muted">Clinical details are available to staff logged in with the Doctor role.</p>
+  if(!can('viewClinical') && !can('clinicalVisit')){
+    return `<div class="page-head"><h1>Visit summary</h1></div><p class="muted">Clinical details are limited for this role. The clinic admin can change this in Settings → Role permissions.</p>
       <button class="btn btn-ghost" onclick="go('patient',{patientId:p.id})">Back to patient</button>`;
   }
   const ci = state.data.clinicInfo;
@@ -7665,7 +7715,33 @@ async function saveBilling(patientId, visitId){
   if(msg) msg.textContent = ok ? 'Saved ✓' : 'Could not save — try again';
 }
 
+
+function rolePermsTableHTML(){
+  ensureRolePerms();
+  const roles = ['Doctor','Receptionist','Staff'];
+  const head = `<tr><th>Permission</th>${roles.map(r=>`<th>${esc(r)}</th>`).join('')}</tr>`;
+  const rows = ROLE_PERM_KEYS.map(p=>{
+    const cells = roles.map(role=>{
+      const on = !!(state.data.rolePerms[role] && state.data.rolePerms[role][p.key]);
+      if(!isOwner()) return `<td>${on?'Yes':'—'}</td>`;
+      return `<td><input type="checkbox" ${on?'checked':''} onchange="toggleRolePerm('${role}','${p.key}', this.checked)"></td>`;
+    }).join('');
+    return `<tr><td>${esc(p.label)}</td>${cells}</tr>`;
+  }).join('');
+  return `<div style="overflow-x:auto;"><table>${head}${rows}</table></div>
+    ${isOwner()?'<p class="faint" style="margin-top:8px;">Changes save immediately.</p>':''}`;
+}
+async function toggleRolePerm(role, key, checked){
+  if(!isOwner()) return;
+  ensureRolePerms();
+  if(!state.data.rolePerms[role]) state.data.rolePerms[role] = Object.assign({}, ROLE_PERM_DEFAULTS[role]);
+  state.data.rolePerms[role][key] = !!checked;
+  logAudit('Updated role permissions', `${role} · ${key} = ${checked?'on':'off'}`);
+  await saveData();
+}
+
 function settingsView(){
+
   const ci = state.data.clinicInfo;
   const canManageStaff = isOwner();
   const editingName = state.ui.editingStaffName || null;
@@ -7815,6 +7891,11 @@ function settingsView(){
     </div>
 
     <div class="card" style="margin-bottom:18px;max-width:720px;">
+      <div class="card settings-section">
+        <h2 style="margin-bottom:6px;">Role permissions</h2>
+        <p class="faint" style="margin-bottom:12px;">${isOwner() ? 'Choose what each role can do. Admin (owner) always has every permission.' : 'Only the clinic admin can change role permissions.'}</p>
+        ${rolePermsTableHTML()}
+      </div>
       <h2 style="margin-bottom:6px;">Staff accounts</h2>
       ${canManageStaff
         ? `<p class="muted" style="font-size:12.5px;margin-bottom:12px;">As clinic admin you can edit every profile — role, qualification, and login (PIN <em>or</em> password — not both). Each new account gets a one-time recovery code.</p>`
