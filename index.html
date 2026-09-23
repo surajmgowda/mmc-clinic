@@ -860,9 +860,9 @@
   /* Token slip (print) */
   .token-slip{display:none;}
   @media print{
-    body *{visibility:hidden !important;}
-    .token-slip,.token-slip *{visibility:visible !important;}
-    .token-slip{display:block !important;position:fixed;left:0;top:0;width:80mm;padding:8mm;font-family:sans-serif;}
+    body.printing-token *{visibility:hidden !important;}
+    body.printing-token .token-slip,body.printing-token .token-slip *{visibility:visible !important;}
+    body.printing-token .token-slip{display:block !important;position:fixed;left:0;top:0;width:80mm;padding:8mm;font-family:sans-serif;}
     .token-slip .t-num{font-size:48px;font-weight:700;text-align:center;line-height:1.1;margin:8px 0;}
     .token-slip .t-clinic{font-size:14px;font-weight:700;text-align:center;}
     .token-slip .t-line{text-align:center;font-size:12px;margin:4px 0;}
@@ -871,6 +871,7 @@
   .lang-toggle button{border:none;background:var(--bg);padding:6px 12px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--ink-soft);}
   .lang-toggle button.on{background:var(--primary);color:#fff;}
   .cash-strip{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px;}
+  @media (max-width:520px){.cash-strip{grid-template-columns:1fr;}}
   .cash-strip .cash-card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;}
   .cash-strip .cash-val{font-family:'Source Serif 4',serif;font-size:20px;font-weight:700;color:var(--primary-dark);}
   .cash-strip .cash-lbl{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
@@ -995,7 +996,12 @@ const NAV_ICONS = {
   statPatients: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>',
   statVisits: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
   statWaiting: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>',
-  statAppt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>'
+  statAppt: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>',
+  recall: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l3 2"/></svg>',
+  anc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="3"/><path d="M6 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><path d="M16 4.5c1.2.4 2 1.5 2 2.8 0 1.2-.6 2.2-1.6 2.7"/></svg>',
+  roster: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M8 2v4M16 2v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>',
+  stock: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>',
+  expenses: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>'
 };
 function navIcon(key){ return NAV_ICONS[key] || ''; }
 // Two-letter initials + a stable colour class for the small round avatar
@@ -1971,6 +1977,12 @@ function printTokenSlip(patientId, visitId){
     <div class="t-line">${esc(fmtDate(todayStr()))}</div>
   `;
   if(!slip.parentNode) document.body.appendChild(slip);
+  document.body.classList.add('printing-token');
+  const afterTok = ()=>{
+    document.body.classList.remove('printing-token');
+    window.removeEventListener('afterprint', afterTok);
+  };
+  window.addEventListener('afterprint', afterTok);
   window.print();
 }
 
@@ -2995,6 +3007,7 @@ function printSection(id){
   const el = document.getElementById(id);
   if(!el) return;
   el.classList.add('print-active');
+  document.body.classList.remove('printing-token');
   const after = ()=>{
     el.classList.remove('print-active');
     window.removeEventListener('afterprint', after);
