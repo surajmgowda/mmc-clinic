@@ -1446,6 +1446,7 @@ async function saveData(){
 
 /* ============================= NAV ============================= */
 function go(route, params){
+  if(route !== 'newVisit' && state.ui) state.ui.editingVisitDemo = false;
   state.mobileMenuOpen = false;
   state.route = route;
   state.routeParams = params || {};
@@ -5907,13 +5908,106 @@ function copyLastPrescription(patientId, visitId){
   render();
 }
 
+
+function visitPatientDemoHTML(p){
+  if(!p) return `<p class="error-text">Patient not found.</p>`;
+  const editing = !!(state.ui && state.ui.editingVisitDemo);
+  const changeBtn = !state.routeParams.patientId && !state.routeParams.editVisitId
+    ? `<button class="btn btn-ghost btn-sm" onclick="state.draftVisit.patientId=null;state.ui.editingVisitDemo=false;render()">Change patient</button>` : '';
+  if(editing && can('clinicalVisit')){
+    return `
+      <div class="card" style="margin-bottom:16px;">
+        <div class="rx-row-head"><h3>Edit demographics — ${esc(p.id)}</h3>${changeBtn}</div>
+        <div class="row">
+          <div class="field"><label>Name *</label><input id="vd-name" value="${esc(p.name)}"></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>Date of birth</label><input id="vd-dob" type="date" max="${todayStr()}" value="${esc(p.dob||'')}" oninput="updateAgePreview(this,'vd-age-preview')">
+            <div id="vd-age-preview" class="faint" style="margin-top:4px;">${p.dob && ageFromDob(p.dob) ? 'Age: '+esc(ageFromDob(p.dob).full) : ''}</div></div>
+          <div class="field"><label>Age (if DOB unknown)</label><input id="vd-age" value="${esc(p.age||'')}"></div>
+          <div class="field"><label>Sex *</label><select id="vd-sex">${['Male','Female','Other'].map(s=>`<option ${p.sex===s?'selected':''}>${s}</option>`).join('')}</select></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>Address *</label><input id="vd-address" value="${esc(p.address||'')}"></div>
+          <div class="field"><label>Phone *</label><input id="vd-phone" value="${esc(p.phone||'')}"></div>
+        </div>
+        <div class="row">
+          <div class="field"><label>Blood group</label><select id="vd-blood"><option value="">Not recorded</option>${BLOOD_GROUPS.map(b=>`<option ${p.bloodGroup===b?'selected':''}>${b}</option>`).join('')}</select></div>
+          <div class="field"><label>Emergency contact</label><input id="vd-em-name" value="${esc(p.emergencyContactName||'')}" placeholder="Name"></div>
+          <div class="field"><label>Emergency phone</label><input id="vd-em-phone" value="${esc(p.emergencyContactPhone||'')}"></div>
+        </div>
+        ${can('viewClinical')?`
+        <div class="field"><label>Known allergies</label><input id="vd-allergies" value="${esc(p.allergies||'')}"></div>
+        <div class="field"><label>Chronic illness / conditions</label><input id="vd-chronic" value="${esc(p.chronicConditions||'')}"></div>
+        `:''}
+        <div id="vd-error" class="error-text"></div>
+        <div class="row" style="margin-top:8px;gap:8px;">
+          <button class="btn btn-primary btn-sm" onclick="saveVisitDemographics('${p.id}')">Save details</button>
+          <button class="btn btn-ghost btn-sm" onclick="state.ui.editingVisitDemo=false;render()">Cancel</button>
+        </div>
+      </div>`;
+  }
+  return `
+    <div class="card" style="margin-bottom:16px;">
+      <div class="rx-row-head">
+        <h3 style="margin:0;">${esc(p.name)} <span class="pill">${p.id}</span></h3>
+        <div class="row" style="gap:6px;">
+          ${can('clinicalVisit')?`<button class="btn btn-sm" onclick="state.ui.editingVisitDemo=true;render()">Edit details</button>`:''}
+          ${changeBtn}
+        </div>
+      </div>
+      <div class="row" style="gap:16px;flex-wrap:wrap;font-size:13.5px;">
+        <div><span class="faint">Age / Sex</span><div>${esc(displayAge(p))} / ${esc(p.sex||'—')}${p.dob?` <span class="faint">(DOB ${fmtDate(p.dob)})</span>`:''}</div></div>
+        <div><span class="faint">Phone</span><div>${esc(p.phone)||'—'}</div></div>
+        <div><span class="faint">Blood group</span><div>${esc(p.bloodGroup)||'—'}</div></div>
+      </div>
+      <div style="margin-top:8px;"><span class="faint">Address</span><div>${esc(p.address)||'—'}</div></div>
+      ${(p.emergencyContactName||p.emergencyContactPhone)?`<div style="margin-top:6px;"><span class="faint">Emergency contact</span><div>${esc(p.emergencyContactName)||'—'} ${p.emergencyContactPhone?'· '+esc(p.emergencyContactPhone):''}</div></div>`:''}
+    </div>`;
+}
+async function saveVisitDemographics(patientId){
+  if(!can('clinicalVisit')) return;
+  const p = state.data.patients.find(x=>x.id===patientId);
+  if(!p) return;
+  const name = (document.getElementById('vd-name')||{}).value;
+  const dob = (document.getElementById('vd-dob')||{}).value;
+  const age = (document.getElementById('vd-age')||{}).value;
+  const sex = (document.getElementById('vd-sex')||{}).value;
+  const address = (document.getElementById('vd-address')||{}).value;
+  const phone = (document.getElementById('vd-phone')||{}).value;
+  const err = document.getElementById('vd-error');
+  if(!name || (!dob && !age) || !sex || !phone || !address){
+    if(err) err.textContent = 'Name, date of birth (or age), sex, phone and address are required.';
+    return;
+  }
+  p.name = name.trim();
+  p.dob = (dob||'').trim();
+  p.age = (age||'').trim();
+  p.sex = sex;
+  p.address = address.trim();
+  p.phone = phone.trim();
+  const bg = document.getElementById('vd-blood');
+  if(bg) p.bloodGroup = bg.value;
+  const emN = document.getElementById('vd-em-name');
+  const emP = document.getElementById('vd-em-phone');
+  if(emN) p.emergencyContactName = emN.value.trim();
+  if(emP) p.emergencyContactPhone = emP.value.trim();
+  const al = document.getElementById('vd-allergies');
+  const ch = document.getElementById('vd-chronic');
+  if(al && can('viewClinical')) p.allergies = al.value.trim();
+  if(ch && can('viewClinical')) p.chronicConditions = ch.value.trim();
+  logAudit('Edited demographics during visit', `${p.name} (${p.id})`);
+  state.ui.editingVisitDemo = false;
+  await saveData();
+  render();
+}
+
 function newVisitView(){
   const dv = state.draftVisit;
   let patientBlock;
   if(dv.patientId){
     const p = state.data.patients.find(p=>p.id===dv.patientId);
-    patientBlock = `<div class="banner banner-info">Patient: <strong>${esc(p.name)}</strong> (${p.id}) — ${esc(displayAge(p))}/${esc(p.sex)}
-      ${!state.routeParams.patientId ? `<button class="btn btn-ghost btn-sm" style="margin-left:8px;" onclick="state.draftVisit.patientId=null;render()">Change</button>`:''}</div>`;
+    patientBlock = visitPatientDemoHTML(p);
   } else if(dv.newPatient){
     const np = dv.newPatient;
     patientBlock = `
