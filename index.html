@@ -712,90 +712,106 @@
   .opd-card .rx-line{margin-left:0;margin-right:0;}
   .opd-card .sheet-divider{margin-left:22px;margin-right:22px;}
 
-  /* ---- OPD / prescription / investigation card redesign (v2) ---- */
-  .opdx-card{position:relative;}
+  /* ---- OPD / prescription / investigation card redesign (v3 clinic theme) ---- */
+  .opdx-card{position:relative;border:1px solid #D8E0EA;border-radius:14px;overflow:hidden;background:#fff;}
   .opdx-card::before{
-    content:"";position:absolute;left:0;top:0;bottom:0;width:6px;
-    background:linear-gradient(180deg,var(--accent) 0%,var(--primary) 100%);
+    content:"";position:absolute;left:0;top:0;bottom:0;width:5px;
+    background:linear-gradient(180deg,#C99412 0%,#1B4F6E 55%,#249688 100%);
   }
-  .opdx-inner{padding-left:6px;}
+  .opdx-inner{padding-left:5px;}
   .opdx-head{
-    display:flex;align-items:center;gap:14px;
-    padding:18px 24px 16px;background:var(--primary-dark);color:#fff;
+    display:flex;align-items:flex-start;justify-content:space-between;gap:14px;
+    padding:18px 22px 16px;background:linear-gradient(145deg,#132038 0%,#1A2F4A 100%);color:#fff;
   }
-  .opdx-brand{display:flex;align-items:center;gap:12px;}
+  .opdx-brand{display:flex;align-items:center;gap:12px;min-width:0;}
   .opdx-crest{
-    width:38px;height:38px;border-radius:50%;background:var(--accent);
+    width:42px;height:42px;border-radius:11px;background:linear-gradient(145deg,#E8B923,#C99412);
     display:flex;align-items:center;justify-content:center;flex-shrink:0;
-    font-family:'Source Serif 4',serif;font-weight:700;color:var(--primary-dark);font-size:15px;
+    font-family:'Source Serif 4',serif;font-weight:700;color:#132038;font-size:12px;letter-spacing:0.02em;
+    box-shadow:0 2px 8px rgba(201,148,18,0.35);
   }
-  .opdx-clinic-name{font-family:'Source Serif 4',serif;font-size:19px;font-weight:700;letter-spacing:0.01em;}
-  .opdx-clinic-meta{font-size:11px;color:rgba(255,255,255,0.72);margin-top:2px;line-height:1.4;}
+  .opdx-clinic-name{font-family:'Source Serif 4',serif;font-size:18px;font-weight:700;letter-spacing:0.01em;line-height:1.25;}
+  .opdx-clinic-meta{font-size:11px;color:rgba(255,255,255,0.72);margin-top:3px;line-height:1.45;}
+  .opdx-doc-top{text-align:right;flex-shrink:0;max-width:42%;}
+  .opdx-doc-top-name{font-size:13.5px;font-weight:700;color:#fff;}
+  .opdx-doc-top-qual{font-size:11px;color:rgba(255,255,255,0.7);margin-top:2px;}
   .opdx-strip{
-    padding:10px 24px;background:var(--accent-tint);border-bottom:1px solid rgba(212,160,23,0.3);
-    font-size:11.5px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;color:var(--accent-dark);
+    padding:8px 22px;background:linear-gradient(90deg,#1B4F6E,#249688);
+    color:#fff;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;
   }
-  .opdx-patient-band{padding:16px 24px 4px;}
+  .opdx-patient-band{padding:16px 22px 10px;background:linear-gradient(180deg,#F3F8FB 0%,#fff 100%);}
   .opdx-patient-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
-  .opdx-patient-name{font-family:'Source Serif 4',serif;font-size:19px;font-weight:700;color:var(--primary-dark);}
-  .opdx-patient-id{font-size:11.5px;font-weight:700;color:var(--teal);background:var(--teal-tint);padding:3px 10px;border-radius:99px;}
-  .opdx-meta-grid{
-    display:grid;grid-template-columns:1fr 1fr;gap:8px 18px;
-    padding:12px 0 14px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);
-    margin-bottom:14px;
-  }
-  .opdx-meta-item{display:flex;flex-direction:column;gap:1px;}
-  .opdx-meta-k{font-size:10px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.05em;}
-  .opdx-meta-v{font-size:13.5px;color:var(--ink);font-weight:500;}
-  .opdx-alert-row{display:flex;gap:8px;flex-wrap:wrap;margin:0 24px 14px;}
+  .opdx-patient-name{font-family:'Source Serif 4',serif;font-size:19px;font-weight:700;color:#132038;}
+  .opdx-patient-id{font-size:11.5px;font-weight:700;color:#1B4F6E;background:#E7F2F7;padding:4px 11px;border-radius:99px;border:1px solid #D0E6F0;}
+  .opdx-meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px;}
+  .opdx-meta-item{display:flex;flex-direction:column;gap:2px;}
+  .opdx-meta-k{font-size:10px;font-weight:700;color:#8A94A6;text-transform:uppercase;letter-spacing:0.05em;}
+  .opdx-meta-v{font-size:13.5px;color:#152033;font-weight:500;}
+  .opdx-alert-row{display:flex;gap:8px;flex-wrap:wrap;margin:0 22px 12px;}
   .opdx-alert-chip{
-    font-size:11.5px;font-weight:700;padding:5px 11px;border-radius:7px;
-    background:var(--danger-tint);color:var(--danger);border:1px solid rgba(196,69,54,0.25);
+    display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:8px;
+    background:#F8EBE9;color:#C03D32;border:1px solid rgba(192,61,50,0.25);
+    font-size:12px;font-weight:600;
   }
-  .opdx-alert-chip.chronic{background:var(--primary-tint);color:var(--primary-dark);border-color:rgba(30,78,107,0.2);}
+  .opdx-alert-chip.chronic{background:#E7F2F7;color:#1B4F6E;border-color:rgba(27,79,110,0.2);}
   .opdx-vitals-row{
     display:grid;grid-template-columns:repeat(6,1fr);gap:0;
-    margin:0 24px 16px;border:1px solid var(--line);border-radius:10px;overflow:hidden;
+    margin:0 22px 14px;border:1px solid #E1E7EF;border-radius:12px;overflow:hidden;background:#FAFBFC;
   }
-  .opdx-vital{padding:10px 6px;text-align:center;border-right:1px solid var(--line);}
+  .opdx-vital{padding:12px 6px;text-align:center;border-right:1px solid #E1E7EF;background:#fff;}
   .opdx-vital:last-child{border-right:none;}
-  .opdx-vital-lbl{display:block;font-size:9.5px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px;}
-  .opdx-vital-val{font-family:'Source Serif 4',serif;font-size:16px;font-weight:700;color:var(--primary-dark);}
-  .opdx-vital-unit{font-size:9.5px;color:var(--ink-faint);font-weight:500;}
-  .opdx-clinical{padding:0 24px;}
-  .opdx-c-block{display:flex;gap:12px;padding:11px 0;border-bottom:1px solid var(--line);}
+  .opdx-vital-lbl{display:block;font-size:9.5px;font-weight:700;color:#8A94A6;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px;}
+  .opdx-vital-val{font-family:'Source Serif 4',serif;font-size:16px;font-weight:700;color:#132038;}
+  .opdx-vital-unit{font-size:9.5px;color:#8A94A6;font-weight:500;}
+  .opdx-clinical{padding:2px 22px 4px;}
+  .opdx-c-block{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #E1E7EF;}
   .opdx-c-block:last-child{border-bottom:none;}
   .opdx-c-icon{
-    width:26px;height:26px;border-radius:7px;background:var(--primary-tint);color:var(--primary);
-    flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;
+    width:28px;height:28px;border-radius:8px;background:#E7F2F7;color:#1B4F6E;
+    flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;
   }
   .opdx-c-body{flex:1;min-width:0;}
-  .opdx-c-title{font-size:10.5px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:3px;}
-  .opdx-c-text{font-size:13.5px;line-height:1.5;color:var(--ink);white-space:pre-wrap;}
-  .opdx-c-block.dx .opdx-c-icon{background:var(--accent-tint);color:var(--accent-dark);}
-  .opdx-c-block.dx .opdx-c-text{font-size:15.5px;font-weight:700;color:var(--primary-dark);}
-  .opdx-rx-card{margin:16px 24px 0;border:1px solid var(--line);border-radius:10px;overflow:hidden;}
-  .opdx-rx-head{padding:10px 14px;background:var(--primary-tint);}
-  .opdx-rx-head-title{font-size:11px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase;color:var(--primary-dark);}
-  .opdx-rx-body{padding:4px 14px 8px;}
-  .opdx-rx-item{display:flex;gap:10px;padding:8px 0;border-bottom:1px dotted var(--line);font-size:13.5px;}
+  .opdx-c-title{font-size:10.5px;font-weight:700;color:#8A94A6;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:3px;}
+  .opdx-c-text{font-size:13.5px;line-height:1.55;color:#152033;white-space:pre-wrap;}
+  .opdx-c-block.dx .opdx-c-icon{background:#FBF4E0;color:#A67A0C;}
+  .opdx-c-block.dx .opdx-c-text{font-size:15.5px;font-weight:700;color:#132038;}
+  .opdx-rx-card{margin:14px 22px 0;border:1px solid #E1E7EF;border-radius:12px;overflow:hidden;}
+  .opdx-rx-head{padding:10px 14px;background:linear-gradient(90deg,#E7F2F7,#E5F5F3);}
+  .opdx-rx-head-title{font-size:11px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:#1B4F6E;}
+  .opdx-rx-body{padding:6px 14px 10px;}
+  .opdx-rx-item{display:flex;gap:12px;padding:10px 0;border-bottom:1px dotted #E1E7EF;font-size:13.5px;align-items:flex-start;}
   .opdx-rx-item:last-child{border-bottom:none;}
-  .opdx-rx-num{width:20px;flex-shrink:0;font-weight:700;color:var(--primary);}
-  .opdx-rx-med{font-weight:700;color:var(--ink);}
-  .opdx-rx-sub{color:var(--ink-soft);font-size:12.5px;margin-top:1px;}
+  .opdx-rx-num{
+    width:24px;height:24px;border-radius:50%;background:#249688;color:#fff;
+    display:inline-flex;align-items:center;justify-content:center;
+    font-weight:700;font-size:12px;flex-shrink:0;line-height:1;
+  }
+  .opdx-rx-med{font-weight:700;color:#152033;font-size:14px;}
+  .opdx-rx-sub{color:#5A6578;font-size:12.5px;margin-top:2px;}
   .opdx-followup-band{
     display:flex;justify-content:space-between;align-items:center;gap:10px;
-    margin:16px 24px;padding:11px 14px;background:var(--teal-tint);border-radius:9px;
-    border:1px solid rgba(42,157,143,0.3);
+    margin:14px 22px;padding:12px 14px;background:#FBF4E0;border-radius:10px;
+    border:1px solid rgba(201,148,18,0.35);
   }
-  .opdx-followup-k{font-size:10.5px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:0.05em;}
-  .opdx-followup-v{font-family:'Source Serif 4',serif;font-size:15px;font-weight:700;color:var(--primary-dark);}
-  .opdx-foot{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;padding:18px 24px 22px;}
-  .opdx-doctor-block{font-size:12.5px;color:var(--ink-soft);}
-  .opdx-doctor-name{font-size:14px;font-weight:700;color:var(--primary-dark);}
+  .opdx-followup-k{font-size:10.5px;font-weight:700;color:#A67A0C;text-transform:uppercase;letter-spacing:0.05em;}
+  .opdx-followup-v{font-family:'Source Serif 4',serif;font-size:15px;font-weight:700;color:#132038;}
+  .opdx-foot{display:flex;justify-content:space-between;align-items:flex-end;gap:14px;padding:16px 22px 20px;}
+  .opdx-doctor-block{font-size:12.5px;color:#5A6578;}
+  .opdx-doctor-name{font-size:14px;font-weight:700;color:#132038;}
   .opdx-sign-box{width:150px;text-align:center;flex-shrink:0;}
-  .opdx-sign-line{border-bottom:1px solid var(--ink-faint);height:40px;margin-bottom:6px;}
-  .opdx-sign-lbl{font-size:10px;font-weight:700;color:var(--ink-faint);text-transform:uppercase;letter-spacing:0.05em;}
+  .opdx-sign-line{height:48px;margin-bottom:4px;}
+  .opdx-sign-lbl{font-size:10px;font-weight:700;color:#8A94A6;text-transform:uppercase;letter-spacing:0.05em;}
+  .opdx-lab-table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0 4px;}
+  .opdx-lab-table th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:0.04em;color:#5A6578;padding:8px 10px;border-bottom:2px solid #1B4F6E;background:#F3F8FB;}
+  .opdx-lab-table td{padding:8px 10px;border-bottom:1px solid #E1E7EF;color:#152033;}
+  .opdx-lab-table tr:nth-child(even) td{background:#FAFBFC;}
+  .opdx-result-chip{display:inline-block;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:700;}
+  .opdx-result-chip.pos{background:#F8EBE9;color:#C03D32;}
+  .opdx-result-chip.neg{background:#E5F5F3;color:#1B6E63;}
+  @media (max-width:520px){
+    .opdx-vitals-row{grid-template-columns:repeat(3,1fr);}
+    .opdx-vital:nth-child(3){border-right:none;}
+  }
   @media print{
     .opdx-head,.opdx-strip,.opdx-crest,.opdx-alert-chip,.opdx-patient-id,.opdx-rx-head,.opdx-followup-band{
       -webkit-print-color-adjust:exact;print-color-adjust:exact;
@@ -3034,7 +3050,7 @@ function logoImgHTML(ci){
 // otherwise a circular initials badge built from its short name.
 function letterheadCrestHTML(ci){
   if(ci && ci.logoDataUrl){
-    return `<img src="${ci.logoDataUrl}" alt="" style="width:38px;height:38px;border-radius:50%;object-fit:cover;flex-shrink:0;">`;
+    return `<img src="${ci.logoDataUrl}" alt="" style="width:42px;height:42px;border-radius:11px;object-fit:cover;flex-shrink:0;box-shadow:0 2px 8px rgba(201,148,18,0.25);">`;
   }
   const source = (ci && ci.shortName) ? ci.shortName : ((ci && ci.name) ? ci.name : 'MMC');
   const initials = source.replace(/[^A-Za-z]/g,'').slice(0,3).toUpperCase() || 'MMC';
@@ -3045,16 +3061,16 @@ function letterheadCrestHTML(ci){
 function rxCardHTML(prescriptions){
   if(!prescriptions || !prescriptions.length) return '';
   return `<div class="opdx-rx-card">
-    <div class="opdx-rx-head"><span class="opdx-rx-head-title">Prescription</span></div>
+    <div class="opdx-rx-head"><span class="opdx-rx-head-title">℞  Prescription</span></div>
     <div class="opdx-rx-body">
       ${prescriptions.map((r,i)=>{
         const days = daysLabel(r.duration);
         const qty = computeQuantityLabel(r.medicine, r.frequency, r.duration);
-        const subParts = [r.frequency, days?('× '+days):'', r.instructions].filter(Boolean).join(' · ');
+        const subParts = [r.dosage, r.frequency, days?('× '+days):'', r.instructions].filter(Boolean).join(' · ');
         return `<div class="opdx-rx-item">
-          <span class="opdx-rx-num">${i+1}.</span>
+          <span class="opdx-rx-num">${i+1}</span>
           <span>
-            <span class="opdx-rx-med">${esc(r.medicine)}${r.dosage?' '+esc(r.dosage):''}</span>
+            <span class="opdx-rx-med">${esc(r.medicine)}</span>
             ${subParts?`<div class="opdx-rx-sub">${esc(subParts)}</div>`:''}
             ${qty?`<div class="opdx-rx-sub">${esc(qty)}</div>`:''}
           </span>
@@ -5031,16 +5047,30 @@ function investigationResultsSheetHTML(p, v, ci){
   if(!testBlocks) return '';
 
   return `
-    <div class="print-sheet" id="sheet-inv-results">
-      <div class="letterhead">${logoImgHTML(ci)}<div class="clinic-name">${esc(ci.name)}</div>
-        <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?'<br>':''}${ci.phone}</div></div>
-      <div class="sheet-title">LABORATORY REPORT</div>
-      <div class="patient-strip">
-        <span><strong>${esc(p.name)}</strong> <span class="pill">${p.id}</span> — ${esc(displayAge(p))}, ${esc(p.sex)}</span>
-        <span>${fmtDate(v.date)}</span>
+    <div class="print-sheet opdx-card" id="sheet-inv-results">
+      <div class="opdx-inner">
+        <div class="opdx-head">
+          <div class="opdx-brand">
+            ${letterheadCrestHTML(ci)}
+            <div>
+              <div class="opdx-clinic-name">${esc(ci.name)}</div>
+              <div class="opdx-clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?'<br>':''}${esc(ci.phone||'')}</div>
+            </div>
+          </div>
+        </div>
+        <div class="opdx-strip">Laboratory report · ${fmtDate(v.date)}</div>
+        <div class="opdx-patient-band">
+          <div class="opdx-patient-top">
+            <div class="opdx-patient-name">${esc(p.name)}</div>
+            <div class="opdx-patient-id">${esc(p.id)}</div>
+          </div>
+          <div class="opdx-meta-grid">
+            <div class="opdx-meta-item"><span class="opdx-meta-k">Age / Sex</span><span class="opdx-meta-v">${esc(displayAge(p))}${p.sex?' · '+esc(p.sex):''}</span></div>
+            ${v.doctorName?`<div class="opdx-meta-item"><span class="opdx-meta-k">Reported by</span><span class="opdx-meta-v">${doctorQualLine(v.doctorName)}</span></div>`:''}
+          </div>
+        </div>
+        <div style="padding:8px 22px 18px;">${testBlocks}</div>
       </div>
-      ${testBlocks}
-      <div class="sheet-section" style="margin-top:20px;"><span class="lbl">Reported by</span><div>${v.doctorName ? doctorQualLine(v.doctorName) : '—'}</div></div>
     </div>`;
 }
 function invResultEntryHTML(patient, investigations){
@@ -5845,6 +5875,7 @@ function visitPrintView(patientId, visitId){
               <div class="opdx-clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?'<br>':''}${esc(ci.phone||'')}</div>
             </div>
           </div>
+          ${v.doctorName?`<div class="opdx-doc-top"><div class="opdx-doc-top-name">${esc(v.doctorName)}</div><div class="opdx-doc-top-qual">${esc(staffQualification(v.doctorName))}</div></div>`:''}
         </div>
         <div class="opdx-strip">${isPediatricPatient(p)?'Pediatric OPD card':'OPD card'} · ${fmtDate(v.date)}${v.time?' · '+esc(v.time):''}</div>
 
@@ -5857,7 +5888,6 @@ function visitPrintView(patientId, visitId){
             <div class="opdx-meta-item"><span class="opdx-meta-k">Age / Sex</span><span class="opdx-meta-v">${esc(opdAgeDisplay(p))}${p.sex?' · '+esc(p.sex):''}</span></div>
             <div class="opdx-meta-item"><span class="opdx-meta-k">Phone</span><span class="opdx-meta-v">${esc(p.phone)||'—'}</span></div>
             <div class="opdx-meta-item" style="grid-column:1 / -1;"><span class="opdx-meta-k">Address</span><span class="opdx-meta-v">${esc(p.address)||'—'}</span></div>
-            ${v.doctorName?`<div class="opdx-meta-item"><span class="opdx-meta-k">Doctor</span><span class="opdx-meta-v">${doctorQualLine(v.doctorName)}</span></div>`:''}
           </div>
         </div>
 
@@ -5926,7 +5956,7 @@ function visitPrintView(patientId, visitId){
         <div class="opdx-rx-card">
           <div class="opdx-rx-head"><span class="opdx-rx-head-title">Investigations requested</span></div>
           <div class="opdx-rx-body">
-            ${v.investigations.map((r,i)=>`<div class="opdx-rx-item"><span class="opdx-rx-num">${i+1}.</span><span><span class="opdx-rx-med">${esc(r.test)}</span>${r.notes?`<div class="opdx-rx-sub">${esc(r.notes)}</div>`:''}</span></div>`).join('')}
+            ${v.investigations.map((r,i)=>`<div class="opdx-rx-item"><span class="opdx-rx-num">${i+1}</span><span><span class="opdx-rx-med">${esc(r.test)}</span>${r.notes?`<div class="opdx-rx-sub">${esc(r.notes)}</div>`:''}</span></div>`).join('')}
           </div>
         </div>
 
@@ -7065,30 +7095,44 @@ function buildCertificateContent(p, fields){
 
 function certificateSheetHTML(p, built, ci){
   return `
-    <div class="print-sheet opd-card cert-sheet" id="sheet-cert">
-      <div class="letterhead">${logoImgHTML(ci)}
-        <div class="clinic-name">${esc(ci.name)}</div>
-        <div class="clinic-meta">${esc(ci.address||'')}${ci.address&&ci.phone?'<br>':''}${esc(ci.phone||'')}</div>
-      </div>
-      <div class="opd-badge">${esc(built.title)}</div>
-      <div class="cert-meta">
-        <span>No. <strong>${esc(built.certNo)}</strong></span>
-        <span>Date: <strong>${built.certDate}</strong></span>
-      </div>
-      <div class="cert-body">
-        ${built.bodyHtml}
-      </div>
-      <div class="cert-footer">
-        <div class="cert-place">
-          ${built.place?`<div class="faint">Place</div><div>${esc(built.place)}</div>`:''}
-          <div class="faint" style="margin-top:10px;">Date</div>
-          <div>${built.certDate}</div>
+    <div class="print-sheet opdx-card cert-sheet" id="sheet-cert">
+      <div class="opdx-inner">
+        <div class="opdx-head">
+          <div class="opdx-brand">
+            ${letterheadCrestHTML(ci)}
+            <div>
+              <div class="opdx-clinic-name">${esc(ci.name)}</div>
+              <div class="opdx-clinic-meta">${esc(ci.address||'')}${ci.address&&ci.phone?'<br>':''}${esc(ci.phone||'')}</div>
+            </div>
+          </div>
+          <div class="opdx-doc-top">
+            <div class="opdx-doc-top-name">${esc(built.doctor)}</div>
+            ${built.qual?`<div class="opdx-doc-top-qual">${esc(built.qual)}</div>`:''}
+          </div>
         </div>
-        <div class="cert-sign">
-          <div class="opd-sign-space"></div>
-          <div class="opd-sign-name">${esc(built.doctor)}</div>
-          ${built.qual?`<div class="opd-doctor-qual" style="text-align:center;width:180px;">${esc(built.qual)}</div>`:''}
-          <div class="opd-sign-label">Signature &amp; stamp</div>
+        <div class="opdx-strip">${esc(built.title)}</div>
+        <div class="opdx-patient-band">
+          <div class="opdx-meta-grid">
+            <div class="opdx-meta-item"><span class="opdx-meta-k">Certificate No.</span><span class="opdx-meta-v">${esc(built.certNo)}</span></div>
+            <div class="opdx-meta-item"><span class="opdx-meta-k">Date</span><span class="opdx-meta-v">${built.certDate}</span></div>
+            <div class="opdx-meta-item"><span class="opdx-meta-k">Patient</span><span class="opdx-meta-v">${esc(p.name)} (${esc(p.id)})</span></div>
+            <div class="opdx-meta-item"><span class="opdx-meta-k">Age / Sex</span><span class="opdx-meta-v">${esc(displayAge(p))}${p.sex?' · '+esc(p.sex):''}</span></div>
+          </div>
+        </div>
+        <div class="cert-body" style="padding:16px 22px;">
+          ${built.bodyHtml}
+        </div>
+        <div class="opdx-foot">
+          <div class="opdx-doctor-block">
+            ${built.place?`<div class="faint">Place: ${esc(built.place)}</div>`:''}
+            <div class="faint">Date: ${built.certDate}</div>
+          </div>
+          <div class="opdx-sign-box">
+            <div class="opdx-sign-line"></div>
+            <div class="opdx-doctor-name">${esc(built.doctor)}</div>
+            ${built.qual?`<div style="font-size:11px;color:#5A6578;">${esc(built.qual)}</div>`:''}
+            <div class="opdx-sign-lbl">Signature</div>
+          </div>
         </div>
       </div>
     </div>`;
