@@ -861,7 +861,9 @@ let state = {
   apptPatientSearch: '',
   apptError: '',
   auditSearch: '',
-  dashboardMineOnly: false, // "My patients today" toggle, doctor dashboard
+  dashboardMineOnly: false,
+  mobileMenuOpen: false,
+  dashboardCustomize: false, // "My patients today" toggle, doctor dashboard
   pedTab: 'patients',
   pedLinkedPatientId: null,
   pedChartSex: 'Male',
@@ -1251,6 +1253,7 @@ async function saveData(){
 
 /* ============================= NAV ============================= */
 function go(route, params){
+  state.mobileMenuOpen = false;
   state.route = route;
   state.routeParams = params || {};
   state.search = '';
@@ -3388,6 +3391,90 @@ function onResetAuthMethodChange(){
   if(passBlock) passBlock.style.display = method === 'password' ? '' : 'none';
 }
 
+
+/* ===================== DASHBOARD PREFS + MOBILE SHELL ===================== */
+const DASH_PANEL_META = [
+  {id:'cash', label:'Cash strip'},
+  {id:'queue', label:'Waiting queue'},
+  {id:'stats', label:'Stat cards'},
+  {id:'todayVisits', label:"Today's visits"},
+  {id:'followups', label:'Follow-ups due'},
+  {id:'reminders', label:'Call tomorrow'},
+  {id:'vaccines', label:'Pediatric vaccines due'},
+  {id:'quick', label:'Quick actions'}
+];
+const DASH_DEFAULT_ORDER = DASH_PANEL_META.map(p=>p.id);
+
+function currentStaffRecord(){
+  return (state.data.staff||[]).find(s=>s.name===state.session.staffName) || null;
+}
+function getDashboardPrefs(){
+  const s = currentStaffRecord();
+  const prefs = (s && s.dashboardPrefs) ? s.dashboardPrefs : {};
+  const order = Array.isArray(prefs.order) && prefs.order.length
+    ? prefs.order.filter(id => DASH_DEFAULT_ORDER.includes(id))
+    : DASH_DEFAULT_ORDER.slice();
+  // append any new panels not in saved order
+  DASH_DEFAULT_ORDER.forEach(id=>{ if(!order.includes(id)) order.push(id); });
+  const hidden = Array.isArray(prefs.hidden) ? prefs.hidden.filter(id => DASH_DEFAULT_ORDER.includes(id)) : [];
+  return { order, hidden };
+}
+async function saveDashboardPrefs(prefs){
+  const s = currentStaffRecord();
+  if(!s) return;
+  s.dashboardPrefs = { order: prefs.order.slice(), hidden: prefs.hidden.slice() };
+  await saveData();
+}
+function isDashPanelVisible(id){
+  if(state.dashboardCustomize) return true; // show all while editing
+  const { hidden } = getDashboardPrefs();
+  return !hidden.includes(id);
+}
+async function toggleDashPanelHidden(id){
+  const prefs = getDashboardPrefs();
+  if(prefs.hidden.includes(id)) prefs.hidden = prefs.hidden.filter(x=>x!==id);
+  else prefs.hidden.push(id);
+  await saveDashboardPrefs(prefs);
+  render();
+}
+async function moveDashPanel(id, dir){
+  const prefs = getDashboardPrefs();
+  const i = prefs.order.indexOf(id);
+  if(i<0) return;
+  const j = i + dir;
+  if(j<0 || j>=prefs.order.length) return;
+  const t = prefs.order[i]; prefs.order[i]=prefs.order[j]; prefs.order[j]=t;
+  await saveDashboardPrefs(prefs);
+  render();
+}
+function toggleDashboardCustomize(){
+  state.dashboardCustomize = !state.dashboardCustomize;
+  render();
+}
+function toggleMobileMenu(force){
+  state.mobileMenuOpen = typeof force==='boolean' ? force : !state.mobileMenuOpen;
+  render();
+}
+function goMobile(route, params){
+  state.mobileMenuOpen = false;
+  go(route, params||{});
+}
+function dashPanelWrap(id, innerHTML){
+  if(!innerHTML) return '';
+  if(!state.dashboardCustomize && !isDashPanelVisible(id)) return '';
+  const prefs = getDashboardPrefs();
+  const hidden = prefs.hidden.includes(id);
+  const edit = state.dashboardCustomize ? `
+    <div class="dash-panel-edit">
+      <span class="pill">${esc((DASH_PANEL_META.find(p=>p.id===id)||{}).label||id)}</span>
+      <span class="pill" style="${hidden?'background:var(--danger-tint);color:var(--danger)':''}">${hidden?'Hidden':'Visible'}</span>
+      <button class="btn btn-sm" onclick="toggleDashPanelHidden('${id}')">${hidden?'Show':'Hide'}</button>
+      <button class="btn btn-sm" onclick="moveDashPanel('${id}',-1)">↑</button>
+      <button class="btn btn-sm" onclick="moveDashPanel('${id}',1)">↓</button>
+    </div>` : '';
+  return `<div class="dash-panel-slot" data-panel="${id}">${edit}${hidden && state.dashboardCustomize ? `<div style="opacity:0.45">${innerHTML}</div>` : innerHTML}</div>`;
+}
+
 function shellView(){
   const mainItems = [
     ['dashboard', t('Dashboard')],
@@ -3411,25 +3498,69 @@ function shellView(){
   const systemItems = [
     ['settings', t('Settings')]
   ];
-  const navBtn = ([r,label]) =>
-    `<button class="nav-item ${state.route===r?'active':''}" onclick="go('${r}')">${navIcon(r)}<span>${esc(label)}</span></button>`;
+  const navBtn = ([r,label], mobile) =>
+    `<button class="nav-item ${state.route===r?'active':''}" onclick="${mobile?`goMobile('${r}')`:`go('${r}')`}">${navIcon(r)}<span>${esc(label)}</span></button>`;
   const staff = state.data.staff.find(s=>s.name===state.session.staffName);
   const ci = state.data.clinicInfo || {};
+  const short = esc(((ci.shortName||'MMC')+'').slice(0,3).toUpperCase());
+  const drawerNav = `
+    <div class="brand" style="margin-bottom:14px;">
+      <div class="brand-mark">${short}</div>
+      <div class="brand-text"><div class="full">${esc(ci.shortName||'MMC')}</div><div class="sub">${esc(ci.name||'Clinic')}</div></div>
+    </div>
+    <div class="nav-sec-lbl">Main</div>
+    <div class="nav">${mainItems.map(i=>navBtn(i,true)).join('')}</div>
+    <div class="nav-sec-lbl">Clinical</div>
+    <div class="nav">${clinicalItems.map(i=>navBtn(i,true)).join('')}</div>
+    <div class="nav-sec-lbl">Operations</div>
+    <div class="nav">${opsItems.map(i=>navBtn(i,true)).join('')}</div>
+    <div class="nav-sec-lbl">System</div>
+    <div class="nav">${systemItems.map(i=>navBtn(i,true)).join('')}</div>
+    <div style="margin-top:auto;padding-top:16px;">
+      <div class="foot-row" style="margin-bottom:10px;">
+        <div class="staff-avatar">${esc(initialsOf(state.session.staffName))}</div>
+        <div class="staff-chip"><strong>${esc(state.session.staffName)}</strong><span>${staff?esc(staff.role):''}</span></div>
+      </div>
+      <button class="nav-item" onclick="state.mobileMenuOpen=false;openCommandPalette()">${navIcon('search')}<span>${t('Quick search')}</span></button>
+      <button class="nav-item" onclick="logout()">${navIcon('logout')}<span>${t('Logout')}</span></button>
+    </div>`;
+
+  const bottomNav = `
+    <nav class="mobile-bottom-nav" aria-label="Quick navigation">
+      <button class="${state.route==='dashboard'?'mbn-active':''}" onclick="goMobile('dashboard')">${navIcon('dashboard')}<span>Home</span></button>
+      <button class="${state.route==='patients'||state.route==='patient'?'mbn-active':''}" onclick="goMobile('patients')">${navIcon('patients')}<span>Patients</span></button>
+      <button class="mbn-fab" onclick="goMobile('newVisit')" title="${isDoctor()?'New visit':'Check in'}">+</button>
+      <button class="${state.route==='appointments'||state.route==='newAppointment'?'mbn-active':''}" onclick="goMobile('appointments')">${navIcon('appointments')}<span>Appts</span></button>
+      <button onclick="toggleMobileMenu(true)"><span style="font-size:18px;line-height:1">⋯</span><span>More</span></button>
+    </nav>`;
+
   return `
   <div class="shell">
+    <div class="mobile-topbar">
+      <button type="button" onclick="toggleMobileMenu(true)" aria-label="Open menu">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <div class="mt-brand">${short}</div>
+      <button type="button" onclick="openCommandPalette()" aria-label="Search">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      </button>
+    </div>
+    <div class="mobile-drawer-backdrop ${state.mobileMenuOpen?'open':''}" onclick="toggleMobileMenu(false)"></div>
+    <div class="mobile-drawer ${state.mobileMenuOpen?'open':''}">${drawerNav}</div>
+
     <div class="sidebar">
       <div class="brand">
-        <div class="brand-mark">${esc(((ci.shortName||'MMC')+'').slice(0,3).toUpperCase())}</div>
+        <div class="brand-mark">${short}</div>
         <div class="brand-text"><div class="full">${esc(ci.shortName||'MMC')}</div><div class="sub">${esc(ci.name||'Male Madeshwara Clinic')}</div></div>
       </div>
       <div class="nav-sec-lbl">Main</div>
-      <div class="nav">${mainItems.map(navBtn).join('')}</div>
+      <div class="nav">${mainItems.map(i=>navBtn(i,false)).join('')}</div>
       <div class="nav-sec-lbl">Clinical</div>
-      <div class="nav">${clinicalItems.map(navBtn).join('')}</div>
+      <div class="nav">${clinicalItems.map(i=>navBtn(i,false)).join('')}</div>
       <div class="nav-sec-lbl">Operations</div>
-      <div class="nav">${opsItems.map(navBtn).join('')}</div>
+      <div class="nav">${opsItems.map(i=>navBtn(i,false)).join('')}</div>
       <div class="nav-sec-lbl">System</div>
-      <div class="nav">${systemItems.map(navBtn).join('')}</div>
+      <div class="nav">${systemItems.map(i=>navBtn(i,false)).join('')}</div>
       <div class="sidebar-foot">
         <div class="foot-row">
           <div class="staff-avatar">${esc(initialsOf(state.session.staffName))}</div>
@@ -3443,8 +3574,10 @@ function shellView(){
       ${state.saveError ? `<div class="banner banner-error">${esc(state.saveError)}</div>` : ''}
       ${routeContent()}
     </div>
+    ${bottomNav}
   </div>`;
 }
+
 
 function routeContent(){
   switch(state.route){
@@ -3672,42 +3805,54 @@ function dashboardView(){
         : `<div style="padding:0 4px;">${emptyState('📅', 'No appointments tomorrow', 'Booked appointments for tomorrow appear here so you can send reminders.')}</div>`}
     </div>`;
 
-  return `
-    ${hero}
-    ${ctaRow}
-    ${cashStripHTML()}
-    ${queueSection}
-
+  const statsGrid = `
     <div class="dbx-stat-grid">
       <div class="dbx-stat-card"><div class="dbx-stat-icon blue">${navIcon('statPatients')}</div><div><div class="dbx-stat-num">${state.data.patients.length}</div><div class="dbx-stat-label">Total patients</div></div></div>
       <div class="dbx-stat-card"><div class="dbx-stat-icon navy">${navIcon('statAppt')}</div><div><div class="dbx-stat-num">${appointmentsForDate(today).filter(a=>a.status==='booked').length}</div><div class="dbx-stat-label">Appointments today</div></div></div>
       <div class="dbx-stat-card"><div class="dbx-stat-icon teal">${navIcon('pediatrics')}</div><div><div class="dbx-stat-num">${pediatricPatients().length}</div><div class="dbx-stat-label">Pediatric patients</div></div></div>
-    </div>
-
-    <div class="dbx-two-col">
-      <div>
-        <div class="dbx-panel">
-          <div class="dbx-panel-head">
-            <h2>Today's visits${shownTodaysVisits.length?` <span class="count">${shownTodaysVisits.length}</span>`:''}</h2>
-            ${isDoctor() ? `<div class="dbx-seg">
-              <button class="${!state.dashboardMineOnly?'on':''}" onclick="toggleDashboardMineOnly(false)">All doctors</button>
-              <button class="${state.dashboardMineOnly?'on':''}" onclick="toggleDashboardMineOnly(true)">My patients</button>
-            </div>` : ''}
-          </div>
-          ${shownTodaysVisits.length ? rows
-            : `<div style="padding:0 4px;">${emptyState('📋', myVisitsOnly ? 'No visits of yours recorded yet today' : 'No visits recorded yet today',
-                myVisitsOnly ? 'Visits you attend today will show up here.' : 'Once a patient is checked in and seen, their visit appears here.',
-                `<button class="btn btn-accent btn-sm" onclick="go('newVisit')">+ New visit</button>`)}</div>`}
-        </div>
-      </div>
-      <div>
-        ${followUpCard}
-        ${apptRemindCard}
-        ${pedDueCard}
-        ${quickActionsCard}
-      </div>
     </div>`;
+
+  const todayVisitsPanel = `
+    <div class="dbx-panel">
+      <div class="dbx-panel-head">
+        <h2>Today's visits${shownTodaysVisits.length?` <span class="count">${shownTodaysVisits.length}</span>`:''}</h2>
+        ${isDoctor() ? `<div class="dbx-seg">
+          <button class="${!state.dashboardMineOnly?'on':''}" onclick="toggleDashboardMineOnly(false)">All doctors</button>
+          <button class="${state.dashboardMineOnly?'on':''}" onclick="toggleDashboardMineOnly(true)">My patients</button>
+        </div>` : ''}
+      </div>
+      ${shownTodaysVisits.length ? rows
+        : `<div style="padding:0 4px;">${emptyState('📋', myVisitsOnly ? 'No visits of yours recorded yet today' : 'No visits recorded yet today',
+            myVisitsOnly ? 'Visits you attend today will show up here.' : 'Once a patient is checked in and seen, their visit appears here.',
+            `<button class="btn btn-accent btn-sm" onclick="go('newVisit')">+ New visit</button>`)}</div>`}
+    </div>`;
+
+  const panelMap = {
+    cash: cashStripHTML(),
+    queue: queueSection,
+    stats: statsGrid,
+    todayVisits: todayVisitsPanel,
+    followups: followUpCard,
+    reminders: apptRemindCard,
+    vaccines: pedDueCard,
+    quick: quickActionsCard
+  };
+  const prefs = getDashboardPrefs();
+  const orderedPanels = prefs.order.map(id => dashPanelWrap(id, panelMap[id]||'')).join('');
+
+  const customizeBar = `
+    <div class="dash-customize-bar">
+      <strong>${state.dashboardCustomize ? 'Customize mode — show/hide and reorder panels' : 'Dashboard'}</strong>
+      <button class="btn btn-sm ${state.dashboardCustomize?'btn-primary':''}" onclick="toggleDashboardCustomize()">${state.dashboardCustomize?'Done':'Customize'}</button>
+    </div>`;
+
+  return `
+    ${hero}
+    ${ctaRow}
+    ${customizeBar}
+    ${orderedPanels}`;
 }
+
 function toggleDashboardMineOnly(v){ state.dashboardMineOnly = v; render(); }
 async function markFollowUpDone(patientId, visitId){
   const p = state.data.patients.find(p=>p.id===patientId);
