@@ -138,6 +138,40 @@ function verifySecret(secret, stored) {
 function normalizeRecoveryCode(code) {
   return String(code || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
 }
+
+// ---- TOTP (RFC 6238) for optional admin 2FA ----
+function base32DecodeServer(str) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  const cleaned = String(str || '').toUpperCase().replace(/[^A-Z2-7]/g, '');
+  let bits = '';
+  for (const c of cleaned) {
+    const val = alphabet.indexOf(c);
+    if (val < 0) continue;
+    bits += val.toString(2).padStart(5, '0');
+  }
+  const bytes = [];
+  for (let i = 0; i + 8 <= bits.length; i += 8) bytes.push(parseInt(bits.slice(i, i + 8), 2));
+  return Buffer.from(bytes);
+}
+function verifyTotp(secretBase32, code) {
+  const c = String(code || '').replace(/\s/g, '');
+  if (!/^\d{6}$/.test(c)) return false;
+  const key = base32DecodeServer(secretBase32);
+  const now = Date.now();
+  for (const delta of [0, -1, 1]) {
+    const counter = Math.floor((now + delta * 30000) / 30000);
+    const buf = Buffer.alloc(8);
+    buf.writeUInt32BE(0, 0);
+    buf.writeUInt32BE(counter, 4);
+    const hmac = crypto.createHmac('sha1', key).update(buf).digest();
+    const offset = hmac[hmac.length - 1] & 0x0f;
+    const bin = ((hmac[offset] & 0x7f) << 24) | (hmac[offset + 1] << 16) | (hmac[offset + 2] << 8) | hmac[offset + 3];
+    const expected = String(bin % 1000000).padStart(6, '0');
+    if (expected === c) return true;
+  }
+  return false;
+}
+
 function staffAuthMethodOf(s) {
   if (!s) return 'pin';
   if (s.authMethod === 'password' || s.authMethod === 'pin') return s.authMethod;
@@ -282,6 +316,18 @@ app.post('/api/login', async (req, res) => {
     if (!ok) {
       recordFailedLogin(staffName);
       return res.status(401).json({ error: 'invalid credentials' });
+    }
+
+    // Optional TOTP for accounts that enabled 2FA
+    if (staff.totpEnabled && staff.totpSecret) {
+      const { totpCode } = req.body || {};
+      if (!totpCode) {
+        return res.status(401).json({ error: 'totp_required' });
+      }
+      if (!verifyTotp(staff.totpSecret, totpCode)) {
+        recordFailedLogin(staffName);
+        return res.status(401).json({ error: 'invalid_totp' });
+      }
     }
 
     if (upgraded) {

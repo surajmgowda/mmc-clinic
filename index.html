@@ -116,6 +116,53 @@
   .empty-state .empty-sub{color:var(--ink-faint);font-size:12.5px;max-width:360px;}
   .empty-state .empty-action{margin-top:10px;}
 
+  /* ---- Dark mode ---- */
+  html.dark{
+    --bg:#0F1419;
+    --surface:#1A2332;
+    --ink:#E8ECF2;
+    --ink-soft:#A8B5C7;
+    --ink-faint:#6B7A90;
+    --primary:#3D8AB0;
+    --primary-dark:#7EB8D4;
+    --primary-mid:#4A9BC4;
+    --primary-tint:#1E2A3A;
+    --primary-tint-strong:#243447;
+    --accent:#E0B52A;
+    --accent-dark:#F0C94A;
+    --accent-tint:#2A2518;
+    --teal:#3DB8A8;
+    --teal-tint:#1A2E2C;
+    --line:#2A3548;
+    --line-strong:#3A4A60;
+    --danger:#E85A4F;
+    --danger-tint:#2A1A18;
+    --shadow-xs:0 1px 2px rgba(0,0,0,0.2);
+    --shadow-sm:0 1px 3px rgba(0,0,0,0.25);
+    --shadow-md:0 4px 14px rgba(0,0,0,0.35);
+  }
+  html.dark body{background:var(--bg);color:var(--ink);}
+  html.dark .sidebar{box-shadow:4px 0 28px rgba(0,0,0,0.4);}
+  html.dark .card,html.dark .stat-card,html.dark .dbx-panel,html.dark .dbx-queue-card{background:var(--surface);}
+  html.dark input,html.dark select,html.dark textarea{background:#121820;color:var(--ink);border-color:var(--line);}
+  html.dark .btn{background:var(--surface);color:var(--ink);}
+  html.dark .btn-primary{background:var(--primary);color:#fff;}
+  html.dark table th{color:var(--ink-soft);}
+  html.dark .print-sheet,html.dark .opd-card{background:#fff !important;color:#1C2333 !important;}
+  html.dark .print-sheet *{color:inherit;}
+  .trend-chart{width:100%;height:auto;display:block;margin:8px 0 16px;}
+  .week-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;min-width:0;}
+  .week-day{border:1px solid var(--line);border-radius:10px;padding:8px;min-height:120px;background:var(--surface);}
+  .week-day.today{border-color:var(--primary);box-shadow:inset 0 0 0 1px var(--primary);}
+  .week-day-head{font-size:11px;font-weight:700;color:var(--ink-soft);margin-bottom:6px;text-transform:uppercase;}
+  .week-slot{font-size:12px;padding:4px 6px;border-radius:6px;background:var(--primary-tint);margin-bottom:4px;cursor:pointer;}
+  .week-slot:hover{background:var(--primary-tint-strong);}
+  .attach-grid{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;}
+  .attach-card{border:1px solid var(--line);border-radius:8px;padding:8px;max-width:160px;background:var(--bg);}
+  .attach-card img{max-width:140px;max-height:100px;display:block;border-radius:4px;}
+  .attach-card .att-name{font-size:11px;margin-top:4px;word-break:break-all;}
+
+
   /* ---- Autosave / draft indicator ---- */
   .draft-indicator{
     display:inline-flex;align-items:center;gap:7px;padding:6px 12px;border-radius:99px;
@@ -763,6 +810,8 @@ let state = {
   pendingRecoveryToken: null,
   loginInProgress: false,
   uiLang: (typeof localStorage!=='undefined' && localStorage.getItem('mmc_lang')) || 'en',
+  darkMode: (typeof localStorage!=='undefined' && localStorage.getItem('mmc_dark')==='1'),
+  apptView: 'day', // day | week on appointments screen
   cmdOpen: false,
   cmdQuery: '',
   cmdIndex: 0,
@@ -792,12 +841,124 @@ function defaultData(){
     nextTokenSeq: 1,
     tokenDate: '', // resets token counter each calendar day
     patients: [],
+    deletedPatients: [], // soft-deleted: {patient, deletedAt, deletedBy}
     staff: [],
     customMedicines: [], // clinic-added medicines: {name, dosages:[...]}
     appointments: [], // booked slots: {id, patientId|null, name, phone, date, time, doctorName, notes, status}
     auditLog: [], // who changed what and when: {ts, staff, action, details}
     rxTemplates: [] // reusable prescriptions: {id, name, prescriptions:[...], investigations:[...], createdAt}
   };
+}
+
+
+
+/* ---- TOTP helpers (RFC 6238, 30s, SHA-1, 6 digits) — pure JS, no library ---- */
+function base32Decode(str){
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  const cleaned = String(str||'').toUpperCase().replace(/[^A-Z2-7]/g,'');
+  let bits = '';
+  for(const c of cleaned){
+    const val = alphabet.indexOf(c);
+    if(val<0) continue;
+    bits += val.toString(2).padStart(5,'0');
+  }
+  const bytes = [];
+  for(let i=0;i+8<=bits.length;i+=8) bytes.push(parseInt(bits.slice(i,i+8),2));
+  return new Uint8Array(bytes);
+}
+function base32Encode(bytes){
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = '';
+  for(const b of bytes) bits += b.toString(2).padStart(8,'0');
+  let out = '';
+  for(let i=0;i<bits.length;i+=5){
+    const chunk = bits.slice(i,i+5).padEnd(5,'0');
+    out += alphabet[parseInt(chunk,2)];
+  }
+  return out;
+}
+async function hmacSha1(keyBytes, msgBytes){
+  const key = await crypto.subtle.importKey('raw', keyBytes, {name:'HMAC', hash:'SHA-1'}, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, msgBytes);
+  return new Uint8Array(sig);
+}
+async function totpCodeAt(secretBase32, timeMs){
+  const key = base32Decode(secretBase32);
+  const counter = Math.floor((timeMs||Date.now())/30000);
+  const buf = new ArrayBuffer(8);
+  const view = new DataView(buf);
+  // high 32 bits 0 for realistic counters
+  view.setUint32(4, counter, false);
+  const hmac = await hmacSha1(key, new Uint8Array(buf));
+  const offset = hmac[hmac.length-1] & 0x0f;
+  const code = ((hmac[offset]&0x7f)<<24 | (hmac[offset+1]<<16) | (hmac[offset+2]<<8) | hmac[offset+3]) % 1000000;
+  return String(code).padStart(6,'0');
+}
+async function verifyTotp(secretBase32, code){
+  const c = String(code||'').replace(/\s/g,'');
+  if(!/^\d{6}$/.test(c)) return false;
+  const now = Date.now();
+  for(const delta of [0,-1,1]){
+    const expected = await totpCodeAt(secretBase32, now + delta*30000);
+    if(expected === c) return true;
+  }
+  return false;
+}
+function generateTotpSecret(){
+  const bytes = new Uint8Array(20);
+  crypto.getRandomValues(bytes);
+  return base32Encode(bytes);
+}
+function totpOtpauthUrl(secret, accountName, issuer){
+  const label = encodeURIComponent(issuer+':'+accountName);
+  return `otpauth://totp/${label}?secret=${secret}&issuer=${encodeURIComponent(issuer)}&digits=6&period=30`;
+}
+async function enableOwner2FA(){
+  if(!isOwner()) return;
+  const s = state.data.staff.find(x=>x.name===state.session.staffName);
+  if(!s) return;
+  const secret = generateTotpSecret();
+  const url = totpOtpauthUrl(secret, s.name, (state.data.clinicInfo&&state.data.clinicInfo.shortName)||'MMC');
+  const code = prompt(
+    'Two-factor authentication setup\\n\\n1. Add this secret to Google Authenticator / Authy:\\n\\n'+secret+'\\n\\n2. Or use an otpauth URI (advanced):\\n'+url+'\\n\\n3. Enter the 6-digit code from the app to confirm:'
+  );
+  if(code===null) return;
+  if(!(await verifyTotp(secret, code))){ alert('Code did not match. 2FA was not enabled.'); return; }
+  s.totpSecret = secret;
+  s.totpEnabled = true;
+  logAudit('Enabled 2FA', s.name);
+  await saveData();
+  alert('2FA enabled. You will need the authenticator code at login.');
+  render();
+}
+async function disableOwner2FA(){
+  if(!isOwner()) return;
+  const s = state.data.staff.find(x=>x.name===state.session.staffName);
+  if(!s || !s.totpEnabled) return;
+  const code = prompt('Enter current authenticator code to disable 2FA:');
+  if(code===null) return;
+  if(!(await verifyTotp(s.totpSecret, code))){ alert('Invalid code.'); return; }
+  s.totpEnabled = false;
+  delete s.totpSecret;
+  logAudit('Disabled 2FA', s.name);
+  await saveData();
+  render();
+}
+
+function applyDarkMode(){
+  try{
+    if(state.darkMode) document.documentElement.classList.add('dark');
+    else document.documentElement.classList.remove('dark');
+  }catch(e){}
+}
+function toggleDarkMode(){
+  state.darkMode = !state.darkMode;
+  try{ localStorage.setItem('mmc_dark', state.darkMode ? '1' : '0'); }catch(e){}
+  applyDarkMode();
+  render();
+}
+function activePatients(){
+  return (state.data.patients||[]).filter(p=>!p.deleted);
 }
 
 function esc(str){
@@ -1087,6 +1248,8 @@ async function loadData(){
     if(!state.data.appointments) state.data.appointments = [];
     if(!state.data.auditLog) state.data.auditLog = [];
     if(!state.data.rxTemplates) state.data.rxTemplates = [];
+    if(!state.data.deletedPatients) state.data.deletedPatients = [];
+    try{ purgeOldDeletedPatients(); }catch(e){}
     dataVersion = json.version;
     state.loadError = null;
     ensureOwnerExists();
@@ -1443,7 +1606,10 @@ async function doLogin(){
     render();
     return;
   }
+  const totpEl = document.getElementById('login-totp');
+  const totpCode = totpEl ? totpEl.value.trim() : '';
   const body = method === 'password' ? {staffName: name, password} : {staffName: name, pin};
+  if(totpCode) body.totpCode = totpCode;
   const btn = document.querySelector('.auth-card .btn-primary');
   if(btn){ btn.disabled = true; btn.textContent = 'Signing in…'; }
   state.loginError = '';
@@ -1471,6 +1637,16 @@ async function doLogin(){
       }
       // Real wrong credentials (401/403, and 400 which some servers use for bad PIN)
       if(res.status === 401 || res.status === 403 || res.status === 400){
+        const json = await res.json().catch(()=>({}));
+        if(json.error === 'totp_required' || json.error === 'invalid_totp'){
+          state.loginNeedsTotp = true;
+          state.loginError = json.error === 'invalid_totp'
+            ? 'Incorrect authenticator code. Try again.'
+            : 'Enter the 6-digit code from your authenticator app.';
+          state.loginInProgress = false;
+          render();
+          return;
+        }
         const rec = recordFailedPin(name);
         if(rec.lockedUntil && Date.now() < rec.lockedUntil){
           state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil((rec.lockedUntil-Date.now())/1000)}s.`;
@@ -1779,6 +1955,37 @@ function remindApptWhatsApp(apptId){
     if(p){ phone = phone || p.phone || ''; name = name || p.name || ''; }
   }
   shareWhatsApp(phone, appointmentWhatsAppText({name, date:a.date, time:a.time, doctorName:a.doctorName}));
+  a.remindedAt = new Date().toISOString();
+  saveData();
+}
+async function markApptReminded(apptId){
+  const a = (state.data.appointments||[]).find(x=>x.id===apptId);
+  if(!a) return;
+  a.remindedAt = new Date().toISOString();
+  await saveData();
+  render();
+}
+async function remindAllTomorrowAppts(){
+  const tomorrow = tomorrowStr();
+  const list = appointmentsForDate(tomorrow).filter(a=>(a.status==='booked'||!a.status) && !a.remindedAt);
+  const withPhone = list.filter(a=>{
+    const phone = a.phone || (a.patientId && (state.data.patients.find(p=>p.id===a.patientId)||{}).phone);
+    return !!phone;
+  });
+  if(!withPhone.length){ alert('No un-reminded appointments with phone numbers for tomorrow.'); return; }
+  if(!confirm(`Open WhatsApp for ${withPhone.length} patient(s) and mark them as reminded?\n\nYour browser may block multiple tabs — allow pop-ups if asked.`)) return;
+  for(const a of withPhone){
+    let phone = a.phone || '';
+    let name = a.name || '';
+    if(a.patientId){
+      const p = state.data.patients.find(x=>x.id===a.patientId);
+      if(p){ phone = phone || p.phone || ''; name = name || p.name || ''; }
+    }
+    shareWhatsApp(phone, appointmentWhatsAppText({name, date:a.date, time:a.time, doctorName:a.doctorName}));
+    a.remindedAt = new Date().toISOString();
+  }
+  await saveData();
+  render();
 }
 function appointmentWhatsAppText(a){
   const ci = state.data.clinicInfo || {};
@@ -2150,6 +2357,38 @@ function shiftApptDate(deltaDays){
 function setApptDate(v){ state.apptDate = v; render(); }
 function goToApptToday(){ state.apptDate = todayStr(); render(); }
 
+
+function weekDatesAround(isoDate){
+  const d = new Date(isoDate+'T00:00:00');
+  const day = d.getDay(); // 0 Sun
+  const mondayOffset = day===0 ? -6 : 1-day;
+  const monday = new Date(d); monday.setDate(d.getDate()+mondayOffset);
+  const days = [];
+  for(let i=0;i<7;i++){
+    const x = new Date(monday); x.setDate(monday.getDate()+i);
+    days.push(x.toISOString().slice(0,10));
+  }
+  return days;
+}
+function appointmentsWeekViewHTML(centerDate){
+  const days = weekDatesAround(centerDate);
+  const today = todayStr();
+  const cells = days.map(date=>{
+    const list = appointmentsForDate(date).filter(a=>a.status==='booked'||a.status==='checked-in'||!a.status);
+    const d = new Date(date+'T00:00:00');
+    const head = d.toLocaleDateString('en-IN',{weekday:'short', day:'numeric', month:'short'});
+    const slots = list.slice(0,8).map(a=>{
+      const name = a.name || (a.patientId && (state.data.patients.find(p=>p.id===a.patientId)||{}).name) || '—';
+      return `<div class="week-slot" onclick="state.apptDate='${date}';state.apptView='day';render()">${esc(a.time||'')} · ${esc(name)}</div>`;
+    }).join('') || `<span class="faint" style="font-size:11px;">—</span>`;
+    return `<div class="week-day ${date===today?'today':''}">
+      <div class="week-day-head">${esc(head)}${list.length?` · ${list.length}`:''}</div>
+      ${slots}
+    </div>`;
+  }).join('');
+  return `<div class="week-grid">${cells}</div>`;
+}
+
 function appointmentsView(){
   state.apptDate = state.apptDate || todayStr();
   const date = state.apptDate;
@@ -2182,23 +2421,33 @@ function appointmentsView(){
     </tr>`;
   }).join('');
 
+  const view = state.apptView || 'day';
   return `
     <div class="page-head">
-      <div><h1>${t('Appointments')}</h1><p class="muted">Book ahead and see the day's booked slots</p></div>
+      <div><h1>${t('Appointments')}</h1><p class="muted">Book ahead — day list or week grid</p></div>
       <button class="btn btn-accent" onclick="go('newAppointment')">+ Book appointment</button>
     </div>
     <div class="card">
-      <div class="row" style="align-items:flex-end;margin-bottom:14px;">
+      <div class="row" style="align-items:flex-end;margin-bottom:14px;flex-wrap:wrap;gap:8px;">
         <div class="field" style="max-width:180px;flex:none;"><label>Date</label><input type="date" value="${date}" onchange="setApptDate(this.value)"></div>
-        <button class="btn btn-sm" onclick="shiftApptDate(-1)">‹ Prev day</button>
+        <button class="btn btn-sm" onclick="shiftApptDate(-1)">‹ Prev</button>
         <button class="btn btn-sm" onclick="goToApptToday()">Today</button>
-        <button class="btn btn-sm" onclick="shiftApptDate(1)">Next day ›</button>
+        <button class="btn btn-sm" onclick="shiftApptDate(1)">Next ›</button>
+        <div class="dbx-seg" style="margin-left:auto;">
+          <button class="${view==='day'?'on':''}" onclick="state.apptView='day';render()">Day</button>
+          <button class="${view==='week'?'on':''}" onclick="state.apptView='week';render()">Week</button>
+        </div>
       </div>
+      ${view==='week' ? `
+        <p class="muted" style="margin-bottom:10px;">Week of ${fmtDate(weekDatesAround(date)[0])} – ${fmtDate(weekDatesAround(date)[6])}</p>
+        ${appointmentsWeekViewHTML(date)}
+      ` : `
       <p class="muted" style="margin-bottom:10px;">${fmtDate(date)}${isToday?' — today':''} · ${list.length} booked</p>
       ${list.length
         ? `<table><thead><tr><th>Time</th><th>Patient</th><th>Doctor</th><th>Notes</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
         : emptyState('📅', 'No appointments booked for this day', isToday ? 'Book a slot to hold a patient\'s place for today.' : 'Book a slot to hold a patient\'s place on this date.',
             `<button class="btn btn-accent btn-sm" onclick="go('newAppointment')">+ Book appointment</button>`)}
+      `}
     </div>`;
 }
 
@@ -3183,6 +3432,7 @@ function loginView(){
       </div>
       <div class="field"><label>Staff</label><select id="login-select" onchange="onLoginStaffChange(this.value)">${staffOptions}</select></div>
       ${credField}
+      ${state.loginNeedsTotp ? `<div class="field"><label>Authenticator code</label><input id="login-totp" inputmode="numeric" maxlength="6" placeholder="6-digit code" autocomplete="one-time-code" onkeydown="if(event.key==='Enter')doLogin()"></div>` : ''}
       ${state.loginError ? `<div class="error-text">${esc(state.loginError)}</div>` : ''}
       <button class="btn btn-primary btn-block" ${lock.locked?'disabled':''} onclick="doLogin()">Log in</button>
       <button type="button" class="auth-link" onclick="showForgotAuth()">${forgotLabel}</button>
@@ -3261,6 +3511,7 @@ function shellView(){
     ['billing', t('Billing')],
     ['certificates', t('Certificates')],
     ['reports', t('Reports')],
+    ['recall', 'Recall'],
     ['settings', t('Settings')]
   ];
   const navBtn = ([r,label]) =>
@@ -3310,6 +3561,7 @@ function routeContent(){
     case 'billingDetail': return billingDetailView(state.routeParams.patientId, state.routeParams.visitId);
     case 'certificates': return certificatesView();
     case 'reports': return reportsView();
+    case 'recall': return recallView();
     case 'mergePatients': return mergePatientsView();
     case 'auditLog': return auditLogView();
     default: return dashboardView();
@@ -3494,21 +3746,27 @@ function dashboardView(){
 
   const tomorrow = tomorrowStr();
   const tomorrowAppts = appointmentsForDate(tomorrow).filter(a=>a.status==='booked' || !a.status);
+  const unreminded = tomorrowAppts.filter(a=>!a.remindedAt);
   const apptRemindRows = tomorrowAppts.slice(0,10).map(a=>{
     const phone = a.phone || (a.patientId && (state.data.patients.find(p=>p.id===a.patientId)||{}).phone) || '';
     const name = a.name || (a.patientId && (state.data.patients.find(p=>p.id===a.patientId)||{}).name) || 'Patient';
+    const done = !!a.remindedAt;
     return `<div class="dbx-qrow">
       <div class="dbx-qtime">${esc(a.time||'')}</div>
       <div class="dbx-qtext">
-        <div class="dbx-qname">${esc(name)}</div>
+        <div class="dbx-qname">${esc(name)}${done?' <span class="pill">Reminded</span>':''}</div>
         <div class="dbx-qsub">${esc(a.doctorName||'')}${phone?' · '+esc(phone):''}</div>
       </div>
-      ${phone?`<button class="dbx-qbtn" onclick="remindApptWhatsApp(${jsAttr(a.id)})">${t('WhatsApp')}</button>`:''}
+      ${phone && !done ? `<button class="dbx-qbtn" onclick="remindApptWhatsApp(${jsAttr(a.id)});render()">${t('WhatsApp')}</button>` : ''}
+      ${!done ? `<button class="dbx-qbtn ghost" onclick="markApptReminded(${jsAttr(a.id)})">Done</button>` : ''}
     </div>`;
   }).join('');
   const apptRemindCard = `
     <div class="dbx-panel">
-      <div class="dbx-panel-head"><h2>${t('Call tomorrow')}${tomorrowAppts.length?` <span class="count">${tomorrowAppts.length}</span>`:''}</h2></div>
+      <div class="dbx-panel-head">
+        <h2>${t('Call tomorrow')}${unreminded.length?` <span class="count">${unreminded.length} left</span>`: tomorrowAppts.length?` <span class="count">${tomorrowAppts.length}</span>`:''}</h2>
+        ${unreminded.length ? `<button class="btn btn-sm btn-accent" onclick="remindAllTomorrowAppts()">Remind all</button>` : ''}
+      </div>
       ${tomorrowAppts.length ? apptRemindRows
         : `<div style="padding:0 4px;">${emptyState('📅', 'No appointments tomorrow', 'Booked appointments for tomorrow appear here so you can send reminders.')}</div>`}
     </div>`;
@@ -3901,13 +4159,57 @@ async function deletePatient(patientId){
   if(!isDoctor()) return;
   const p = state.data.patients.find(p=>p.id===patientId);
   if(!p) return;
-  const typed = prompt(`This permanently deletes ${p.name} (${p.id}) and all ${(p.visits||[]).length} visit(s) on record.\n\nType the patient ID (${p.id}) to confirm.`);
+  const typed = prompt(`Move ${p.name} (${p.id}) and ${(p.visits||[]).length} visit(s) to the recycle bin?\nYou can restore within 30 days from Settings → Recycle bin.\n\nType the patient ID (${p.id}) to confirm.`);
   if(typed === null) return;
   if(typed.trim() !== p.id){ alert('That did not match — nothing was deleted.'); return; }
+  if(!state.data.deletedPatients) state.data.deletedPatients = [];
+  state.data.deletedPatients.push({
+    patient: JSON.parse(JSON.stringify(p)),
+    deletedAt: new Date().toISOString(),
+    deletedBy: state.session.staffName || ''
+  });
+  // Keep last 100 soft-deletes
+  if(state.data.deletedPatients.length > 100) state.data.deletedPatients = state.data.deletedPatients.slice(-100);
   state.data.patients = state.data.patients.filter(pt=>pt.id!==patientId);
-  logAudit('Deleted patient record', `${p.name} (${p.id})`);
+  logAudit('Soft-deleted patient', `${p.name} (${p.id})`);
   await saveData();
   go('patients');
+}
+async function restoreDeletedPatient(idx){
+  if(!isOwner() && !isDoctor()) return;
+  const entry = (state.data.deletedPatients||[])[idx];
+  if(!entry || !entry.patient) return;
+  const p = entry.patient;
+  if(state.data.patients.some(x=>x.id===p.id)){
+    alert('A patient with this ID already exists. Cannot restore.');
+    return;
+  }
+  state.data.patients.push(p);
+  state.data.deletedPatients.splice(idx,1);
+  logAudit('Restored patient from recycle bin', `${p.name} (${p.id})`);
+  await saveData();
+  render();
+}
+async function permanentlyDeletePatient(idx){
+  if(!isOwner()){ alert('Only the clinic admin can permanently delete.'); return; }
+  const entry = (state.data.deletedPatients||[])[idx];
+  if(!entry || !entry.patient) return;
+  const p = entry.patient;
+  if(!confirm(`Permanently delete ${p.name} (${p.id})? This cannot be undone.`)) return;
+  state.data.deletedPatients.splice(idx,1);
+  logAudit('Permanently deleted patient', `${p.name} (${p.id})`);
+  await saveData();
+  render();
+}
+function purgeOldDeletedPatients(){
+  if(!state.data.deletedPatients) return;
+  const cutoff = Date.now() - 30*24*60*60*1000;
+  const before = state.data.deletedPatients.length;
+  state.data.deletedPatients = state.data.deletedPatients.filter(e=>{
+    const t = Date.parse(e.deletedAt||'');
+    return !t || t >= cutoff;
+  });
+  if(state.data.deletedPatients.length !== before) saveData();
 }
 // A lighter option than deletePatient(): clears just the personal/contact
 // fields (name, DOB/age, phone, address) while keeping the patient ID,
@@ -5315,6 +5617,66 @@ function insertDiagnosisChip(el){
   document.getElementById('diagnosis-chips').innerHTML = chipRowHTML(chipsFor(inp.value, DIAGNOSIS_TERMS), 'insertDiagnosisChip');
 }
 
+
+function uploadVisitAttachment(patientId, visitId, file){
+  if(!file) return;
+  if(file.size > 400*1024){ alert('Please keep attachments under 400KB (compress photo or PDF).'); return; }
+  const reader = new FileReader();
+  reader.onload = async ()=>{
+    const p = state.data.patients.find(x=>x.id===patientId);
+    const v = p && (p.visits||[]).find(x=>x.id===visitId);
+    if(!v) return;
+    if(!v.attachments) v.attachments = [];
+    if(v.attachments.length >= 8){ alert('Maximum 8 attachments per visit.'); return; }
+    v.attachments.push({
+      id: 'att-'+Date.now(),
+      name: file.name || 'file',
+      type: file.type || 'application/octet-stream',
+      dataUrl: reader.result,
+      uploadedAt: new Date().toISOString(),
+      uploadedBy: state.session.staffName || ''
+    });
+    logAudit('Added visit attachment', `${p.name} (${p.id}) — ${file.name}`);
+    await saveData();
+    render();
+  };
+  reader.readAsDataURL(file);
+}
+async function removeVisitAttachment(patientId, visitId, attId){
+  const p = state.data.patients.find(x=>x.id===patientId);
+  const v = p && (p.visits||[]).find(x=>x.id===visitId);
+  if(!v || !v.attachments) return;
+  if(!confirm('Remove this attachment?')) return;
+  v.attachments = v.attachments.filter(a=>a.id!==attId);
+  await saveData();
+  render();
+}
+function visitAttachmentsHTML(p, v){
+  const list = v.attachments || [];
+  const cards = list.map(a=>{
+    const isImg = (a.type||'').startsWith('image/');
+    return `<div class="attach-card">
+      ${isImg?`<img src="${a.dataUrl}" alt="">`:`<div class="faint" style="padding:20px 8px;text-align:center;">📄</div>`}
+      <div class="att-name">${esc(a.name)}</div>
+      <div class="row" style="gap:4px;margin-top:4px;">
+        <a class="btn btn-ghost btn-sm" href="${a.dataUrl}" download="${esc(a.name)}" target="_blank">Open</a>
+        <button class="btn btn-ghost btn-sm" onclick="removeVisitAttachment('${p.id}','${v.id}','${a.id}')">Remove</button>
+      </div>
+    </div>`;
+  }).join('');
+  return `
+    <div class="card" style="margin-bottom:16px;max-width:720px;">
+      <h2 style="margin-bottom:6px;">Attachments</h2>
+      <p class="faint" style="margin-bottom:10px;">Lab reports, photos or scanned documents for this visit (max 400KB each, 8 per visit).</p>
+      <div class="attach-grid">${cards || '<span class="faint">None yet.</span>'}</div>
+      <div style="margin-top:12px;">
+        <input type="file" id="visit-att-input" accept="image/*,.pdf,application/pdf" style="display:none;"
+          onchange="uploadVisitAttachment('${p.id}','${v.id}',this.files[0]);this.value='';">
+        <button class="btn btn-sm" onclick="document.getElementById('visit-att-input').click()">+ Add photo / report</button>
+      </div>
+    </div>`;
+}
+
 function visitPrintView(patientId, visitId){
   const p = state.data.patients.find(p=>p.id===patientId);
   if(!p) return `<p class="error-text">Patient not found.</p>`;
@@ -5505,6 +5867,7 @@ function visitPrintView(patientId, visitId){
       <button class="btn btn-ghost" onclick="go('newVisit',{patientId:'${p.id}',editVisitId:'${v.id}'})">Edit this visit</button>
     </div>
     ${resultsCard}
+    ${visitAttachmentsHTML(p, v)}
     ${opdSheet}
     ${rxOnlySheet}
     ${invSheet}
@@ -6752,6 +7115,110 @@ function applyPendingCertFields(){
 }
 
 
+
+function monthlyTrendStats(monthsBack){
+  const n = monthsBack || 6;
+  const now = new Date();
+  const buckets = [];
+  for(let i = n-1; i >= 0; i--){
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    const y = d.getFullYear(), m = d.getMonth();
+    const from = `${y}-${String(m+1).padStart(2,'0')}-01`;
+    const lastDay = new Date(y, m+1, 0).getDate();
+    const to = `${y}-${String(m+1).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+    const label = d.toLocaleDateString('en-IN',{month:'short', year:'2-digit'});
+    buckets.push({from, to, label, visits:0, revenue:0});
+  }
+  state.data.patients.forEach(p=>{
+    (p.visits||[]).forEach(v=>{
+      if(!v.date) return;
+      for(const b of buckets){
+        if(v.date >= b.from && v.date <= b.to){
+          b.visits++;
+          b.revenue += billingTotal(billingOf(v));
+          break;
+        }
+      }
+    });
+  });
+  return buckets;
+}
+function trendChartSVG(buckets, key, color){
+  const W=520, H=160, padL=36, padR=12, padT=16, padB=28;
+  const vals = buckets.map(b=> key==='revenue' ? b.revenue : b.visits);
+  const maxV = Math.max(1, ...vals);
+  const pts = vals.map((v,i)=>{
+    const x = padL + (i/(Math.max(1,vals.length-1))) * (W-padL-padR);
+    const y = padT + (1 - v/maxV) * (H-padT-padB);
+    return {x,y,v,label:buckets[i].label};
+  });
+  const line = pts.map((p,i)=>(i?'L':'M')+p.x.toFixed(1)+','+p.y.toFixed(1)).join(' ');
+  const area = line + ` L${pts[pts.length-1].x.toFixed(1)},${H-padB} L${pts[0].x.toFixed(1)},${H-padB} Z`;
+  const dots = pts.map(p=>`<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.5" fill="${color}"/>`).join('');
+  const labels = pts.map(p=>`<text x="${p.x.toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="10" fill="currentColor" opacity="0.65">${esc(p.label)}</text>`).join('');
+  const yMax = key==='revenue' ? '₹'+Math.round(maxV) : String(Math.round(maxV));
+  return `<svg class="trend-chart" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg">
+    <text x="4" y="${padT+4}" font-size="10" fill="currentColor" opacity="0.55">${yMax}</text>
+    <path d="${area}" fill="${color}" opacity="0.12"/>
+    <path d="${line}" fill="none" stroke="${color}" stroke-width="2.2" stroke-linejoin="round"/>
+    ${dots}${labels}
+  </svg>`;
+}
+
+
+function monthsSinceLastVisit(p){
+  const visits = (p.visits||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  if(!visits.length) return null;
+  const last = visits[0].date;
+  if(!last) return null;
+  const a = new Date(last+'T00:00:00'), b = new Date();
+  return (b.getFullYear()-a.getFullYear())*12 + (b.getMonth()-a.getMonth());
+}
+function recallPatients(){
+  // Chronic patients due for recall: have chronic conditions AND (no visit in 3+ months OR overdue follow-up)
+  const today = todayStr();
+  const out = [];
+  state.data.patients.forEach(p=>{
+    const chronic = (p.chronicConditions||'').trim();
+    if(!chronic) return;
+    const months = monthsSinceLastVisit(p);
+    const overdueFu = (p.visits||[]).some(v=>v.followUpDate && v.followUpDate<=today && visitStatus(v)==='completed');
+    const due = (months==null) || months >= 3 || overdueFu;
+    if(!due) return;
+    const lastVisit = (p.visits||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0];
+    out.push({p, months, lastVisit, chronic, overdueFu});
+  });
+  out.sort((a,b)=>(b.months||0)-(a.months||0));
+  return out;
+}
+function recallView(){
+  const list = recallPatients();
+  const rows = list.map(({p, months, lastVisit, chronic})=>`
+    <tr class="clickable" onclick="go('patient',{patientId:'${p.id}'})">
+      <td><strong>${esc(p.name)}</strong> <span class="pill">${p.id}</span></td>
+      <td>${esc(chronic)}</td>
+      <td>${months==null?'Never':months+' mo ago'}</td>
+      <td>${lastVisit?fmtDate(lastVisit.date):'—'}</td>
+      <td>${esc(p.phone)||'—'}</td>
+      <td style="white-space:nowrap;" onclick="event.stopPropagation()">
+        <button class="btn btn-sm" onclick="go('newVisit',{patientId:'${p.id}'})">Visit</button>
+        ${p.phone?`<button class="btn btn-ghost btn-sm" onclick="shareWhatsApp(${jsAttr(p.phone)}, patientWhatsAppText(state.data.patients.find(x=>x.id===${jsAttr(p.id)}), 'This is a reminder for your regular check-up at the clinic. Please book a visit.'))">${t('WhatsApp')}</button>`:''}
+      </td>
+    </tr>`).join('');
+  return `
+    <div class="page-head">
+      <div>
+        <h1>Recall register</h1>
+        <p class="muted">Patients with chronic illness who are due for follow-up (no visit ≥3 months, or overdue follow-up date)</p>
+      </div>
+    </div>
+    <div class="card">
+      ${list.length
+        ? `<table><thead><tr><th>Patient</th><th>Chronic conditions</th><th>Last visit</th><th>Date</th><th>Phone</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+        : emptyState('📋', 'No patients due for recall', 'Patients with chronic conditions recorded on their profile appear here when they have not visited recently.')}
+    </div>`;
+}
+
 function reportsView(){
   state.reportRange = state.reportRange || 'month';
   const range = reportDateRange(state.reportRange);
@@ -6799,6 +7266,15 @@ function reportsView(){
       <div class="stat-card"><div class="stat-num">${stats.newPatients}</div><div class="stat-label">New patients</div></div>
     </div>
     ${cashBlock}
+    <div class="card" style="margin-bottom:16px;">
+      <h2 style="margin-bottom:4px;">Trends (last 6 months)</h2>
+      <p class="faint" style="margin-bottom:8px;">Visits and revenue by month</p>
+      ${(()=>{ const b=monthlyTrendStats(6); return `
+        <div class="row" style="gap:18px;flex-wrap:wrap;">
+          <div style="flex:1;min-width:240px;"><div class="faint" style="margin-bottom:4px;">Visits</div>${trendChartSVG(b,'visits','#2A6B8A')}</div>
+          <div style="flex:1;min-width:240px;"><div class="faint" style="margin-bottom:4px;">Revenue (₹)</div>${trendChartSVG(b,'revenue','#D4A017')}</div>
+        </div>`; })()}
+    </div>
     <div class="card">
       <h2 style="margin-bottom:10px;">Visits by doctor</h2>
       ${doctorRows ? `<table><thead><tr><th>Doctor</th><th>Visits</th><th>Revenue</th></tr></thead><tbody>${doctorRows}</tbody></table>` : '<p class="muted">No visits in this period.</p>'}
@@ -6912,6 +7388,10 @@ function settingsView(){
       <div class="lang-toggle" style="margin-bottom:14px;">
         <button type="button" class="${state.uiLang!=='kn'?'on':''}" onclick="setUiLang('en')">English</button>
         <button type="button" class="${state.uiLang==='kn'?'on':''}" onclick="setUiLang('kn')">ಕನ್ನಡ</button>
+      </div>
+      <div class="row" style="align-items:center;gap:10px;margin-bottom:14px;">
+        <button type="button" class="btn btn-sm" onclick="toggleDarkMode()">${state.darkMode?'☀ Light mode':'🌙 Dark mode'}</button>
+        <span class="faint">Printouts always stay light for readability.</span>
       </div>
       <div class="field"><label>Auto-logout after inactivity (minutes)</label>
         <select id="idle-mins" onchange="setIdleMinutes(this.value)">
@@ -7099,6 +7579,7 @@ function retryLoad(){
 
 /* ============================= ROOT RENDER ============================= */
 function render(){
+  applyDarkMode();
   resetIdleTimer();
   const app = document.getElementById('app');
   if(state.loading){ app.innerHTML = loadingView(); return; }
