@@ -1310,12 +1310,24 @@ async function callSpecificToken(patientId, visitId){
   render();
 }
 async function startTokenConsult(patientId, visitId){
+  if(!can('clinicalVisit')) return;
   const p = state.data.patients.find(x=>x.id===patientId);
   const v = p && (p.visits||[]).find(x=>x.id===visitId);
   if(!v) return;
   v.tokenStatus = 'with_doctor';
   await saveData();
   go('newVisit', {patientId, editVisitId: visitId});
+}
+async function openNextConsult(){
+  if(!can('clinicalVisit')) return;
+  let now = nowServingEntry();
+  if(!now || tokenQueueStatus(now.visit)==='done'){
+    const nxt = nextWaitingEntry();
+    if(!nxt){ alert('No patients waiting.'); return; }
+    await callSpecificToken(nxt.patient.id, nxt.visit.id);
+    now = nowServingEntry() || nxt;
+  }
+  await startTokenConsult(now.patient.id, now.visit.id);
 }
 async function skipToken(patientId, visitId){
   const p = state.data.patients.find(x=>x.id===patientId);
@@ -1348,9 +1360,9 @@ function tokenBoardHTML(){
       </div>
     </div>
     <div class="token-actions">
+      ${can('clinicalVisit') ? `<button class="btn btn-accent" onclick="openNextConsult()">Open next patient</button>` : ''}
       <button class="btn btn-primary btn-sm" onclick="callNextToken()">Call next token</button>
-      ${now && can('clinicalVisit') && tokenQueueStatus(now.visit)!=='with_doctor' ? `<button class="btn btn-accent btn-sm" onclick="startTokenConsult('${now.patient.id}','${now.visit.id}')">Start consultation</button>` : ''}
-      ${now && can('clinicalVisit') && tokenQueueStatus(now.visit)==='with_doctor' ? `<button class="btn btn-sm" onclick="go('newVisit',{patientId:'${now.patient.id}',editVisitId:'${now.visit.id}'})">Continue consultation</button>` : ''}
+      ${now && can('clinicalVisit') ? `<button class="btn btn-primary" onclick="startTokenConsult('${now.patient.id}','${now.visit.id}')">Open consult — ${esc(now.patient.name)}</button>` : ''}
       ${now ? `<button class="btn btn-ghost btn-sm" onclick="printTokenSlip('${now.patient.id}','${now.visit.id}')">Reprint token</button>` : ''}
     </div>`;
 }
@@ -3950,23 +3962,29 @@ function dashboardView(){
     }catch(e){ return null; }
   }
 
-  const waitingRows = waitingVisits.slice(0, 8).map(({patient,visit})=>{
+  const waitingRows = waitingVisits.slice(0, 20).map(({patient,visit})=>{
     const mins = waitingMins(visit);
     const waitLabel = mins!=null ? `waiting ${mins} min` : (visit.time || '');
+    const lastDx = showClinical ? ((patient.visits||[]).filter(x=>x.id!==visit.id && x.diagnosis).sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0]||{}).diagnosis : '';
+    const click = can('clinicalVisit')
+      ? `startTokenConsult('${patient.id}','${visit.id}')`
+      : `go('patient',{patientId:'${patient.id}'})`;
+    const stTok = tokenQueueStatus(visit);
     return `
-    <div class="dbx-qrow dbx-clickable" onclick="go('patient',{patientId:'${patient.id}'})">
+    <div class="dbx-qrow dbx-clickable" onclick="${click}">
+      <div class="dbx-qtoken-lg">${visit.token!=null?'#'+visit.token:''}</div>
       <div class="dbx-avatar ${avatarColorClass(patient.name)}">${esc(initialsOf(patient.name))}</div>
       <div class="dbx-qtext">
-        <div class="dbx-qname">${esc(patient.name)}</div>
-        <div class="dbx-qsub">${esc(patient.id)}${waitLabel ? ' · '+esc(waitLabel) : ''}${visit.token!=null ? ' · #'+visit.token : ''}</div>
+        <div class="dbx-qname">${esc(patient.name)} ${stTok==='called'?'<span class="pill">Called</span>':stTok==='with_doctor'?'<span class="pill">With doctor</span>':''}</div>
+        <div class="dbx-qsub">${esc(patient.id)}${waitLabel ? ' · '+esc(waitLabel) : ''}${patient.allergies && showClinical ? ' · ⚠ '+esc(patient.allergies) : ''}${lastDx ? ' · last: '+esc(lastDx) : ''}</div>
       </div>
-      <div class="dbx-qtoken-lg">${visit.token!=null?'#'+visit.token:''}</div>
       <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;flex-wrap:wrap;">
-        <button class="dbx-qbtn ghost" onclick="event.stopPropagation();callSpecificToken('${patient.id}','${visit.id}')">Call</button>
-        <button class="dbx-qbtn ghost" onclick="event.stopPropagation();printTokenSlip('${patient.id}','${visit.id}')" title="Print token">${t('Print token')}</button>
         ${can('clinicalVisit')
-          ? `<button class="dbx-qbtn" onclick="event.stopPropagation();startTokenConsult('${patient.id}','${visit.id}')">Continue</button>`
-          : `<span class="dbx-qstatus wait">${tokenQueueStatus(visit)==='called'?'Called':'Waiting'}</span>`}
+          ? `<button class="dbx-qbtn" onclick="event.stopPropagation();startTokenConsult('${patient.id}','${visit.id}')">Open consult</button>
+             <button class="dbx-qbtn ghost" onclick="event.stopPropagation();go('patient',{patientId:'${patient.id}'})">File</button>`
+          : `<button class="dbx-qbtn ghost" onclick="event.stopPropagation();callSpecificToken('${patient.id}','${visit.id}')">Call</button>
+             <button class="dbx-qbtn ghost" onclick="event.stopPropagation();printTokenSlip('${patient.id}','${visit.id}')">${t('Print token')}</button>
+             <span class="dbx-qstatus wait">${stTok==='called'?'Called':'Waiting'}</span>`}
       </div>
     </div>`;
   }).join('');
