@@ -858,6 +858,20 @@
   .cmd-empty{padding:18px;text-align:center;color:var(--ink-faint);font-size:13px;}
   .cmd-hint{padding:8px 14px;font-size:11px;color:var(--ink-faint);border-top:1px solid var(--line);display:flex;justify-content:space-between;}
   /* Token slip (print) */
+
+  .token-board{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;}
+  @media (max-width:640px){.token-board{grid-template-columns:1fr;}}
+  .token-now,.token-next{
+    background:linear-gradient(145deg,#132038,#1A2F4A);color:#fff;border-radius:14px;
+    padding:16px 18px;text-align:center;box-shadow:var(--shadow-sm);
+  }
+  .token-now .tn-label,.token-next .tn-label{font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;opacity:0.75;}
+  .token-now .tn-num{font-family:'Source Serif 4',serif;font-size:48px;font-weight:700;line-height:1.1;margin:6px 0;}
+  .token-next .tn-num{font-family:'Source Serif 4',serif;font-size:32px;font-weight:700;line-height:1.1;margin:6px 0;color:#E8B923;}
+  .token-now .tn-name,.token-next .tn-name{font-size:14px;opacity:0.9;}
+  .token-actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;}
+  .dbx-qtoken-lg{font-family:'Source Serif 4',serif;font-weight:700;font-size:18px;color:var(--primary-dark);min-width:36px;text-align:center;}
+
   .token-slip{display:none;}
   @media print{
     body.printing-token *{visibility:hidden !important;}
@@ -1231,6 +1245,116 @@ function nextTokenNumber(){
   state.data.nextTokenSeq = n + 1;
   return n;
 }
+function peekNextTokenNumber(){
+  const today = todayStr();
+  if(state.data.tokenDate !== today) return 1;
+  return state.data.nextTokenSeq || 1;
+}
+function todayVisitsWithTokens(){
+  const today = todayStr();
+  const list = [];
+  (state.data.patients||[]).forEach(p=>{
+    (p.visits||[]).forEach(v=>{
+      if(v.date===today && v.token!=null) list.push({patient:p, visit:v});
+    });
+  });
+  list.sort((a,b)=>(a.visit.token||0)-(b.visit.token||0));
+  return list;
+}
+function tokenQueueStatus(v){
+  if(!v) return 'waiting';
+  if(v.tokenStatus) return v.tokenStatus;
+  if(visitStatus(v)==='completed') return 'done';
+  return 'waiting';
+}
+function waitingTokenQueue(){
+  return todayVisitsWithTokens().filter(({visit:v})=>{
+    const st = tokenQueueStatus(v);
+    return st==='waiting' || st==='called';
+  });
+}
+function nowServingEntry(){
+  const all = todayVisitsWithTokens();
+  const withDoc = all.find(({visit:v})=>tokenQueueStatus(v)==='with_doctor');
+  if(withDoc) return withDoc;
+  const called = all.find(({visit:v})=>tokenQueueStatus(v)==='called');
+  return called || null;
+}
+function nextWaitingEntry(){
+  return waitingTokenQueue().find(({visit:v})=>tokenQueueStatus(v)==='waiting') || null;
+}
+async function callNextToken(){
+  const next = nextWaitingEntry();
+  if(!next){ alert('No patients waiting in the token queue.'); return; }
+  // Clear previous "called" that never started
+  todayVisitsWithTokens().forEach(({visit:v})=>{
+    if(tokenQueueStatus(v)==='called') v.tokenStatus = 'waiting';
+  });
+  next.visit.tokenStatus = 'called';
+  next.visit.calledAt = new Date().toISOString();
+  logAudit('Called token', `#${next.visit.token} — ${next.patient.name}`);
+  await saveData();
+  render();
+}
+async function callSpecificToken(patientId, visitId){
+  const p = state.data.patients.find(x=>x.id===patientId);
+  const v = p && (p.visits||[]).find(x=>x.id===visitId);
+  if(!v) return;
+  todayVisitsWithTokens().forEach(({visit:x})=>{
+    if(tokenQueueStatus(x)==='called' && x.id!==visitId) x.tokenStatus = 'waiting';
+  });
+  v.tokenStatus = 'called';
+  v.calledAt = new Date().toISOString();
+  logAudit('Called token', `#${v.token} — ${p.name}`);
+  await saveData();
+  render();
+}
+async function startTokenConsult(patientId, visitId){
+  const p = state.data.patients.find(x=>x.id===patientId);
+  const v = p && (p.visits||[]).find(x=>x.id===visitId);
+  if(!v) return;
+  v.tokenStatus = 'with_doctor';
+  await saveData();
+  go('newVisit', {patientId, editVisitId: visitId});
+}
+async function skipToken(patientId, visitId){
+  const p = state.data.patients.find(x=>x.id===patientId);
+  const v = p && (p.visits||[]).find(x=>x.id===visitId);
+  if(!v) return;
+  v.tokenStatus = 'waiting';
+  v.calledAt = '';
+  // Move to end of today's queue by giving a high token? Better: mark skipped and re-call next
+  logAudit('Skipped token', `#${v.token} — ${p.name}`);
+  await saveData();
+  await callNextToken();
+}
+function tokenBoardHTML(){
+  const now = nowServingEntry();
+  const next = nextWaitingEntry();
+  const waiting = waitingTokenQueue().filter(({visit:v})=>tokenQueueStatus(v)==='waiting');
+  return `
+    <div class="token-board">
+      <div class="token-now">
+        <div class="tn-label">Now serving</div>
+        <div class="tn-num">${now && now.visit.token!=null ? '#'+now.visit.token : '—'}</div>
+        <div class="tn-name">${now ? esc(now.patient.name) : 'No patient called'}</div>
+        ${now && tokenQueueStatus(now.visit)==='with_doctor' ? '<div class="tn-name" style="opacity:0.7;font-size:12px;margin-top:4px;">With doctor</div>' : ''}
+      </div>
+      <div class="token-next">
+        <div class="tn-label">Up next</div>
+        <div class="tn-num">${next && next.visit.token!=null ? '#'+next.visit.token : '—'}</div>
+        <div class="tn-name">${next ? esc(next.patient.name) : 'Queue empty'}</div>
+        <div class="tn-name" style="opacity:0.7;font-size:12px;margin-top:4px;">${waiting.length} waiting · next issue #${peekNextTokenNumber()}</div>
+      </div>
+    </div>
+    <div class="token-actions">
+      <button class="btn btn-primary btn-sm" onclick="callNextToken()">Call next token</button>
+      ${now && can('clinicalVisit') && tokenQueueStatus(now.visit)!=='with_doctor' ? `<button class="btn btn-accent btn-sm" onclick="startTokenConsult('${now.patient.id}','${now.visit.id}')">Start consultation</button>` : ''}
+      ${now && can('clinicalVisit') && tokenQueueStatus(now.visit)==='with_doctor' ? `<button class="btn btn-sm" onclick="go('newVisit',{patientId:'${now.patient.id}',editVisitId:'${now.visit.id}'})">Continue consultation</button>` : ''}
+      ${now ? `<button class="btn btn-ghost btn-sm" onclick="printTokenSlip('${now.patient.id}','${now.visit.id}')">Reprint token</button>` : ''}
+    </div>`;
+}
+
 
 
 /* ============================= STORAGE (server API) ============================= */
@@ -2061,11 +2185,12 @@ function printTokenSlip(patientId, visitId){
   slip.innerHTML = `
     <div class="t-clinic">${esc(ci.name || 'MMC Clinic')}</div>
     <div class="t-line">${esc(ci.address||'')}</div>
-    <div class="t-line">TOKEN</div>
+    <div class="t-line" style="margin-top:8px;letter-spacing:0.12em;font-weight:700;">TOKEN</div>
     <div class="t-num">${esc(String(token))}</div>
     <div class="t-line"><strong>${esc(p.name)}</strong></div>
-    <div class="t-line">${esc(p.id)}${v && v.time ? ' · ' + esc(v.time) : ''}</div>
-    <div class="t-line">${esc(fmtDate(todayStr()))}</div>
+    <div class="t-line">${esc(p.id)}${p.sex? ' · '+esc(p.sex):''}</div>
+    <div class="t-line">${esc(fmtDate(todayStr()))}${v && v.time ? ' · ' + esc(v.time) : ''}</div>
+    <div class="t-line" style="margin-top:10px;font-size:11px;">Please wait for your number to be called</div>
   `;
   if(!slip.parentNode) document.body.appendChild(slip);
   document.body.classList.add('printing-token');
@@ -2378,14 +2503,21 @@ async function saveEditPatient(patientId){
   const sex = document.getElementById('ep-sex').value;
   const phone = document.getElementById('ep-phone').value.trim();
   const address = document.getElementById('ep-address').value.trim();
-  const allergies = document.getElementById('ep-allergies').value.trim();
-  const chronicConditions = document.getElementById('ep-chronic').value.trim();
+  const allergiesEl = document.getElementById('ep-allergies');
+  const chronicEl = document.getElementById('ep-chronic');
+  const surgeriesEl = document.getElementById('ep-surgeries');
+  const familyEl = document.getElementById('ep-family-history');
+  const allergies = allergiesEl ? allergiesEl.value.trim() : (p.allergies||'');
+  const chronicConditions = chronicEl ? chronicEl.value.trim() : (p.chronicConditions||'');
   const bloodGroup = document.getElementById('ep-blood-group').value;
   const emergencyContactName = document.getElementById('ep-emergency-name').value.trim();
   const emergencyContactPhone = document.getElementById('ep-emergency-phone').value.trim();
   const aadhaar = document.getElementById('ep-aadhaar').value.trim();
-  const pastSurgeries = document.getElementById('ep-surgeries').value.trim();
-  const familyHistory = document.getElementById('ep-family-history').value.trim();
+  const pastSurgeries = surgeriesEl ? surgeriesEl.value.trim() : (p.pastSurgeries||'');
+  const familyHistory = familyEl ? familyEl.value.trim() : (p.familyHistory||'');
+  if(!can('viewClinical')){
+    // Non-clinical staff cannot alter clinical history fields
+  }
   const err = document.getElementById('ep-error');
   if(!name || (!dob && !age) || !sex || !phone || !address){
     if(err) err.textContent = 'Name, date of birth (or age), sex, phone and address are all required.';
@@ -2784,7 +2916,7 @@ function clearVisitDraftStorage(){
   try{ localStorage.removeItem(VISIT_DRAFT_KEY); } catch(e){}
 }
 function restoreVisitDraftIfAny(){
-  if(!isDoctor()) return;
+  if(!can('clinicalVisit')) return;
   let raw;
   try{ raw = localStorage.getItem(VISIT_DRAFT_KEY); } catch(e){ return; }
   if(!raw) return;
@@ -3063,17 +3195,27 @@ async function saveVisit(){
       followUpDate: dv.followUpDate, assignedDoctor: dv.assignedDoctor||'',
       referredTo: dv.referredTo||'', referralReason: dv.referralReason||'',
       prescriptions, investigations, status,
+      tokenStatus: status==='completed' ? 'done' : 'waiting',
       billing: { fee:'', charges:[], paid:false, mode:'' }
     };
     patient.visits.unshift(visit);
   }
-  logAudit(wasExisting ? 'Updated visit' : 'Recorded visit', `${patient.name} (${patient.id}) — ${fmtDate(visit.date)}${visit.doctorName?' · '+visit.doctorName:''}`);
+  if(wasExisting){
+    if(status==='completed') visit.tokenStatus = 'done';
+    else if(can('clinicalVisit') && tokenQueueStatus(visit)==='called') visit.tokenStatus = 'with_doctor';
+    else if(!visit.tokenStatus) visit.tokenStatus = status==='completed'?'done':'waiting';
+  }
+  logAudit(wasExisting ? 'Updated visit' : 'Recorded visit', `${patient.name} (${patient.id}) — token #${visit.token!=null?visit.token:'—'} · ${fmtDate(visit.date)}${visit.doctorName?' · '+visit.doctorName:''}`);
   const ok = await saveData();
   if(!ok){ errEl.textContent = state.saveError; render(); return; }
   clearVisitDraftStorage();
-  if(isDoctor()){
+  if(can('clinicalVisit') && (status==='completed' || wasExisting)){
     go('visitPrint', {patientId: patient.id, visitId: visit.id});
   } else {
+    // Reception check-in: offer token print then dashboard queue
+    if(visit.token!=null && !wasExisting){
+      setTimeout(()=>printTokenSlip(patient.id, visit.id), 300);
+    }
     go('dashboard');
   }
 }
@@ -3109,14 +3251,22 @@ function printSection(id){
 
 /* ============================= SETTINGS ============================= */
 async function saveClinicInfo(){
-  state.data.clinicInfo.name = document.getElementById('ci-name').value.trim() || state.data.clinicInfo.name;
-  state.data.clinicInfo.address = document.getElementById('ci-address').value.trim();
-  state.data.clinicInfo.phone = document.getElementById('ci-phone').value.trim();
+  if(!isOwner()){ alert('Only the clinic admin can change clinic name, address or phone.'); return; }
+  const nameEl = document.getElementById('ci-name');
+  const addrEl = document.getElementById('ci-address');
+  const phoneEl = document.getElementById('ci-phone');
+  const shortEl = document.getElementById('ci-short');
+  if(!nameEl) return;
+  state.data.clinicInfo.name = nameEl.value.trim() || state.data.clinicInfo.name;
+  if(shortEl) state.data.clinicInfo.shortName = shortEl.value.trim();
+  state.data.clinicInfo.address = addrEl ? addrEl.value.trim() : state.data.clinicInfo.address;
+  state.data.clinicInfo.phone = phoneEl ? phoneEl.value.trim() : state.data.clinicInfo.phone;
   logAudit('Updated clinic info', state.data.clinicInfo.name);
   await saveData();
   render();
 }
 function uploadClinicLogo(file){
+  if(!isOwner()){ alert('Only the clinic admin can change the clinic logo.'); return; }
   const msg = document.getElementById('logo-upload-msg');
   if(!file) return;
   if(!file.type || !file.type.startsWith('image/')){
@@ -3138,6 +3288,7 @@ function uploadClinicLogo(file){
   reader.readAsDataURL(file);
 }
 async function removeClinicLogo(){
+  if(!isOwner()){ alert('Only the clinic admin can remove the clinic logo.'); return; }
   if(!confirm('Remove the clinic logo from printouts?')) return;
   state.data.clinicInfo.logoDataUrl = '';
   logAudit('Removed clinic logo', '');
@@ -3220,7 +3371,7 @@ function exportVisitsCSV(){
   logAudit('Exported visits CSV', rows.length-1+' visits');
 }
 
-function downloadBackup(){
+async function downloadBackup(){
   if(!isOwner()){ alert('Only the clinic admin can download a full data backup.'); return; }
   const blob = new Blob([JSON.stringify(state.data, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -3231,7 +3382,9 @@ function downloadBackup(){
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+  state.data.lastBackupAt = new Date().toISOString();
   logAudit('Downloaded full backup', '');
+  try{ await saveData(); }catch(e){}
 }
 async function restoreBackup(file){
   const msg = document.getElementById('restore-msg');
@@ -3634,7 +3787,7 @@ function shellView(){
     ['dashboard', t('Dashboard')],
     ['appointments', t('Appointments')],
     ['patients', t('Patients')],
-    ['newVisit', isDoctor() ? t('New OPD Visit') : t('Check In Patient')]
+    ['newVisit', can('clinicalVisit') ? t('New OPD Visit') : t('Check In Patient')]
   ];
   const clinicalItems = [
     ['pediatrics', t('Pediatrics'), 'pediatrics'],
@@ -3683,7 +3836,7 @@ function shellView(){
     <nav class="mobile-bottom-nav" aria-label="Quick navigation">
       <button class="${state.route==='dashboard'?'mbn-active':''}" onclick="goMobile('dashboard')">${navIcon('dashboard')}<span>Home</span></button>
       <button class="${state.route==='patients'||state.route==='patient'?'mbn-active':''}" onclick="goMobile('patients')">${navIcon('patients')}<span>Patients</span></button>
-      <button class="mbn-fab" onclick="goMobile('newVisit')" title="${isDoctor()?'New visit':'Check in'}">+</button>
+      <button class="mbn-fab" onclick="goMobile('newVisit')" title="${can('clinicalVisit')?'New visit':'Check in'}">+</button>
       <button class="${state.route==='appointments'||state.route==='newAppointment'?'mbn-active':''}" onclick="goMobile('appointments')">${navIcon('appointments')}<span>Appts</span></button>
       <button onclick="toggleMobileMenu(true)"><span style="font-size:18px;line-height:1">⋯</span><span>More</span></button>
     </nav>`;
@@ -3770,7 +3923,7 @@ function dashboardView(){
   state.data.patients.forEach(p=>{
     (p.visits||[]).forEach(v=>{
       if(v.date===today) todaysVisits.push({patient:p, visit:v});
-      if(visitStatus(v)==='waiting' && (!isDoctor() || !v.assignedDoctor || v.assignedDoctor===state.session.staffName)) waitingVisits.push({patient:p, visit:v});
+      if(visitStatus(v)==='waiting' && (!can('clinicalVisit') || !v.assignedDoctor || v.assignedDoctor===state.session.staffName)) waitingVisits.push({patient:p, visit:v});
       if(v.followUpDate && v.followUpDate<=today) followUps.push({patient:p, visit:v});
     });
   });
@@ -3782,8 +3935,8 @@ function dashboardView(){
   });
   followUps.sort((a,b)=> a.visit.followUpDate.localeCompare(b.visit.followUpDate));
 
-  const showClinical = isDoctor();
-  const myVisitsOnly = isDoctor() && state.dashboardMineOnly;
+  const showClinical = can('viewClinical');
+  const myVisitsOnly = can('clinicalVisit') && state.dashboardMineOnly;
   const shownTodaysVisits = myVisitsOnly ? todaysVisits.filter(({visit})=> visit.doctorName===state.session.staffName) : todaysVisits;
   const ci = state.data.clinicInfo || {};
   const shortName = ((ci.shortName || 'MMC').replace(/[^A-Za-z]/g,'').slice(0,3) || 'MMC').toUpperCase();
@@ -3807,11 +3960,13 @@ function dashboardView(){
         <div class="dbx-qname">${esc(patient.name)}</div>
         <div class="dbx-qsub">${esc(patient.id)}${waitLabel ? ' · '+esc(waitLabel) : ''}${visit.token!=null ? ' · #'+visit.token : ''}</div>
       </div>
-      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;">
+      <div class="dbx-qtoken-lg">${visit.token!=null?'#'+visit.token:''}</div>
+      <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;flex-wrap:wrap;">
+        <button class="dbx-qbtn ghost" onclick="event.stopPropagation();callSpecificToken('${patient.id}','${visit.id}')">Call</button>
         <button class="dbx-qbtn ghost" onclick="event.stopPropagation();printTokenSlip('${patient.id}','${visit.id}')" title="Print token">${t('Print token')}</button>
-        ${isDoctor()
-          ? `<button class="dbx-qbtn" onclick="event.stopPropagation();go('newVisit',{patientId:'${patient.id}',editVisitId:'${visit.id}'})">Continue</button>`
-          : `<span class="dbx-qstatus wait">Waiting</span>`}
+        ${can('clinicalVisit')
+          ? `<button class="dbx-qbtn" onclick="event.stopPropagation();startTokenConsult('${patient.id}','${visit.id}')">Continue</button>`
+          : `<span class="dbx-qstatus wait">${tokenQueueStatus(visit)==='called'?'Called':'Waiting'}</span>`}
       </div>
     </div>`;
   }).join('');
@@ -3931,14 +4086,19 @@ function dashboardView(){
 
   const queueSection = `
     <div class="dbx-section-head">
-      <h2>Waiting queue</h2>
+      <h2>Token queue</h2>
+      <span class="faint">Next token #${peekNextTokenNumber()}</span>
+    </div>
+    ${tokenBoardHTML()}
+    <div class="dbx-section-head">
+      <h2>Waiting list</h2>
       <button class="link" onclick="go('patients')">View all</button>
     </div>
     <div class="dbx-queue-card">
       ${waitingVisits.length
         ? waitingRows
-        : `<div style="padding:8px 4px;">${emptyState('🪑', 'No one waiting', 'Check in a patient to add them to today’s queue.',
-            `<button class="btn btn-accent btn-sm" onclick="go('newVisit')">+ New visit</button>`)}</div>`}
+        : `<div style="padding:8px 4px;">${emptyState('🪑', 'No one waiting', 'Check in a patient to issue a token and add them to today’s queue.',
+            `<button class="btn btn-accent btn-sm" onclick="go('newVisit')">+ Check in</button>`)}</div>`}
     </div>`;
 
   const tomorrow = tomorrowStr();
@@ -3973,7 +4133,7 @@ function dashboardView(){
     <div class="dbx-panel">
       <div class="dbx-panel-head">
         <h2>Today's visits${shownTodaysVisits.length?` <span class="count">${shownTodaysVisits.length}</span>`:''}</h2>
-        ${isDoctor() ? `<div class="dbx-seg">
+        ${can('clinicalVisit') ? `<div class="dbx-seg">
           <button class="${!state.dashboardMineOnly?'on':''}" onclick="toggleDashboardMineOnly(false)">All doctors</button>
           <button class="${state.dashboardMineOnly?'on':''}" onclick="toggleDashboardMineOnly(true)">My patients</button>
         </div>` : ''}
@@ -4048,7 +4208,7 @@ function patientsView(){
     <div class="page-head">
       <div><h1>Patients</h1><p class="muted">${state.data.patients.length} registered</p></div>
       <div class="row">
-        ${isDoctor() ? `<button class="btn btn-ghost" onclick="go('mergePatients')">🔗 Merge duplicates</button>` : ''}
+        ${can('mergePatients') ? `<button class="btn btn-ghost" onclick="go('mergePatients')">🔗 Merge duplicates</button>` : ''}
         <button class="btn btn-accent" onclick="go('newPatient')">+ New Patient</button>
       </div>
     </div>
@@ -4339,10 +4499,16 @@ function patientView(patientId){
     </div>
     <div class="field"><label>Aadhaar number (optional)</label><input id="ep-aadhaar" type="text" inputmode="numeric" maxlength="12" value="${esc(p.aadhaar||'')}" placeholder="12-digit number — leave blank if not needed">
       <div class="faint" style="margin-top:4px;">Sensitive personal data — shown masked (last 4 digits) outside this edit form.</div></div>
+    ${can('viewClinical') ? `
     <div class="field"><label>Known allergies</label><input id="ep-allergies" value="${esc(p.allergies)}" placeholder="e.g. Penicillin, Sulfa — leave blank if none known"></div>
     <div class="field"><label>Chronic illness / conditions</label><input id="ep-chronic" value="${esc(p.chronicConditions||'')}" placeholder="e.g. Diabetes, Hypertension — leave blank if none known"></div>
     <div class="field"><label>Past surgeries</label><textarea id="ep-surgeries" placeholder="e.g. Appendectomy (2019), C-section (2021) — leave blank if none">${esc(p.pastSurgeries||'')}</textarea></div>
     <div class="field"><label>Family history</label><textarea id="ep-family-history" placeholder="e.g. Father — diabetes; Mother — hypertension — leave blank if none known">${esc(p.familyHistory||'')}</textarea></div>
+    ` : `<p class="faint">Clinical history fields are only editable by authorised clinical staff.</p>
+    <input type="hidden" id="ep-allergies" value="${esc(p.allergies||'')}">
+    <input type="hidden" id="ep-chronic" value="${esc(p.chronicConditions||'')}">
+    <input type="hidden" id="ep-surgeries" value="${esc(p.pastSurgeries||'')}">
+    <input type="hidden" id="ep-family-history" value="${esc(p.familyHistory||'')}">`}
     <div id="ep-error" class="error-text"></div>
     <div class="row"><button class="btn btn-primary" onclick="saveEditPatient('${p.id}')">Save</button><button class="btn btn-ghost" onclick="cancelEditPatient()">Cancel</button></div>
   ` : `
@@ -4434,7 +4600,7 @@ function patientView(patientId){
             `<button class="btn btn-accent btn-sm" onclick="go('newVisit',{patientId:'${p.id}'})">+ New OPD Visit</button>`)}
     </div>
     ${certificateHistoryHTML(p)}
-    ${isDoctor() ? `
+    ${(isOwner()||can('clinicalVisit')) ? `
     <div class="card" style="border-color:var(--danger);">
       <h2 style="color:var(--danger);margin-bottom:6px;">Danger zone</h2>
       <div style="margin-bottom:14px;padding-bottom:14px;border-bottom:1px solid var(--border);">
@@ -4446,7 +4612,7 @@ function patientView(patientId){
     </div>` : ''}`;
 }
 async function deleteVisit(patientId, visitId){
-  if(!isDoctor()) return;
+  if(!can('deleteVisit')) return;
   const p = state.data.patients.find(p=>p.id===patientId);
   const v = p && (p.visits||[]).find(v=>v.id===visitId);
   if(!p || !v) return;
@@ -4458,7 +4624,7 @@ async function deleteVisit(patientId, visitId){
   render();
 }
 async function deletePatient(patientId){
-  if(!isDoctor()) return;
+  if(!isOwner() && !can('clinicalVisit')) return;
   const p = state.data.patients.find(p=>p.id===patientId);
   if(!p) return;
   const typed = prompt(`Move ${p.name} (${p.id}) to the recycle bin for 30 days?\nType the patient ID (${p.id}) to confirm.`);
@@ -4496,7 +4662,7 @@ async function permanentlyDeletePatient(idx){
 // request where the clinic still needs the clinical/financial record.
 // Only this one patient is touched; nothing else on the site is affected.
 async function clearPatientDetails(patientId){
-  if(!isDoctor()) return;
+  if(!isOwner() && !can('clinicalVisit')) return;
   const p = state.data.patients.find(p=>p.id===patientId);
   if(!p) return;
   const originalName = p.name;
@@ -7032,7 +7198,7 @@ function certTypeLabel(type){ return CERT_TYPE_LABELS[type] || type; }
 function certificateHistoryHTML(p){
   const certs = (p.certificates||[]).slice().sort((a,b)=> (b.issuedAt||'').localeCompare(a.issuedAt||''));
   const me = state.session.staffName || '';
-  const canManage = (c) => isDoctor() && (c.doctor === me || c.issuedBy === me || isOwner());
+  const canManage = (c) => can('certificates') && (c.doctor === me || c.issuedBy === me || isOwner());
   const body = certs.length
     ? `<table><thead><tr><th>Date</th><th>Type</th><th>Certificate no.</th><th>Doctor</th><th></th></tr></thead><tbody>
         ${certs.map((c,origIdx)=>{
@@ -7326,7 +7492,7 @@ function editIssuedCertificate(patientId, idx){
   if(!p || !p.certificates || !p.certificates[idx]) return;
   const c = p.certificates[idx];
   const me = state.session.staffName || '';
-  if(!(isDoctor() && (c.doctor===me || c.issuedBy===me || isOwner()))){
+  if(!(can('certificates') && (c.doctor===me || c.issuedBy===me || isOwner()))){
     alert('Only the issuing doctor (or clinic admin) can edit this certificate.');
     return;
   }
@@ -7345,7 +7511,7 @@ async function deleteIssuedCertificate(patientId, idx){
   if(!p || !p.certificates || !p.certificates[idx]) return;
   const c = p.certificates[idx];
   const me = state.session.staffName || '';
-  if(!(isDoctor() && (c.doctor===me || c.issuedBy===me || isOwner()))){
+  if(!(can('certificates') && (c.doctor===me || c.issuedBy===me || isOwner()))){
     alert('Only the issuing doctor (or clinic admin) can delete this certificate.');
     return;
   }
@@ -7375,7 +7541,7 @@ function applyPendingCertFields(){
 
 /* ===================== OPERATIONS: expenses, stock, roster, ANC, recall ===================== */
 function expensesView(){
-  if(!isOwner() && !isDoctor()) return `<p class="muted">Expenses are available to doctors and admin.</p>`;
+  if(!can('expenses')) return accessDeniedHTML('Expenses', 'Expenses are limited by role permissions.');
   const list = (state.data.expenses||[]).slice().sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const month = todayStr().slice(0,7);
   const monthTotal = list.filter(e=>(e.date||'').startsWith(month)).reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
@@ -7863,29 +8029,38 @@ function settingsView(){
     </div>
     <div class="card" style="margin-bottom:18px;max-width:520px;">
       <h2 style="margin-bottom:12px;">Clinic info</h2>
+      ${isOwner() ? `
       <div class="field"><label>Clinic name</label><input id="ci-name" value="${esc(ci.name)}"></div>
+      <div class="field"><label>Short name</label><input id="ci-short" value="${esc(ci.shortName||'')}" placeholder="MMC"></div>
       <div class="field"><label>Address (shown on printouts)</label><input id="ci-address" value="${esc(ci.address)}"></div>
       <div class="field"><label>Phone (shown on printouts)</label><input id="ci-phone" value="${esc(ci.phone)}"></div>
       <button class="btn btn-primary" onclick="saveClinicInfo()">Save</button>
+      ` : `
+      <p class="faint" style="margin-bottom:10px;">Only the clinic admin can change name, address, phone or logo.</p>
+      <div class="field"><label>Clinic name</label><div>${esc(ci.name)||'—'}</div></div>
+      <div class="field"><label>Address</label><div>${esc(ci.address)||'—'}</div></div>
+      <div class="field"><label>Phone</label><div>${esc(ci.phone)||'—'}</div></div>
+      `}
     </div>
 
     <div class="card" style="margin-bottom:18px;max-width:520px;">
       <h2 style="margin-bottom:6px;">Clinic logo</h2>
-      <p class="muted" style="font-size:12.5px;">Shown on the letterhead of every printout — OPD card, prescription, investigation forms and lab reports. A square image works best; keep the file small (under ~300KB) since it's stored with the clinic's data.</p>
-      ${ci.logoDataUrl ? `
-        <div style="margin-bottom:10px;"><img src="${ci.logoDataUrl}" alt="Clinic logo" style="max-width:120px;max-height:120px;border:1px solid var(--border);border-radius:8px;padding:4px;"></div>
-        <button class="btn btn-ghost btn-sm" onclick="removeClinicLogo()">Remove logo</button>
-      ` : `<p class="muted" style="margin-bottom:10px;">No logo uploaded yet — printouts show the clinic name as text only.</p>`}
+      ${ci.logoDataUrl ? `<div style="margin-bottom:10px;"><img src="${ci.logoDataUrl}" alt="Clinic logo" style="max-width:120px;max-height:120px;border:1px solid var(--line);border-radius:8px;padding:4px;"></div>` : `<p class="muted" style="margin-bottom:10px;">No logo uploaded yet — printouts show the clinic name as text only.</p>`}
+      ${isOwner() ? `
+      <p class="muted" style="font-size:12.5px;">Shown on the letterhead of every printout. A square image works best; keep the file small (under ~300KB).</p>
+      ${ci.logoDataUrl ? `<button class="btn btn-ghost btn-sm" onclick="removeClinicLogo()">Remove logo</button>` : ''}
       <div style="margin-top:10px;">
         <input type="file" id="logo-file-input" accept="image/*" style="display:none;" onchange="uploadClinicLogo(this.files[0])">
         <button class="btn btn-sm" onclick="document.getElementById('logo-file-input').click()">${ci.logoDataUrl?'Replace logo':'Upload logo'}</button>
       </div>
       <p id="logo-upload-msg" class="faint" style="margin-top:6px;"></p>
+      ` : `<p class="faint">Logo can be changed only by the clinic admin.</p>`}
     </div>
 
     ${isOwner() ? `
     <div class="card" style="margin-bottom:18px;max-width:520px;">
       <h2 style="margin-bottom:6px;">Backup &amp; export</h2>
+      ${(()=>{ const lb=state.data.lastBackupAt; if(!lb) return '<div class="banner" style="background:var(--accent-tint);color:var(--accent-dark);margin-bottom:10px;"><strong>No full backup yet.</strong> Download one and store it safely.</div>'; const days=Math.floor((Date.now()-new Date(lb).getTime())/86400000); if(days>=7) return '<div class="banner" style="background:var(--accent-tint);color:var(--accent-dark);margin-bottom:10px;">Last backup <strong>'+days+' days ago</strong> ('+fmtDate(lb.slice(0,10))+'). Consider downloading a fresh copy.</div>'; return '<p class="faint" style="margin-bottom:8px;">Last backup: '+fmtDate(lb.slice(0,10))+' · '+days+' day(s) ago</p>'; })()}
       <p class="muted" style="font-size:12.5px;">Downloads every patient, visit, and staff record as a single JSON file — keep a copy somewhere safe periodically, especially before any database change. Contains PHI (Aadhaar, diagnoses, contact details) — admin-only.</p>
       <div class="row" style="gap:8px;flex-wrap:wrap;margin-bottom:8px;">
         <button class="btn btn-sm" onclick="downloadBackup()">⬇ Full backup (JSON)</button>

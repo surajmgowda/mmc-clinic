@@ -560,6 +560,30 @@ app.put('/api/data', requireSession, async (req, res) => {
     if (current.version !== version) {
       return res.status(409).json({ data: current.data, version: current.version });
     }
+    // Non-admin cannot change clinic identity or role permission matrix
+    const isOwner = !!(req.staffSession && req.staffSession.owner);
+    if (!isOwner && current.data) {
+      if (current.data.clinicInfo) data.clinicInfo = current.data.clinicInfo;
+      if (current.data.rolePerms) data.rolePerms = current.data.rolePerms;
+      // Preserve other staff credential hashes if client strips them incorrectly
+      if (Array.isArray(current.data.staff) && Array.isArray(data.staff)) {
+        const byName = Object.fromEntries(current.data.staff.map(s => [s.name, s]));
+        data.staff = data.staff.map(s => {
+          const prev = byName[s.name];
+          if (!prev) return s;
+          return {
+            ...prev,
+            ...s,
+            pin: prev.pin,
+            password: prev.password,
+            recoveryHash: prev.recoveryHash,
+            totpSecret: prev.totpSecret,
+            totpEnabled: prev.totpEnabled,
+            owner: prev.owner
+          };
+        });
+      }
+    }
     const newVersion = current.version + 1;
     await pool.query(
       'UPDATE clinic_store SET data = $1, version = $2, updated_at = now() WHERE id = 1',
