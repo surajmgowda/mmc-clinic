@@ -872,6 +872,30 @@
   .token-actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;}
   .dbx-qtoken-lg{font-family:'Source Serif 4',serif;font-weight:700;font-size:18px;color:var(--primary-dark);min-width:36px;text-align:center;}
 
+
+  .consult-sticky-serve{
+    position:sticky;top:0;z-index:30;background:linear-gradient(90deg,#132038,#1B4F6E);
+    color:#fff;padding:10px 14px;border-radius:10px;margin-bottom:14px;
+    display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
+    box-shadow:0 4px 14px rgba(19,32,56,0.25);
+  }
+  .consult-sticky-serve .css-token{font-family:'Source Serif 4',serif;font-size:22px;font-weight:700;}
+  .consult-sticky-serve .css-name{font-size:14px;opacity:0.95;}
+  .rx-interact-warn{background:#FBF4E0;color:#8A5A0A;border:1px solid rgba(166,122,12,0.25);
+    padding:6px 10px;border-radius:8px;font-size:12.5px;margin:6px 0 0;}
+  .attach-grid{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;}
+  .attach-thumb{width:88px;height:88px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer;}
+  .token-display-page{min-height:100vh;background:#0B1526;color:#fff;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;padding:24px;text-align:center;}
+  .token-display-page .td-clinic{font-size:18px;opacity:0.7;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:12px;}
+  .token-display-page .td-label{font-size:20px;opacity:0.8;margin-bottom:8px;}
+  .token-display-page .td-num{font-family:'Source Serif 4',serif;font-size:120px;font-weight:700;line-height:1;color:#E8B923;}
+  .token-display-page .td-name{font-size:28px;margin-top:12px;}
+  .token-display-page .td-next{margin-top:28px;font-size:18px;opacity:0.85;}
+  .token-display-page .td-list{margin-top:24px;font-size:15px;opacity:0.65;max-width:480px;}
+  .long-wait{color:var(--danger);font-weight:600;}
+  .missed-row{border-left:3px solid var(--accent);}
+
   .token-slip{display:none;}
   @media print{
     body.printing-token *{visibility:hidden !important;}
@@ -2818,7 +2842,8 @@ function initDraftVisit(patientId, existingVisit){
       followUpDate: existingVisit.followUpDate||'',
       assignedDoctor: existingVisit.assignedDoctor||'',
       referredTo: existingVisit.referredTo||'', referralReason: existingVisit.referralReason||'',
-      prescriptions: (existingVisit.prescriptions && existingVisit.prescriptions.length)
+      attachments: (existingVisit.attachments||[]).map(a=>({...a})),
+        prescriptions: (existingVisit.prescriptions && existingVisit.prescriptions.length)
         ? existingVisit.prescriptions.map(r=>({...r})) : [{medicine:'',dosage:'',frequency:'',duration:'',instructions:''}],
       investigations: (existingVisit.investigations && existingVisit.investigations.length)
         ? existingVisit.investigations.map(r=>({...r})) : [{test:'',notes:''}]
@@ -2832,6 +2857,7 @@ function initDraftVisit(patientId, existingVisit){
       vitals: {bp:'',pulse:'',temp:'',weight:'',height:''},
       complaints:'', examination:'', diagnosis:'', notes:'', followUpDate:'', assignedDoctor:'',
       referredTo:'', referralReason:'',
+      attachments: [],
       prescriptions: [{medicine:'',dosage:'',frequency:'',duration:'',instructions:''}],
       investigations: []
     };
@@ -3156,6 +3182,18 @@ async function saveVisit(){
     const list = rxAllergyConflicts.map(c=>`${c.medicine} (matches listed allergy "${c.hit}")`).join('; ');
     if(!confirm(`⚠ This prescription includes: ${list}.\n\nSave anyway?`)) return;
   }
+  const rxInter = findDrugInteractions(dv.prescriptions||[]);
+  if(rxInter.length){
+    const list = rxInter.map(h=>`${h.group}: ${h.meds.join(' + ')}`).join('; ');
+    if(!confirm(`⚠ Possible drug overlap — ${list}.\n\nSave anyway?`)) return;
+  }
+  // Pediatric visits: weight is mandatory for dosing safety
+  if(document.getElementById('v-doctor') !== null && dv.patientId){
+    const ep = state.data.patients.find(x=>x.id===dv.patientId);
+    if(ep && isPediatricPatient(ep) && !dv.vitals.weight){
+      errEl.textContent = 'Weight is required for pediatric visits (dose safety).'; return;
+    }
+  }
   // Duplicate same-day visit warning (new visits only)
   if(!dv.editVisitId && dv.patientId){
     const ep = state.data.patients.find(x=>x.id===dv.patientId);
@@ -3200,7 +3238,14 @@ async function saveVisit(){
     visit.prescriptions = prescriptions;
     visit.investigations = investigations;
     visit.status = status;
+    if(dv.attachments) visit.attachments = dv.attachments;
   } else {
+    const feeEl = document.getElementById('v-checkin-fee');
+    const paidEl = document.getElementById('v-checkin-paid');
+    const modeEl = document.getElementById('v-checkin-mode');
+    const billFee = feeEl ? feeEl.value.trim() : '';
+    const billPaid = paidEl ? paidEl.value === 'true' : false;
+    const billMode = modeEl ? modeEl.value : '';
     visit = {
       id: newVisitId(), token: nextTokenNumber(), date: todayStr(), time: nowTimeStr(),
       doctorName: dv.doctorName, vitals: dv.vitals,
@@ -3209,7 +3254,8 @@ async function saveVisit(){
       referredTo: dv.referredTo||'', referralReason: dv.referralReason||'',
       prescriptions, investigations, status,
       tokenStatus: status==='completed' ? 'done' : 'waiting',
-      billing: { fee:'', charges:[], paid:false, mode:'' }
+      attachments: dv.attachments || [],
+      billing: { fee: billFee, charges:[], paid: billPaid, mode: billMode }
     };
     patient.visits.unshift(visit);
   }
@@ -3222,10 +3268,11 @@ async function saveVisit(){
   const ok = await saveData();
   if(!ok){ errEl.textContent = state.saveError; render(); return; }
   clearVisitDraftStorage();
+  const wantNext = !!state.pendingPrintAndNext;
+  state.pendingPrintAndNext = false;
   if(can('clinicalVisit') && (status==='completed' || wasExisting)){
-    go('visitPrint', {patientId: patient.id, visitId: visit.id});
+    go('visitPrint', {patientId: patient.id, visitId: visit.id, printAndNext: wantNext});
   } else {
-    // Reception check-in: offer token print then dashboard queue
     if(visit.token!=null && !wasExisting){
       setTimeout(()=>printTokenSlip(patient.id, visit.id), 300);
     }
@@ -3239,6 +3286,14 @@ function printCertificateWithConsent(){
   if(el && !el.checked){ alert('Confirm that the patient (or guardian) requested this certificate before printing.'); return; }
   printSection('sheet-cert');
 }
+
+async function printOpdAndOpenNext(patientId, visitId){
+  printSection('sheet-opd');
+  setTimeout(async ()=>{
+    await openNextConsult();
+  }, 600);
+}
+
 function printSection(id){
   if(id==='sheet-opd' || id==='sheet-rx-only'){
     const m = location.hash; // unused
@@ -3274,6 +3329,8 @@ async function saveClinicInfo(){
   if(shortEl) state.data.clinicInfo.shortName = shortEl.value.trim();
   state.data.clinicInfo.address = addrEl ? addrEl.value.trim() : state.data.clinicInfo.address;
   state.data.clinicInfo.phone = phoneEl ? phoneEl.value.trim() : state.data.clinicInfo.phone;
+  const nsEl = document.getElementById('ci-noshow');
+  if(nsEl) state.data.clinicInfo.noShowMinutes = parseInt(nsEl.value,10) || 45;
   logAudit('Updated clinic info', state.data.clinicInfo.name);
   await saveData();
   render();
@@ -3924,6 +3981,9 @@ function routeContent(){
     case 'roster': return rosterView();
     case 'recall': return recallView();
     case 'anc': return ancView();
+    case 'tokenDisplay': return tokenDisplayView();
+    case 'dailyClose': return `<div class="page-head"><h1>Daily close</h1></div>${dailyCloseHTML()}`;
+    case 'dueList': return `<div class="page-head"><h1>Tomorrow due list</h1></div>${dueListPrintHTML()}`;
     default: return dashboardView();
   }
 }
@@ -3965,7 +4025,7 @@ function dashboardView(){
 
   const waitingRows = waitingVisits.slice(0, 20).map(({patient,visit})=>{
     const mins = waitingMins(visit);
-    const waitLabel = mins!=null ? `waiting ${mins} min` : (visit.time || '');
+    const waitLabel = mins!=null ? ((mins>=noShowMinutes()?'Long wait ':'')+`waiting ${mins} min`) : (visit.time || '');
     const lastDx = showClinical ? ((patient.visits||[]).filter(x=>x.id!==visit.id && x.diagnosis).sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0]||{}).diagnosis : '';
     const click = can('clinicalVisit')
       ? `startTokenConsult('${patient.id}','${visit.id}')`
@@ -4109,6 +4169,23 @@ function dashboardView(){
       <span class="faint">Next token #${peekNextTokenNumber()}</span>
     </div>
     ${tokenBoardHTML()}
+    ${(()=>{
+      const missed = missedTokenEntries();
+      if(!missed.length) return '';
+      return `<div class="dbx-panel" style="margin-bottom:12px;"><div class="dbx-panel-head"><h2>Missed / long-called${` <span class="count">${missed.length}</span>`}</h2></div>
+        ${missed.map(({patient,visit})=>`
+          <div class="dbx-qrow missed-row">
+            <div class="dbx-qtoken-lg">#${visit.token!=null?visit.token:''}</div>
+            <div class="dbx-qtext"><div class="dbx-qname">${esc(patient.name)}</div>
+              <div class="dbx-qsub">${tokenQueueStatus(visit)==='no_show'?'No-show':'Called, not seen'}</div></div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              ${can('clinicalVisit')?`<button class="dbx-qbtn" onclick="startTokenConsult('${patient.id}','${visit.id}')">Open</button>`:''}
+              <button class="dbx-qbtn ghost" onclick="reclaimMissedToken('${patient.id}','${visit.id}')">Back to queue</button>
+              <button class="dbx-qbtn ghost" onclick="markNoShow('${patient.id}','${visit.id}')">No-show</button>
+            </div>
+          </div>`).join('')}
+      </div>`;
+    })()}
     <div class="dbx-section-head">
       <h2>Waiting list</h2>
       <button class="link" onclick="go('patients')">View all</button>
@@ -4488,6 +4565,16 @@ function referralLetterHTML(p, v, ci){
         <div>${doctorQualLine(v.doctorName)}</div>
         <div class="faint" style="margin-top:24px;">Signature</div>
       </div>
+    </div>
+    <div class="print-sheet" id="sheet-referral-slim" style="max-width:420px;">
+      <div class="letterhead">${logoImgHTML(ci)}<div class="clinic-name">${esc(ci.name)}</div></div>
+      <div class="sheet-title">REFERRAL</div>
+      <p><strong>${esc(p.name)}</strong> · ${esc(p.id)} · ${esc(displayAge(p))}${p.sex?'/'+esc(p.sex):''}</p>
+      <p>${esc(p.phone)||''}${p.address?' · '+esc(p.address):''}</p>
+      <p>To: <strong>${esc(v.referredTo)}</strong></p>
+      ${v.diagnosis?`<p>Dx: <strong>${esc(v.diagnosis)}</strong></p>`:''}
+      ${v.referralReason?`<p>${esc(v.referralReason)}</p>`:''}
+      <p class="faint">${fmtDate(v.date)} · ${esc(v.doctorName)||''}</p>
     </div>`;
 }
 
@@ -4817,7 +4904,38 @@ function rxAllergyWarningHTML(medicineName){
 function updateRxAllergyWarning(i){
   const el = document.getElementById('rx-allergy-'+i);
   if(el) el.innerHTML = rxAllergyWarningHTML(state.draftVisit.prescriptions[i].medicine);
+  updateRxInteractionWarnings();
 }
+const DRUG_INTERACTION_GROUPS = [
+  {name:'NSAIDs', members:['ibuprofen','diclofenac','naproxen','aceclofenac','mefenamic','aspirin','nimesulide','ketorolac']},
+  {name:'ACE inhibitors + potassium', members:['enalapril','ramipril','lisinopril','telmisartan','losartan','olmesartan','spironolactone']},
+  {name:'Sedating antihistamines + other sedatives', members:['cetirizine','hydroxyzine','promethazine','diphenhydramine','clonazepam','alprazolam','diazepam']}
+];
+function medToken(name){ return (name||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
+function findDrugInteractions(prescriptions){
+  const names = (prescriptions||[]).map(r=>r.medicine).filter(Boolean);
+  if(names.length < 2) return [];
+  const hits = [];
+  DRUG_INTERACTION_GROUPS.forEach(g=>{
+    const matched = names.filter(n => g.members.some(m => medToken(n).includes(m)));
+    if(matched.length >= 2) hits.push({group:g.name, meds:matched});
+  });
+  return hits;
+}
+function updateRxInteractionWarnings(){
+  const box = document.getElementById('rx-interaction-box');
+  if(!box || !state.draftVisit) return;
+  const hits = findDrugInteractions(state.draftVisit.prescriptions);
+  if(!hits.length){ box.innerHTML = ''; return; }
+  box.innerHTML = hits.map(h =>
+    `<div class="rx-interact-warn">⚠ Possible overlap (${esc(h.group)}): ${h.meds.map(esc).join(' + ')}. Review before saving.</div>`
+  ).join('');
+}
+function noShowMinutes(){
+  const n = parseInt((state.data.clinicInfo && state.data.clinicInfo.noShowMinutes) || '45', 10);
+  return isNaN(n) ? 45 : Math.max(10, n);
+}
+
 function rxRowsHTML(){
   const pedPatient = state.draftVisit && state.draftVisit.patientId
     ? state.data.patients.find(p=>p.id===state.draftVisit.patientId) : null;
@@ -6002,6 +6120,192 @@ async function saveVisitDemographics(patientId){
   render();
 }
 
+
+function consultStickyServeHTML(){
+  if(!can('clinicalVisit')) return '';
+  const now = nowServingEntry();
+  if(!now) return '';
+  const isThis = state.draftVisit && state.draftVisit.editingVisitId === now.visit.id;
+  return `<div class="consult-sticky-serve">
+    <div>
+      <div class="css-token">Token #${now.visit.token!=null?now.visit.token:'—'}</div>
+      <div class="css-name">${esc(now.patient.name)} · ${tokenQueueStatus(now.visit)==='with_doctor'?'With doctor':tokenQueueStatus(now.visit)==='called'?'Called':'Waiting'}</div>
+    </div>
+    <div class="row" style="gap:8px;">
+      ${!isThis?`<button class="btn btn-accent btn-sm" onclick="startTokenConsult('${now.patient.id}','${now.visit.id}')">Open this consult</button>`:''}
+      <button class="btn btn-sm" style="background:rgba(255,255,255,0.15);color:#fff;border:none;" onclick="go('tokenDisplay')">TV display</button>
+    </div>
+  </div>`;
+}
+function visitAttachmentsHTML(dv){
+  const list = (dv.attachments||[]);
+  return `
+    <input type="file" id="visit-attach-input" accept="image/*,.pdf" style="display:none;" onchange="addVisitAttachment(this.files[0])">
+    <button class="btn btn-sm" onclick="document.getElementById('visit-attach-input').click()">+ Attach photo / scan</button>
+    <div class="attach-grid">
+      ${list.map((a,i)=> a.dataUrl && a.dataUrl.startsWith('data:image')
+        ? `<div><img class="attach-thumb" src="${a.dataUrl}" alt="${esc(a.name||'')}" onclick="window.open(this.src)"><div class="faint" style="font-size:11px;">${esc(a.name||'file')}</div>
+           <button class="btn btn-ghost btn-sm" onclick="removeVisitAttachment(${i})">Remove</button></div>`
+        : `<div class="card" style="padding:8px;"><div class="faint">${esc(a.name||'file')}</div>
+           <button class="btn btn-ghost btn-sm" onclick="removeVisitAttachment(${i})">Remove</button></div>`
+      ).join('')}
+    </div>`;
+}
+function addVisitAttachment(file){
+  if(!file || !state.draftVisit) return;
+  if(file.size > 800*1024){ alert('Keep attachments under 800KB so clinic data stays manageable.'); return; }
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    if(!state.draftVisit.attachments) state.draftVisit.attachments = [];
+    state.draftVisit.attachments.push({name:file.name, dataUrl:reader.result, at:new Date().toISOString()});
+    render();
+  };
+  reader.readAsDataURL(file);
+}
+function removeVisitAttachment(i){
+  if(!state.draftVisit || !state.draftVisit.attachments) return;
+  state.draftVisit.attachments.splice(i,1);
+  render();
+}
+async function saveVisitAndNext(){
+  state.pendingPrintAndNext = true;
+  await saveVisit();
+}
+async function markNoShow(patientId, visitId){
+  const p = state.data.patients.find(x=>x.id===patientId);
+  const v = p && (p.visits||[]).find(x=>x.id===visitId);
+  if(!v) return;
+  v.tokenStatus = 'no_show';
+  logAudit('Marked no-show', `#${v.token} — ${p.name}`);
+  await saveData();
+  render();
+}
+async function reclaimMissedToken(patientId, visitId){
+  const p = state.data.patients.find(x=>x.id===patientId);
+  const v = p && (p.visits||[]).find(x=>x.id===visitId);
+  if(!v) return;
+  v.tokenStatus = 'waiting';
+  v.calledAt = '';
+  await saveData();
+  render();
+}
+function missedTokenEntries(){
+  const minsLimit = noShowMinutes();
+  return todayVisitsWithTokens().filter(({visit:v})=>{
+    const st = tokenQueueStatus(v);
+    if(st==='no_show') return true;
+    if(st!=='called') return false;
+    if(!v.calledAt) return false;
+    const age = (Date.now() - new Date(v.calledAt).getTime())/60000;
+    return age >= minsLimit;
+  });
+}
+function tokenDisplayView(){
+  const now = nowServingEntry();
+  const next = nextWaitingEntry();
+  const waiting = waitingTokenQueue().filter(({visit:v})=>tokenQueueStatus(v)==='waiting').slice(0,8);
+  // Auto-refresh while this screen is open
+  setTimeout(()=>{ if(state.route==='tokenDisplay') render(); }, 8000);
+  return `
+    <div class="token-display-page">
+      <div class="td-clinic">${esc((state.data.clinicInfo||{}).name||'Clinic')}</div>
+      <div class="td-label">Now serving</div>
+      <div class="td-num">${now && now.visit.token!=null ? '#'+now.visit.token : '—'}</div>
+      <div class="td-name">${now ? esc(now.patient.name) : ''}</div>
+      <div class="td-next">Up next: ${next && next.visit.token!=null ? '#'+next.visit.token+' · '+esc(next.patient.name) : '—'}</div>
+      <div class="td-list">${waiting.length ? 'Waiting: '+waiting.map(x=>'#'+x.visit.token).join(' · ') : 'Queue empty'}</div>
+      <button class="btn btn-ghost" style="margin-top:28px;color:#fff;border-color:rgba(255,255,255,0.3);" onclick="go('dashboard')">Exit display</button>
+    </div>`;
+}
+function dailyCloseHTML(){
+  const today = todayStr();
+  let visits=0, completed=0, waiting=0, tokens=0, revenue=0, collected=0, outstanding=0;
+  const byStaff = {};
+  (state.data.patients||[]).forEach(p=>{
+    (p.visits||[]).forEach(v=>{
+      if(v.date!==today) return;
+      visits++;
+      if(v.token!=null) tokens++;
+      if(visitStatus(v)==='completed') completed++;
+      else waiting++;
+      const doc = v.doctorName || v.assignedDoctor || '(unassigned)';
+      byStaff[doc] = byStaff[doc] || {completed:0, waiting:0};
+      if(visitStatus(v)==='completed') byStaff[doc].completed++; else byStaff[doc].waiting++;
+      if(v.billing){
+        const total = typeof billingTotal==='function' ? billingTotal(v.billing) : (parseFloat(v.billing.fee)||0);
+        revenue += total;
+        if(v.billing.paid) collected += total; else outstanding += total;
+      }
+    });
+  });
+  const fmt = n => '₹'+(Math.round(n*100)/100).toLocaleString('en-IN');
+  const staffRows = Object.keys(byStaff).map(k=>`<tr><td>${esc(k)}</td><td>${byStaff[k].completed}</td><td>${byStaff[k].waiting}</td></tr>`).join('') || '<tr><td colspan="3" class="faint">No visits today</td></tr>';
+  return `
+    <div class="print-sheet" id="sheet-daily-close" style="max-width:640px;">
+      <div class="letterhead">${logoImgHTML(state.data.clinicInfo||{})}<div class="clinic-name">${esc((state.data.clinicInfo||{}).name||'')}</div></div>
+      <div class="sheet-title">Daily close — ${fmtDate(today)}</div>
+      <table><thead><tr><th>Metric</th><th>Value</th></tr></thead>
+      <tbody>
+        <tr><td>Tokens issued</td><td>${tokens}</td></tr>
+        <tr><td>Total visits</td><td>${visits}</td></tr>
+        <tr><td>Completed</td><td>${completed}</td></tr>
+        <tr><td>Still waiting</td><td>${waiting}</td></tr>
+        <tr><td>Revenue</td><td>${fmt(revenue)}</td></tr>
+        <tr><td>Collected</td><td>${fmt(collected)}</td></tr>
+        <tr><td>Outstanding</td><td>${fmt(outstanding)}</td></tr>
+      </tbody></table>
+      <h3 style="margin:16px 0 8px;">By doctor</h3>
+      <table><thead><tr><th>Doctor</th><th>Completed</th><th>Open</th></tr></thead><tbody>${staffRows}</tbody></table>
+    </div>
+    <button class="btn btn-primary" onclick="printSection('sheet-daily-close')">Print daily close</button>`;
+}
+function staffActivityTodayHTML(){
+  const today = todayStr();
+  const entries = (state.data.auditLog||[]).filter(e => (e.ts||'').slice(0,10)===today || (e.ts&&new Date(e.ts).toISOString().slice(0,10)===today));
+  const by = {};
+  entries.forEach(e=>{
+    const s = e.staff||'(unknown)';
+    by[s] = by[s]||{n:0, actions:[]};
+    by[s].n++;
+    if(by[s].actions.length<6) by[s].actions.push(e.action);
+  });
+  const rows = Object.keys(by).sort((a,b)=>by[b].n-by[a].n).map(s=>
+    `<tr><td>${esc(s)}</td><td>${by[s].n}</td><td class="faint">${esc(by[s].actions.join(', '))}</td></tr>`
+  ).join('') || '<tr><td colspan="3" class="faint">No activity logged today</td></tr>';
+  return `<table><thead><tr><th>Staff</th><th>Actions</th><th>Sample</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function dueListPrintHTML(){
+  const tomorrow = (()=>{ const d=new Date(); d.setDate(d.getDate()+1); return d.toISOString().slice(0,10); })();
+  const follow = [];
+  (state.data.patients||[]).forEach(p=>{
+    (p.visits||[]).forEach(v=>{
+      if(v.followUpDate===tomorrow) follow.push({p,v,kind:'Follow-up'});
+    });
+  });
+  const vax = [];
+  if(typeof pediatricPatients==='function'){
+    pediatricPatients().forEach(p=>{
+      if(typeof vaccinationDueSummary!=='function') return;
+      const due = vaccinationDueSummary(p);
+      if(due.overdue||due.due) vax.push({p, due});
+    });
+  }
+  const fRows = follow.map(x=>`<tr><td>${esc(x.p.name)}</td><td>${esc(x.p.phone)||'—'}</td><td>${esc(x.v.diagnosis)||'—'}</td><td>Follow-up</td></tr>`).join('');
+  const vRows = vax.slice(0,30).map(x=>`<tr><td>${esc(x.p.name)}</td><td>${esc(x.p.phone)||'—'}</td><td>${x.due.overdue||0} overdue / ${x.due.due||0} due</td><td>Vaccine</td></tr>`).join('');
+  return `
+    <div class="print-sheet" id="sheet-due-list" style="max-width:680px;">
+      <div class="letterhead">${logoImgHTML(state.data.clinicInfo||{})}<div class="clinic-name">${esc((state.data.clinicInfo||{}).name||'')}</div></div>
+      <div class="sheet-title">Due list — ${fmtDate(tomorrow)}</div>
+      <h3>Follow-ups</h3>
+      <table><thead><tr><th>Patient</th><th>Phone</th><th>Last Dx</th><th>Type</th></tr></thead>
+      <tbody>${fRows||'<tr><td colspan="4" class="faint">None</td></tr>'}</tbody></table>
+      <h3 style="margin-top:16px;">Vaccines due / overdue</h3>
+      <table><thead><tr><th>Patient</th><th>Phone</th><th>Status</th><th>Type</th></tr></thead>
+      <tbody>${vRows||'<tr><td colspan="4" class="faint">None</td></tr>'}</tbody></table>
+    </div>
+    <button class="btn btn-primary" onclick="printSection('sheet-due-list')">Print due list</button>`;
+}
+
 function newVisitView(){
   const dv = state.draftVisit;
   let patientBlock;
@@ -6053,6 +6357,23 @@ function newVisitView(){
           <select id="v-assigned-doctor"><option value="">No preference — any doctor</option>
             ${doctors.map(d=>`<option>${esc(d.name)}</option>`).join('')}
           </select></div>` : ''}
+        <div class="row">
+          <div class="field"><label>Consultation fee (₹)</label><input id="v-checkin-fee" type="number" step="0.01" min="0" placeholder="optional"></div>
+          <div class="field"><label>Payment</label>
+            <select id="v-checkin-paid">
+              <option value="false">Unpaid</option>
+              <option value="true">Paid now</option>
+            </select>
+          </div>
+          <div class="field"><label>Mode</label>
+            <select id="v-checkin-mode">
+              <option value="">—</option>
+              <option>Cash</option>
+              <option>UPI</option>
+              <option>Card</option>
+            </select>
+          </div>
+        </div>
         <div id="visit-error" class="error-text"></div>
         <div class="row">
           <button class="btn btn-primary" onclick="saveVisit()">Check in</button>
@@ -6133,7 +6454,7 @@ function newVisitView(){
           <button class="btn btn-sm btn-accent" onclick="addRxRow()">+ Add medicine</button>
         </div>
       </div>
-      <div id="rx-rows">${rxRowsHTML()}</div>
+      <div id="rx-interaction-box"></div><div id="rx-rows">${rxRowsHTML()}</div>
     </div>
     <div class="visit-section">
       <div class="visit-section-title">5 · Investigations</div>
@@ -6141,8 +6462,15 @@ function newVisitView(){
       <div id="inv-rows">${invRowsHTML()}</div>
     </div>
     <div id="visit-error" class="error-text"></div>
+    ${consultStickyServeHTML()}
+    <div class="visit-section">
+      <div class="visit-section-title">6 · Attachments</div>
+      <p class="faint" style="margin-bottom:8px;">Photos or scanned reports for this visit (stored with clinic data — keep files small).</p>
+      ${visitAttachmentsHTML(dv)}
+    </div>
     <div class="visit-sticky-bar">
       <button class="btn btn-primary" onclick="saveVisit()">Save visit</button>
+      <button class="btn btn-accent" onclick="saveVisitAndNext()">Save, print &amp; next</button>
       ${cancelBtn}
       ${draftIndicatorHTML()}
     </div>`;
@@ -6194,6 +6522,11 @@ function insertDiagnosisChip(el){
 }
 
 function visitPrintView(patientId, visitId){
+  if(state.routeParams && state.routeParams.printAndNext){
+    setTimeout(()=>{ printSection('sheet-opd'); }, 400);
+    setTimeout(()=>{ state.routeParams.printAndNext = false; openNextConsult(); }, 1200);
+  }
+
   const p = state.data.patients.find(p=>p.id===patientId);
   if(!p) return `<p class="error-text">Patient not found.</p>`;
   const v = (p.visits||[]).find(v=>v.id===visitId);
@@ -6376,14 +6709,17 @@ function visitPrintView(patientId, visitId){
     </div>
     <div class="row" style="margin-bottom:18px;flex-wrap:wrap;gap:8px;">
       <button class="btn btn-primary" onclick="printSection('sheet-opd')">Print OPD card${v.prescriptions.length?' + prescription':''}</button>
+      ${can('clinicalVisit')?`<button class="btn btn-accent" onclick="printOpdAndOpenNext('${p.id}','${v.id}')">Print OPD &amp; next patient</button>`:''}
       ${v.prescriptions.length?`<button class="btn" onclick="printSection('sheet-rx-only')">Print prescription only</button>`:''}
       ${v.investigations.length?`<button class="btn" onclick="printSection('sheet-inv')">Print investigation form</button>`:''}
       ${invResultsSheet?`<button class="btn" onclick="printSection('sheet-inv-results')">Print lab report</button>`:''}
       ${v.referredTo?`<button class="btn" onclick="printSection('sheet-referral')">Print referral letter</button>`:''}
+      ${v.referredTo?`<button class="btn" onclick="printSection('sheet-referral-slim')">Print slim referral</button>`:''}
       <button class="btn" onclick="state.certPatientId='${p.id}';state.certType='sick';go('certificates')">Medical certificate</button>
       <button class="btn btn-ghost" onclick="go('newVisit',{patientId:'${p.id}',editVisitId:'${v.id}'})">Edit this visit</button>
     </div>
     ${resultsCard}
+    ${(v.attachments&&v.attachments.length)?`<div class="card" style="margin-bottom:16px;max-width:720px;"><h2>Attachments</h2><div class="attach-grid">${v.attachments.map(a=>a.dataUrl&&a.dataUrl.startsWith('data:image')?`<img class="attach-thumb" src="${a.dataUrl}" onclick="window.open(this.src)">`:`<span class="pill">${esc(a.name||'file')}</span>`).join('')}</div></div>`:''}
     ${opdSheet}
     ${rxOnlySheet}
     ${invSheet}
@@ -7943,6 +8279,18 @@ async function remindAllVaccineDue(){
 }
 
 function reportsView(){
+  const extraAdmin = `
+    <div class="card" style="margin-bottom:16px;">
+      <h2 style="margin-bottom:8px;">Daily tools</h2>
+      <div class="row" style="gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-sm" onclick="go('dailyClose')">Daily close sheet</button>
+        <button class="btn btn-sm" onclick="go('dueList')">Tomorrow due list</button>
+        <button class="btn btn-sm" onclick="go('tokenDisplay')">Token TV display</button>
+      </div>
+      <h3 style="margin:16px 0 8px;">Staff activity today</h3>
+      ${staffActivityTodayHTML()}
+    </div>`;
+
   state.reportRange = state.reportRange || 'month';
   const range = reportDateRange(state.reportRange);
   const stats = computeReportStats(range.from, range.to);
@@ -7971,7 +8319,8 @@ function reportsView(){
       ${doctorRows ? `<table><thead><tr><th>Doctor</th><th>Visits</th><th>Revenue</th></tr></thead><tbody>${doctorRows}</tbody></table>` : '<p>No visits in this period.</p>'}
       <p class="faint" style="margin-top:16px;">Generated ${fmtDate(todayStr())}</p>
     </div>`;
-  return `
+  return `${extraAdmin}
+
     <div class="page-head">
       <h1>Reports</h1>
       <div class="row">
@@ -8146,6 +8495,7 @@ function settingsView(){
       <div class="field"><label>Short name</label><input id="ci-short" value="${esc(ci.shortName||'')}" placeholder="MMC"></div>
       <div class="field"><label>Address (shown on printouts)</label><input id="ci-address" value="${esc(ci.address)}"></div>
       <div class="field"><label>Phone (shown on printouts)</label><input id="ci-phone" value="${esc(ci.phone)}"></div>
+      <div class="field"><label>Mark long wait / missed after (minutes)</label><input id="ci-noshow" type="number" min="10" max="180" value="${esc(ci.noShowMinutes||45)}"></div>
       <button class="btn btn-primary" onclick="saveClinicInfo()">Save</button>
       ` : `
       <p class="faint" style="margin-bottom:10px;">Only the clinic admin can change name, address, phone or logo.</p>
