@@ -14,35 +14,35 @@
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root{
-    /* Premium clinical theme — deep slate navy + soft teal + warm amber */
-    --bg:#F5F7FA;
+    /* Refined clinical theme — deep navy, soft teal, warm amber */
+    --bg:#F3F6F9;
     --surface:#FFFFFF;
-    --ink:#1C2333;
-    --ink-soft:#5B6577;
-    --ink-faint:#8B95A5;
-    --primary:#1E4E6B;
-    --primary-dark:#1A2744;
-    --primary-mid:#2A6B8A;
-    --primary-tint:#E8F1F6;
-    --primary-tint-strong:#D0E4EE;
-    --accent:#D4A017;
-    --accent-dark:#B8860B;
-    --accent-tint:#FBF3DC;
-    --teal:#2A9D8F;
-    --teal-tint:#E6F6F4;
-    --line:#E2E7EE;
-    --line-strong:#C8D0DC;
-    --danger:#C44536;
-    --danger-tint:#F9EBE9;
-    --radius:10px;
-    --radius-sm:7px;
-    --radius-lg:14px;
-    --sidebar-w:244px;
-    --shadow-xs:0 1px 2px rgba(26,39,68,0.04);
-    --shadow-sm:0 1px 3px rgba(26,39,68,0.06), 0 1px 2px rgba(26,39,68,0.04);
-    --shadow-md:0 4px 14px rgba(26,39,68,0.08), 0 1px 3px rgba(26,39,68,0.04);
-    --shadow-lg:0 14px 36px rgba(26,39,68,0.12), 0 4px 10px rgba(26,39,68,0.05);
-    --transition:160ms ease;
+    --ink:#152033;
+    --ink-soft:#5A6578;
+    --ink-faint:#8A94A6;
+    --primary:#1B4F6E;
+    --primary-dark:#132038;
+    --primary-mid:#2A6F8F;
+    --primary-tint:#E7F2F7;
+    --primary-tint-strong:#D0E6F0;
+    --accent:#C99412;
+    --accent-dark:#A67A0C;
+    --accent-tint:#FBF4E0;
+    --teal:#249688;
+    --teal-tint:#E5F5F3;
+    --line:#E1E7EF;
+    --line-strong:#C5CEDA;
+    --danger:#C03D32;
+    --danger-tint:#F8EBE9;
+    --radius:11px;
+    --radius-sm:8px;
+    --radius-lg:16px;
+    --sidebar-w:252px;
+    --shadow-xs:0 1px 2px rgba(19,32,56,0.04);
+    --shadow-sm:0 1px 3px rgba(19,32,56,0.06), 0 1px 2px rgba(19,32,56,0.04);
+    --shadow-md:0 6px 18px rgba(19,32,56,0.08), 0 2px 4px rgba(19,32,56,0.04);
+    --shadow-lg:0 16px 40px rgba(19,32,56,0.12), 0 4px 12px rgba(19,32,56,0.05);
+    --transition:150ms ease;
   }
   *,*::before,*::after{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
@@ -64,35 +64,42 @@
   input,select,textarea{font-family:inherit;font-size:14px;}
   :focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
 
-  .field{margin-bottom:12px;}
-  .field label{display:block;font-size:12.5px;font-weight:600;color:var(--ink-soft);margin-bottom:4px;}
+  .field{margin-bottom:13px;}
+  .field label{display:block;font-size:12px;font-weight:600;color:var(--ink-soft);margin-bottom:5px;letter-spacing:0.01em;}
   .field input,.field select,.field textarea{
-    width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:var(--radius);
-    background:var(--surface);color:var(--ink);
+    width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:var(--radius);
+    background:var(--surface);color:var(--ink);transition:border-color var(--transition),box-shadow var(--transition);
   }
-  .field textarea{resize:vertical;min-height:60px;}
+  .field textarea{resize:vertical;min-height:64px;}
   .field select + input{margin-top:6px;}
-  .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--primary);}
+  .field input:focus,.field select:focus,.field textarea:focus{
+    border-color:var(--primary-mid);box-shadow:0 0 0 3px rgba(42,111,143,0.12);outline:none;
+  }
   .row{display:flex;gap:12px;flex-wrap:wrap;}
   .row > .field{flex:1;min-width:130px;}
 
   .btn{
-    display:inline-flex;align-items:center;gap:6px;
-    padding:8px 14px;border-radius:var(--radius);border:1px solid var(--line);
+    display:inline-flex;align-items:center;justify-content:center;gap:7px;
+    padding:9px 15px;border-radius:var(--radius);border:1px solid var(--line);
     background:var(--surface);color:var(--ink);font-size:13.5px;font-weight:600;
+    transition:background var(--transition),border-color var(--transition),box-shadow var(--transition),transform 80ms ease;
   }
-  .btn:hover{border-color:var(--ink-faint);}
-  .btn-primary{background:var(--primary);border-color:var(--primary);color:#fff;box-shadow:0 1px 3px rgba(30,78,107,0.28);}
-  .btn-primary:hover{background:var(--primary-dark);}
-  .btn-accent{background:linear-gradient(135deg, var(--accent) 0%, #E0B52A 100%);border-color:var(--accent);color:#1C2333;box-shadow:0 1px 3px rgba(212,160,23,0.3);}
+  .btn:hover{border-color:var(--line-strong);background:#FAFBFC;}
+  .btn:active{transform:translateY(1px);}
+  .btn-primary{background:var(--primary);border-color:var(--primary);color:#fff;box-shadow:0 1px 3px rgba(27,79,110,0.28);}
+  .btn-primary:hover{background:var(--primary-dark);border-color:var(--primary-dark);color:#fff;}
+  .btn-accent{background:linear-gradient(135deg, #D4A017 0%, #E0B52A 100%);border-color:var(--accent);color:#1C2333;box-shadow:0 2px 6px rgba(201,148,18,0.28);}
+  .btn-accent:hover{filter:brightness(1.03);}
   .btn-danger{background:var(--surface);border-color:var(--danger);color:var(--danger);}
   .btn-danger:hover{background:var(--danger-tint);}
   .btn-ghost{background:transparent;border-color:transparent;color:var(--ink-soft);}
-  .btn-sm{padding:5px 10px;font-size:12.5px;}
-  .btn[disabled]{opacity:0.45;cursor:not-allowed;}
+  .btn-ghost:hover{background:var(--primary-tint);color:var(--primary-dark);}
+  .btn-sm{padding:5px 11px;font-size:12.5px;border-radius:var(--radius-sm);}
+  .btn[disabled]{opacity:0.45;cursor:not-allowed;transform:none;}
   .btn-block{width:100%;justify-content:center;}
 
   .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);padding:20px 22px;box-shadow:var(--shadow-sm);}
+  .card + .card{margin-top:0;}
   .stack{display:flex;flex-direction:column;gap:14px;}
   .muted{color:var(--ink-soft);}
   .faint{color:var(--ink-faint);font-size:12.5px;}
@@ -102,10 +109,13 @@
   .banner-info{background:var(--primary-tint);color:var(--primary-dark);}
 
   table{width:100%;border-collapse:collapse;font-size:13.5px;}
-  th{text-align:left;color:var(--ink-soft);font-weight:600;font-size:12px;text-transform:none;padding:8px 10px;border-bottom:1px solid var(--line);}
-  td{padding:9px 10px;border-bottom:1px solid var(--line);}
+  th{text-align:left;color:var(--ink-soft);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:0.04em;padding:10px 12px;border-bottom:1px solid var(--line);background:rgba(243,246,249,0.6);}
+  td{padding:11px 12px;border-bottom:1px solid var(--line);vertical-align:middle;}
   tr:last-child td{border-bottom:none;}
+  tbody tr:nth-child(even){background:rgba(243,246,249,0.35);}
   tr.clickable:hover{background:var(--primary-tint);cursor:pointer;}
+  html.dark th{background:rgba(0,0,0,0.15);}
+  html.dark tbody tr:nth-child(even){background:rgba(0,0,0,0.12);}
 
   .pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:11.5px;font-weight:600;background:var(--primary-tint);color:var(--primary-dark);}
 
@@ -126,7 +136,7 @@
   }
   html.dark body{background:var(--bg);color:var(--ink);}
   html.dark input,html.dark select,html.dark textarea{background:#121820;color:var(--ink);border-color:var(--line);}
-  html.dark .card,html.dark .stat-card,html.dark .dbx-panel{background:var(--surface);}
+  html.dark .card,html.dark .stat-card,html.dark .dbx-panel{background:var(--surface);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow-sm);margin-bottom:14px;overflow:hidden;}
   html.dark .print-sheet,html.dark .opdx-card{background:#fff !important;color:#1C2333 !important;}
   .week-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;}
   .week-day{border:1px solid var(--line);border-radius:10px;padding:8px;min-height:110px;background:var(--surface);}
@@ -134,6 +144,60 @@
   .week-day-head{font-size:11px;font-weight:700;color:var(--ink-soft);margin-bottom:6px;}
   .week-slot{font-size:12px;padding:4px 6px;border-radius:6px;background:var(--primary-tint);margin-bottom:4px;cursor:pointer;}
   .bmi-spark{display:block;width:100%;max-width:420px;height:auto;}
+
+  /* ---- Visit form sections ---- */
+  .visit-section{
+    background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);
+    padding:18px 20px;margin-bottom:14px;box-shadow:var(--shadow-xs);
+  }
+  .visit-section-title{
+    font-size:11px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;
+    color:var(--primary-mid);margin:0 0 12px;padding-bottom:8px;border-bottom:1px solid var(--line);
+  }
+  .visit-sticky-bar{
+    position:sticky;bottom:0;z-index:8;display:flex;gap:10px;flex-wrap:wrap;align-items:center;
+    padding:12px 16px;margin:18px -8px -8px;background:rgba(255,255,255,0.92);
+    backdrop-filter:blur(8px);border-top:1px solid var(--line);border-radius:0 0 var(--radius-lg) var(--radius-lg);
+    box-shadow:0 -6px 20px rgba(19,32,56,0.06);
+  }
+  html.dark .visit-sticky-bar{background:rgba(26,35,50,0.94);}
+  .clinical-summary{
+    display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;
+  }
+  @media (max-width:700px){ .clinical-summary{grid-template-columns:1fr;} }
+  .clinical-summary .cs-card{
+    background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);
+    padding:14px 16px;box-shadow:var(--shadow-xs);
+  }
+  .clinical-summary .cs-card h3{font-size:12px;font-family:inherit;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;color:var(--ink-soft);margin-bottom:8px;}
+  .settings-section{margin-bottom:18px;}
+  .settings-section > h2{font-size:15px;margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line);}
+
+  /* ---- Mobile shell ---- */
+  .mobile-topbar{display:none;}
+  @media (max-width:820px){
+    .shell{flex-direction:column;}
+    .sidebar{
+      width:100%;padding:10px 12px;flex-direction:row;flex-wrap:wrap;align-items:center;gap:8px;
+      box-shadow:0 4px 16px rgba(15,26,46,0.2);
+    }
+    .brand{margin:0;flex:1;min-width:120px;}
+    .nav-sec-lbl{display:none;}
+    .nav{flex-direction:row;flex-wrap:wrap;gap:4px;width:100%;order:3;}
+    .nav-item{width:auto;padding:8px 10px;font-size:12.5px;}
+    .nav-item span{display:inline;}
+    .sidebar-foot{margin:0;padding:0;border:none;flex-direction:row;align-items:center;gap:8px;order:2;}
+    .sidebar-foot .nav-item{width:auto;}
+    .main{padding:16px 14px 28px;max-width:100%;}
+    .page-head h1{font-size:22px;}
+    .week-grid{grid-template-columns:repeat(2,1fr);}
+  }
+  @media (max-width:520px){
+    .nav-item span{max-width:72px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .week-grid{grid-template-columns:1fr;}
+    .dbx-stat-grid{grid-template-columns:1fr 1fr;}
+  }
+
 
 
   /* ---- Autosave / draft indicator ---- */
@@ -201,15 +265,17 @@
   .nav-sec-lbl:first-of-type{margin-top:2px;}
   .nav{display:flex;flex-direction:column;gap:2px;}
   .nav-item{
-    display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:8px;color:#C4CCDA;font-size:13.5px;font-weight:500;
+    display:flex;align-items:center;gap:10px;padding:9px 11px;border-radius:9px;color:#B8C2D4;font-size:13.5px;font-weight:500;
     text-decoration:none;border:none;background:transparent;text-align:left;width:100%;cursor:pointer;
+    transition:background var(--transition),color var(--transition);
   }
-  .nav-item svg{width:16px;height:16px;flex-shrink:0;opacity:0.85;}
-  .nav-item:hover{background:rgba(255,255,255,0.07);color:#fff;}
+  .nav-item svg{width:16px;height:16px;flex-shrink:0;opacity:0.8;}
+  .nav-item:hover{background:rgba(255,255,255,0.08);color:#fff;}
   .nav-item.active{
-    background:rgba(42,157,143,0.18);color:#fff;font-weight:600;
-    box-shadow:inset 3px 0 0 var(--teal);
+    background:rgba(36,150,136,0.22);color:#fff;font-weight:600;
+    box-shadow:inset 3px 0 0 #3DB8A8;
   }
+  .nav-item.active svg{opacity:1;}
   .sidebar-foot{margin-top:auto;padding-top:14px;border-top:1px solid rgba(255,255,255,0.12);display:flex;flex-direction:column;gap:10px;}
   .foot-row{display:flex;align-items:center;gap:9px;padding:0 2px;}
   .staff-avatar{width:30px;height:30px;border-radius:50%;background:rgba(42,157,143,0.22);color:#7FD9CC;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;flex-shrink:0;}
@@ -217,8 +283,10 @@
   .staff-chip strong{color:#F0F3F8;display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .staff-chip span{font-size:11px;color:#8B9BB0;}
 
-  .main{flex:1;min-width:0;padding:26px 32px;max-width:980px;background:var(--bg);}
-  .page-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;gap:12px;flex-wrap:wrap;}
+  .main{flex:1;min-width:0;padding:28px 36px 40px;max-width:1040px;background:var(--bg);}
+  .page-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px;gap:14px;flex-wrap:wrap;}
+  .page-head h1{font-size:26px;letter-spacing:-0.02em;}
+  .page-head .muted{margin-top:4px;}
 
   .stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:22px;}
   .stat-card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px 18px;}
@@ -227,8 +295,8 @@
 
   /* ---- Dashboard redesign (v3 — mockup-inspired, site colors) ---- */
   .dbx-hero{
-    background:linear-gradient(165deg, var(--primary-dark) 0%, #152038 55%, #0F1A2E 100%);
-    border-radius:18px;padding:20px 22px 22px;margin-bottom:18px;color:#fff;
+    background:linear-gradient(155deg, #132038 0%, #1A2F4A 48%, #0F1A2E 100%);
+    border-radius:20px;padding:22px 24px 24px;margin-bottom:18px;color:#fff;
     box-shadow:var(--shadow-md);position:relative;overflow:hidden;
   }
   .dbx-hero::after{
@@ -3327,40 +3395,47 @@ function shellView(){
     ['patients', t('Patients')],
     ['newVisit', isDoctor() ? t('New OPD Visit') : t('Check In Patient')]
   ];
-  mainItems.push(['pediatrics', t('Pediatrics')]);
-  const recordItems = [
-    ['billing', t('Billing')],
+  const clinicalItems = [
+    ['pediatrics', t('Pediatrics')],
     ['certificates', t('Certificates')],
-    ['reports', t('Reports')],
     ['recall', 'Recall'],
-    ['anc', 'ANC'],
+    ['anc', 'ANC']
+  ];
+  const opsItems = [
+    ['billing', t('Billing')],
+    ['reports', t('Reports')],
     ['roster', 'Roster'],
     ['stock', 'Stock'],
-    ['expenses', 'Expenses'],
+    ['expenses', 'Expenses']
+  ];
+  const systemItems = [
     ['settings', t('Settings')]
   ];
   const navBtn = ([r,label]) =>
     `<button class="nav-item ${state.route===r?'active':''}" onclick="go('${r}')">${navIcon(r)}<span>${esc(label)}</span></button>`;
-  const mainNav = mainItems.map(navBtn).join('');
-  const recordNav = recordItems.map(navBtn).join('');
   const staff = state.data.staff.find(s=>s.name===state.session.staffName);
+  const ci = state.data.clinicInfo || {};
   return `
   <div class="shell">
     <div class="sidebar">
       <div class="brand">
-        <div class="brand-mark">MMC</div>
-        <div class="brand-text"><div class="full">MMC</div><div class="sub">Male Madeshwara Clinic</div></div>
+        <div class="brand-mark">${esc(((ci.shortName||'MMC')+'').slice(0,3).toUpperCase())}</div>
+        <div class="brand-text"><div class="full">${esc(ci.shortName||'MMC')}</div><div class="sub">${esc(ci.name||'Male Madeshwara Clinic')}</div></div>
       </div>
       <div class="nav-sec-lbl">Main</div>
-      <div class="nav">${mainNav}</div>
-      <div class="nav-sec-lbl">Records</div>
-      <div class="nav">${recordNav}</div>
+      <div class="nav">${mainItems.map(navBtn).join('')}</div>
+      <div class="nav-sec-lbl">Clinical</div>
+      <div class="nav">${clinicalItems.map(navBtn).join('')}</div>
+      <div class="nav-sec-lbl">Operations</div>
+      <div class="nav">${opsItems.map(navBtn).join('')}</div>
+      <div class="nav-sec-lbl">System</div>
+      <div class="nav">${systemItems.map(navBtn).join('')}</div>
       <div class="sidebar-foot">
         <div class="foot-row">
           <div class="staff-avatar">${esc(initialsOf(state.session.staffName))}</div>
           <div class="staff-chip"><strong>${esc(state.session.staffName)}</strong><span>${staff?esc(staff.role):''}</span></div>
         </div>
-        <button class="nav-item" onclick="openCommandPalette()">${navIcon('patients')}<span>${t('Quick search')}</span></button>
+        <button class="nav-item" onclick="openCommandPalette()">${navIcon('search')}<span>${t('Quick search')}</span></button>
         <button class="nav-item" onclick="logout()">${navIcon('logout')}<span>${t('Logout')}</span></button>
       </div>
     </div>
@@ -4043,8 +4118,7 @@ function patientView(patientId){
       </div>
     </div>
     ${pedBanner}
-    ${problemListHTML}
-    ${medHistHTML}
+    <div class="clinical-summary">${problemListHTML}${medHistHTML}</div>
     ${bmiHTML}
     <div class="card" style="margin-bottom:18px;">${infoBlock}</div>
     ${isPediatricPatient(p) ? growthRecordsCardHTML(p) : ''}
@@ -5404,28 +5478,35 @@ function newVisitView(){
 
   return `
     <div class="page-head">
-      <h1>${dv.editingVisitId ? 'Continue Consultation' : 'New OPD Visit'}${allergyPatient && isPediatricPatient(allergyPatient)?' — Pediatric':''}</h1>
+      <div>
+        <h1>${dv.editingVisitId ? 'Continue Consultation' : 'New OPD Visit'}${allergyPatient && isPediatricPatient(allergyPatient)?' — Pediatric':''}</h1>
+        <p class="muted">${dv.editingVisitId ? 'Finish the consultation for a checked-in patient' : 'Patient → Vitals → Notes → Prescription → Labs'}</p>
+      </div>
       ${draftIndicatorHTML()}
     </div>
     ${dv.editingVisitId ? `<div class="banner banner-info">Continuing a visit checked in earlier — patient details are already filled in.</div>` : ''}
     ${allergyBanner}
     ${chronicBanner}
     ${pedNote}
-    ${patientBlock}
-    ${prevSummary}
-    <div class="card stack">
+    <div class="visit-section">
+      <div class="visit-section-title">1 · Patient</div>
+      ${patientBlock}
+      ${prevSummary}
+    </div>
+    <div class="visit-section">
+      <div class="visit-section-title">2 · Doctor & vitals</div>
       <div class="field"><label>Attending doctor</label><input id="v-doctor" value="${esc(dv.doctorName)}"></div>
-      <div>
-        <h3>Vitals</h3>
-        <div class="row">
-          <div class="field"><label>BP</label><input id="v-bp" placeholder="120/80" value="${esc(dv.vitals.bp)}"></div>
-          <div class="field"><label>Pulse</label><input id="v-pulse" placeholder="bpm" value="${esc(dv.vitals.pulse)}"></div>
-          <div class="field"><label>Temp</label><input id="v-temp" placeholder="°F" value="${esc(dv.vitals.temp)}"></div>
-          <div class="field"><label>Weight</label><input id="v-weight" placeholder="kg" value="${esc(dv.vitals.weight)}" oninput="updateBmiPreview();refreshAllRxDoseHints()"></div>
-          <div class="field"><label>Height</label><input id="v-height" placeholder="cm" value="${esc(dv.vitals.height||'')}" oninput="updateBmiPreview()"></div>
-        </div>
-        <div id="v-bmi-preview" class="faint" style="margin-top:4px;">${(()=>{ const ap=dv.patientId&&state.data.patients.find(x=>x.id===dv.patientId); const r=calcBMI(dv.vitals.weight,dv.vitals.height,patientAgeYearsForBmi(ap)); return r?`BMI: ${r.value} (${r.label}) · ${r.standard}`:''; })()}</div>
+      <div class="row">
+        <div class="field"><label>BP</label><input id="v-bp" placeholder="120/80" value="${esc(dv.vitals.bp)}"></div>
+        <div class="field"><label>Pulse</label><input id="v-pulse" placeholder="bpm" value="${esc(dv.vitals.pulse)}"></div>
+        <div class="field"><label>Temp (°F)</label><input id="v-temp" placeholder="°F" value="${esc(dv.vitals.temp)}"></div>
+        <div class="field"><label>Weight (kg)</label><input id="v-weight" placeholder="kg" value="${esc(dv.vitals.weight)}" oninput="updateBmiPreview();refreshAllRxDoseHints()"></div>
+        <div class="field"><label>Height (cm)</label><input id="v-height" placeholder="cm" value="${esc(dv.vitals.height||'')}" oninput="updateBmiPreview()"></div>
       </div>
+      <div id="v-bmi-preview" class="faint" style="margin-top:2px;">${(()=>{ const ap=dv.patientId&&state.data.patients.find(x=>x.id===dv.patientId); const r=calcBMI(dv.vitals.weight,dv.vitals.height,patientAgeYearsForBmi(ap)); return r?`BMI: ${r.value} (${r.label}) · ${r.standard}`:''; })()}</div>
+    </div>
+    <div class="visit-section">
+      <div class="visit-section-title">3 · Clinical notes</div>
       <div class="field"><label>Chief complaints</label>
         <textarea id="v-complaints" oninput="onComplaintsInput(this)" placeholder="e.g. Fever × 3 days, Cough × 2 days — shown as C/O on the OPD card">${esc(dv.complaints)}</textarea>
         <div class="chip-row" id="complaints-chips">${chipRowHTML(chipsFor(dv.complaints, COMPLAINT_TERMS), 'insertComplaintChip')}</div>
@@ -5436,40 +5517,39 @@ function newVisitView(){
         <div class="chip-row" id="diagnosis-chips">${chipRowHTML(chipsFor(dv.diagnosis, DIAGNOSIS_TERMS), 'insertDiagnosisChip')}</div>
       </div>
       <div class="field"><label>Doctor's notes</label><textarea id="v-notes">${esc(dv.notes)}</textarea></div>
-      <div class="field"><label>Follow-up date (optional)</label><input id="v-followup" type="date" value="${esc(dv.followUpDate||'')}"></div>
       <div class="row">
+        <div class="field"><label>Follow-up date (optional)</label><input id="v-followup" type="date" value="${esc(dv.followUpDate||'')}"></div>
         <div class="field"><label>Referred to (optional)</label><input id="v-referred-to" placeholder="e.g. City Hospital — Cardiology" value="${esc(dv.referredTo||'')}"></div>
         <div class="field"><label>Reason for referral</label><input id="v-referral-reason" placeholder="beyond OPD scope, needs specialist, etc." value="${esc(dv.referralReason||'')}"></div>
       </div>
-
-      <div>
-        <div class="rx-row-head">
-          <h3>Prescription</h3>
-          <div class="row" style="gap:6px;flex-wrap:wrap;">
-            ${(state.data.rxTemplates||[]).length ? `
-            <select id="rx-template-select" style="max-width:170px;">
-              <option value="">Use template…</option>
-              ${state.data.rxTemplates.map((t,i)=>`<option value="${i}">${esc(t.name)}</option>`).join('')}
-            </select>
-            <button class="btn btn-sm" onclick="applyRxTemplate()">Apply</button>` : ''}
-            <button class="btn btn-sm" onclick="saveCurrentAsTemplate()">💾 Save as template</button>
-            <button class="btn btn-sm" onclick="addRxRow()">+ Add medicine</button>
-          </div>
+    </div>
+    <div class="visit-section">
+      <div class="visit-section-title">4 · Prescription</div>
+      <div class="rx-row-head" style="margin-bottom:10px;">
+        <span class="faint">Medicines for this visit</span>
+        <div class="row" style="gap:6px;flex-wrap:wrap;">
+          ${(state.data.rxTemplates||[]).length ? `
+          <select id="rx-template-select" style="max-width:170px;">
+            <option value="">Use template…</option>
+            ${state.data.rxTemplates.map((t,i)=>`<option value="${i}">${esc(t.name)}</option>`).join('')}
+          </select>
+          <button class="btn btn-sm" onclick="applyRxTemplate()">Apply</button>` : ''}
+          <button class="btn btn-sm" onclick="saveCurrentAsTemplate()">Save as template</button>
+          <button class="btn btn-sm btn-accent" onclick="addRxRow()">+ Add medicine</button>
         </div>
-        <div id="rx-rows">${rxRowsHTML()}</div>
       </div>
-
-      <div>
-        <div class="rx-row-head"><h3>Investigations</h3><span class="faint">Checklist — tick all that apply</span></div>
-        <div id="inv-rows">${invRowsHTML()}</div>
-      </div>
-
-      <div id="visit-error" class="error-text"></div>
-      <div class="row" style="align-items:center;">
-        <button class="btn btn-primary" onclick="saveVisit()">Save visit</button>
-        ${cancelBtn}
-        ${draftIndicatorHTML()}
-      </div>
+      <div id="rx-rows">${rxRowsHTML()}</div>
+    </div>
+    <div class="visit-section">
+      <div class="visit-section-title">5 · Investigations</div>
+      <p class="faint" style="margin-bottom:10px;">Tick all tests needed — selected ones appear at the top of the list.</p>
+      <div id="inv-rows">${invRowsHTML()}</div>
+    </div>
+    <div id="visit-error" class="error-text"></div>
+    <div class="visit-sticky-bar">
+      <button class="btn btn-primary" onclick="saveVisit()">Save visit</button>
+      ${cancelBtn}
+      ${draftIndicatorHTML()}
     </div>`;
 }
 
