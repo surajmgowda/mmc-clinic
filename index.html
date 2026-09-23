@@ -1502,7 +1502,7 @@ const ROLE_PERM_KEYS = [
 ];
 const ROLE_PERM_DEFAULTS = {
   Doctor:       {checkIn:true, clinicalVisit:true, viewClinical:true, deleteVisit:true, certificates:true, billing:true, reports:true, pediatrics:true, recall:true, anc:true, expenses:true, stock:true, roster:true, mergePatients:true},
-  Receptionist: {checkIn:true, clinicalVisit:false, viewClinical:false, deleteVisit:false, certificates:false, billing:true, reports:false, pediatrics:false, recall:true, anc:true, expenses:false, stock:false, roster:true, mergePatients:false},
+  Receptionist: {checkIn:true, clinicalVisit:false, viewClinical:false, deleteVisit:false, certificates:false, billing:true, reports:false, pediatrics:false, recall:false, anc:false, expenses:false, stock:false, roster:true, mergePatients:false},
   Staff:        {checkIn:true, clinicalVisit:false, viewClinical:false, deleteVisit:false, certificates:false, billing:false, reports:false, pediatrics:false, recall:false, anc:false, expenses:false, stock:true, roster:true, mergePatients:false}
 };
 function ensureRolePerms(){
@@ -1512,6 +1512,22 @@ function ensureRolePerms(){
     const cur = state.data.rolePerms[role] || {};
     state.data.rolePerms[role] = Object.assign({}, ROLE_PERM_DEFAULTS[role], cur);
   });
+  // One-time privacy lock: reception must not keep clinical flags from older builds
+  if(!state.data.rolePerms._privacyLockV1){
+    const r = state.data.rolePerms.Receptionist;
+    if(r){
+      r.clinicalVisit = false;
+      r.viewClinical = false;
+      r.pediatrics = false;
+      r.certificates = false;
+      r.deleteVisit = false;
+      r.mergePatients = false;
+      r.reports = false;
+      r.recall = false;
+      r.anc = false;
+    }
+    state.data.rolePerms._privacyLockV1 = true;
+  }
 }
 function can(perm){
   if(isOwner()) return true;
@@ -1519,9 +1535,35 @@ function can(perm){
   if(!role) return false;
   ensureRolePerms();
   const row = state.data.rolePerms[role] || ROLE_PERM_DEFAULTS[role] || {};
-  if(perm==='clinicalVisit' && row.clinicalVisit) return true;
+  if(perm === 'viewClinical' && (row.viewClinical || row.clinicalVisit)) return true;
   return !!row[perm];
 }
+function accessDeniedHTML(title, detail){
+  return `<div class="page-head"><h1>${esc(title||'Access restricted')}</h1></div>
+    <div class="card" style="max-width:480px;">
+      <p style="margin:0 0 8px;"><strong>Confidential clinical area</strong></p>
+      <p class="muted" style="margin:0 0 12px;">${esc(detail||'Your role does not include access to patient clinical records. Contact the clinic admin if you need access.')}</p>
+      <button class="btn btn-primary" onclick="go('dashboard')">Back to dashboard</button>
+    </div>`;
+}
+function routeAllowed(route){
+  const map = {
+    pediatrics: 'pediatrics',
+    certificates: 'certificates',
+    recall: 'recall',
+    anc: 'anc',
+    reports: 'reports',
+    expenses: 'expenses',
+    stock: 'stock',
+    roster: 'roster',
+    billing: 'billing',
+    mergePatients: 'mergePatients'
+  };
+  const perm = map[route];
+  if(!perm) return true;
+  return can(perm);
+}
+
 // Clinic admin flag on a staff record — never used as a printed title on documents.
 function isOwner(){
   const s = state.data && state.data.staff
@@ -2724,7 +2766,7 @@ function setDraftIndicator(active, text){
   });
 }
 function autosaveVisitDraft(){
-  if(!state.data || !isDoctor() || state.route !== 'newVisit' || !state.draftVisit) return;
+  if(!state.data || !can('clinicalVisit') || state.route !== 'newVisit' || !state.draftVisit) return;
   const snap = snapshotVisitFormFields();
   if(!snapshotHasContent(snap)){
     setDraftIndicator(false, 'Nothing to autosave yet — start typing');
@@ -3595,18 +3637,18 @@ function shellView(){
     ['newVisit', isDoctor() ? t('New OPD Visit') : t('Check In Patient')]
   ];
   const clinicalItems = [
-    ['pediatrics', t('Pediatrics')],
-    ['certificates', t('Certificates')],
-    ['recall', 'Recall'],
-    ['anc', 'ANC']
-  ];
+    ['pediatrics', t('Pediatrics'), 'pediatrics'],
+    ['certificates', t('Certificates'), 'certificates'],
+    ['recall', 'Recall', 'recall'],
+    ['anc', 'ANC', 'anc']
+  ].filter(x => can(x[2])).map(([r,label]) => [r,label]);
   const opsItems = [
-    ['billing', t('Billing')],
-    ['reports', t('Reports')],
-    ['roster', 'Roster'],
-    ['stock', 'Stock'],
-    ['expenses', 'Expenses']
-  ];
+    ['billing', t('Billing'), 'billing'],
+    ['reports', t('Reports'), 'reports'],
+    ['roster', 'Roster', 'roster'],
+    ['stock', 'Stock', 'stock'],
+    ['expenses', 'Expenses', 'expenses']
+  ].filter(x => can(x[2])).map(([r,label]) => [r,label]);
   const systemItems = [
     ['settings', t('Settings')]
   ];
@@ -3692,6 +3734,9 @@ function shellView(){
 
 
 function routeContent(){
+  if(!routeAllowed(state.route)){
+    return accessDeniedHTML('Access restricted', 'This section holds confidential patient health information and is not available for your role.');
+  }
   switch(state.route){
     case 'appointments': return appointmentsView();
     case 'newAppointment': return newAppointmentView();
@@ -3842,8 +3887,8 @@ function dashboardView(){
       <div class="dbx-quick-actions">
         <button class="dbx-qbtn wide" onclick="go('newPatient')">+ Register new patient</button>
         <button class="dbx-qbtn wide" onclick="go('newAppointment')">+ Book appointment</button>
-        <button class="dbx-qbtn wide" onclick="state.certPatientId=null;state.search='';go('certificates')">+ Issue certificate</button>
-        <button class="dbx-qbtn wide" onclick="go('pediatrics')">🧒 Pediatrics tools</button>
+        ${can('certificates')?`<button class="dbx-qbtn wide" onclick="state.certPatientId=null;state.search='';go('certificates')">+ Issue certificate</button>`:''}
+        ${can('pediatrics')?`<button class="dbx-qbtn wide" onclick="go('pediatrics')">🧒 Pediatrics tools</button>`:''}
       </div>
     </div>`;
 
@@ -3946,7 +3991,7 @@ function dashboardView(){
     todayVisits: todayVisitsPanel,
     followups: followUpCard,
     reminders: apptRemindCard,
-    vaccines: pedDueCard,
+    vaccines: can('pediatrics') ? pedDueCard : '',
     quick: quickActionsCard
   };
   const prefs = getDashboardPrefs();
@@ -4085,8 +4130,8 @@ function mergeCompareHTML(a,b){
     </div>`;
 }
 function mergePatientsView(){
-  if(!isDoctor()){
-    return `<div class="page-head"><h1>Merge duplicate patients</h1></div><p class="muted">This is available to staff logged in with the Doctor role.</p>`;
+  if(!can('mergePatients')){
+    return accessDeniedHTML('Merge patients', 'Merging records is limited to authorised clinical staff.');
   }
   if(!state.mergeUI) initMergeUI();
   const mu = state.mergeUI;
@@ -4316,30 +4361,31 @@ function patientView(patientId){
     ${(p.emergencyContactName || p.emergencyContactPhone) ? `
     <div style="margin-top:8px;"><span class="faint">Emergency contact</span><div>${esc(p.emergencyContactName)||'<span class="faint">—</span>'}${p.emergencyContactPhone?' · '+esc(p.emergencyContactPhone):''}</div></div>` : ''}
     ${p.aadhaar ? `<div style="margin-top:8px;"><span class="faint">Aadhaar</span><div>${esc(maskAadhaar(p.aadhaar))}</div></div>` : ''}
-    ${p.allergies ? `<div class="banner" style="background:var(--danger-tint);color:var(--danger);margin-top:10px;"><strong>⚠ Allergies:</strong> ${esc(p.allergies)}</div>` : ''}
-    ${p.chronicConditions ? `<div class="banner" style="background:var(--accent-tint);color:var(--accent);margin-top:10px;"><strong>Chronic illness / conditions:</strong> ${esc(p.chronicConditions)}</div>` : ''}
-    ${p.pastSurgeries ? `<div style="margin-top:10px;"><span class="faint">Past surgeries</span><div>${esc(p.pastSurgeries)}</div></div>` : ''}
-    ${p.familyHistory ? `<div style="margin-top:10px;"><span class="faint">Family history</span><div>${esc(p.familyHistory)}</div></div>` : ''}
+    ${can('viewClinical') && p.allergies ? `<div class="banner" style="background:var(--danger-tint);color:var(--danger);margin-top:10px;"><strong>⚠ Allergies:</strong> ${esc(p.allergies)}</div>` : ''}
+    ${can('viewClinical') && p.chronicConditions ? `<div class="banner" style="background:var(--accent-tint);color:var(--accent);margin-top:10px;"><strong>Chronic illness / conditions:</strong> ${esc(p.chronicConditions)}</div>` : ''}
+    ${can('viewClinical') && p.pastSurgeries ? `<div style="margin-top:10px;"><span class="faint">Past surgeries</span><div>${esc(p.pastSurgeries)}</div></div>` : ''}
+    ${can('viewClinical') && p.familyHistory ? `<div style="margin-top:10px;"><span class="faint">Family history</span><div>${esc(p.familyHistory)}</div></div>` : ''}
+    ${!can('viewClinical') ? `<p class="faint" style="margin-top:10px;">Clinical history (allergies, chronic conditions, surgeries) is visible only to authorised clinical staff.</p>` : ''}
     <button class="btn btn-sm" style="margin-top:12px;" onclick="startEditPatient()">Edit details</button>
   `;
 
   const visits = (p.visits||[]).slice().sort((a,b)=> (b.date+b.id).localeCompare(a.date+a.id));
   const visitRows = visits.map(v=>{
     const st = visitStatus(v);
-    const canContinue = st==='waiting' && isDoctor();
+    const canContinue = st==='waiting' && can('clinicalVisit');
     const clickAction = canContinue
       ? `go('newVisit',{patientId:'${p.id}',editVisitId:'${v.id}'})`
       : `go('visitPrint',{patientId:'${p.id}',visitId:'${v.id}'})`;
     return `
     <tr class="clickable" onclick="${clickAction}">
       <td>${fmtDate(v.date)}</td>
-      <td>${isDoctor() ? (esc(v.diagnosis)||'<span class="faint">—</span>') : '<span class="faint">—</span>'}</td>
+      <td>${can('viewClinical') ? (esc(v.diagnosis)||'<span class="faint">—</span>') : '<span class="faint">—</span>'}</td>
       <td>${esc(v.doctorName)||'<span class="faint">—</span>'}</td>
       <td>${st==='waiting'
         ? `<span class="pill" style="background:var(--accent-tint);color:var(--accent);">Waiting${canContinue?' — tap to continue':''}</span>`
         : '<span class="pill">Completed</span>'}
         ${v.referredTo ? `<span class="pill" title="Referred to ${esc(v.referredTo)}${v.referralReason?' — '+esc(v.referralReason):''}" style="margin-left:4px;">↗ Referred</span>` : ''}</td>
-      <td>${isDoctor() ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();deleteVisit('${p.id}','${v.id}')">Delete</button>` : ''}</td>
+      <td>${can('deleteVisit') ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();deleteVisit('${p.id}','${v.id}')">Delete</button>` : ''}</td>
     </tr>`;
   }).join('');
 
@@ -4347,13 +4393,13 @@ function patientView(patientId){
   const problems = patientProblemList(p);
   const medHist = patientMedicationHistory(p, 15);
   const bmiSvg = patientBmiTrendSVG(p);
-  const problemListHTML = problems.length && isDoctor() ? `
+  const problemListHTML = problems.length && can('viewClinical') ? `
     <div class="card" style="margin-bottom:14px;">
       <h3 style="margin-bottom:8px;">Problem list</h3>
       <table><thead><tr><th>Diagnosis</th><th>First noted</th></tr></thead>
       <tbody>${problems.map(x=>`<tr class="clickable" onclick="go('visitPrint',{patientId:'${p.id}',visitId:'${x.visitId}'})"><td>${esc(x.diagnosis)}</td><td>${fmtDate(x.date)}</td></tr>`).join('')}</tbody></table>
     </div>` : '';
-  const medHistHTML = medHist.length && isDoctor() ? `
+  const medHistHTML = medHist.length && can('viewClinical') ? `
     <div class="card" style="margin-bottom:14px;">
       <h3 style="margin-bottom:8px;">Medication history</h3>
       <table><thead><tr><th>Date</th><th>Medicine</th><th>Dose / Frequency</th><th>Days</th></tr></thead>
@@ -4363,23 +4409,24 @@ function patientView(patientId){
 
   const pedBanner = isPediatricPatient(p)
     ? `<div class="banner banner-info" style="margin-bottom:14px;"><strong>Pediatric patient</strong> (under 16) — ${esc(opdAgeDisplay(p))}
-        <button class="btn btn-sm" style="margin-left:8px;" onclick="state.pedLinkedPatientId='${p.id}';state.pedTab='growth';go('pediatrics')">Open in Pediatrics</button>
+        ${can('pediatrics')?`<button class="btn btn-sm" style="margin-left:8px;" onclick="state.pedLinkedPatientId='${p.id}';state.pedTab='growth';go('pediatrics')">Open in Pediatrics</button>`:''}
       </div>` : '';
+  const showClinical = can('viewClinical');
   return `
     <div class="page-head">
       <div><h1>${esc(p.name)} <span class="pill">${p.id}</span></h1></div>
       <div class="row" style="gap:8px;">
-        <button class="btn btn-accent" onclick="go('newVisit',{patientId:'${p.id}'})">+ New OPD Visit</button>
-        <button class="btn" onclick="state.certPatientId='${p.id}';state.certType='sick';go('certificates')">Certificate</button>
+        <button class="btn btn-accent" onclick="go('newVisit',{patientId:'${p.id}'})">${can('clinicalVisit')?'+ New OPD Visit':'+ Check in'}</button>
+        ${can('certificates')?`<button class="btn" onclick="state.certPatientId='${p.id}';state.certType='sick';go('certificates')">Certificate</button>`:''}
         ${p.phone?`<button class="btn wa-btn" onclick="shareWhatsApp(${jsAttr(p.phone)}, patientWhatsAppText(state.data.patients.find(x=>x.id===${jsAttr(p.id)})))">${t('WhatsApp')}</button>`:''}
       </div>
     </div>
     ${pedBanner}
-    <div class="clinical-summary">${problemListHTML}${medHistHTML}</div>
-    ${bmiHTML}
+    ${showClinical?`<div class="clinical-summary">${problemListHTML}${medHistHTML}</div>`:''}
+    ${showClinical?bmiHTML:''}
     <div class="card" style="margin-bottom:18px;">${infoBlock}</div>
-    ${isPediatricPatient(p) ? growthRecordsCardHTML(p) : ''}
-    ${isPediatricPatient(p) ? vaccinationCardHTML(p) : ''}
+    ${showClinical && isPediatricPatient(p) ? growthRecordsCardHTML(p) : ''}
+    ${showClinical && isPediatricPatient(p) ? vaccinationCardHTML(p) : ''}
     <div class="card" style="margin-bottom:18px;">
       <h2 style="margin-bottom:10px;">Visit history</h2>
       ${visits.length ? `<table><thead><tr><th>Date</th><th>Diagnosis</th><th>Doctor</th><th>Status</th><th></th></tr></thead><tbody>${visitRows}</tbody></table>`
@@ -5636,7 +5683,7 @@ function invRowsHTML(){
 
 
 function previousVisitSummaryHTML(patient, editingVisitId){
-  if(!patient || !isDoctor()) return '';
+  if(!patient || !can('viewClinical')) return '';
   const visits = (patient.visits||[]).slice().sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
   // Prefer last completed visit that is not the one currently being edited
   const prev = visits.find(v => v.id !== editingVisitId && visitStatus(v)==='completed')
@@ -6109,6 +6156,7 @@ async function saveInvestigationResults(patientId, visitId){
 function setPedTab(tab){ state.pedTab = tab; state.search=''; render(); }
 
 function pediatricsView(){
+  if(!can('pediatrics')) return accessDeniedHTML('Pediatrics', 'Growth charts, dosing and vaccination records are clinical data restricted to authorised clinical staff.');
   const tab = state.pedTab || 'patients';
   const tabs = [
     ['patients','Pediatric patients'],
@@ -6792,6 +6840,8 @@ function setReportRange(preset){
 
 /* ============================= MEDICAL CERTIFICATES ============================= */
 function certificatesView(){
+  if(!can('certificates')) return accessDeniedHTML('Certificates', 'Medical certificates contain clinical information and are restricted to authorised staff.');
+
   const editing = state.editingCertIndex!=null;
   const genLabel = editing ? 'Save changes' : null;
   const q = (state.search||'').trim().toLowerCase();
