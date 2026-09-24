@@ -179,6 +179,70 @@ function staffAuthMethodOf(s) {
   return 'pin';
 }
 
+const STAFF_SECRET_FIELDS = ['pin', 'password', 'recoveryHash', 'totpSecret'];
+
+function sanitizeStaffRecord(s) {
+  if (!s || typeof s !== 'object') return s;
+  const out = { ...s };
+  STAFF_SECRET_FIELDS.forEach(k => { delete out[k]; });
+  out.totpEnabled = !!s.totpEnabled;
+  out.hasPin = !!s.pin;
+  out.hasPassword = !!s.password;
+  out.hasRecovery = !!s.recoveryHash;
+  return out;
+}
+
+function sanitizeClinicData(data) {
+  if (!data || typeof data !== 'object') return data;
+  const copy = { ...data };
+  if (Array.isArray(copy.staff)) copy.staff = copy.staff.map(sanitizeStaffRecord);
+  return copy;
+}
+
+function mergeStaffSecrets(incomingStaff, currentStaff) {
+  const current = Array.isArray(currentStaff) ? currentStaff : [];
+  const incoming = Array.isArray(incomingStaff) ? incomingStaff : [];
+  const byName = Object.fromEntries(current.map(s => [s.name, s]));
+  return incoming.map(s => {
+    const prev = byName[s.name];
+    if (!prev) {
+      const next = { ...s };
+      delete next.totpSecret;
+      delete next.hasPin;
+      delete next.hasPassword;
+      delete next.hasRecovery;
+      next.totpEnabled = false;
+      return next;
+    }
+    const next = { ...prev, ...s };
+    STAFF_SECRET_FIELDS.forEach(k => {
+      if (s[k] == null || s[k] === '') next[k] = prev[k];
+      else next[k] = s[k];
+    });
+    next.totpSecret = prev.totpSecret;
+    next.totpEnabled = !!prev.totpEnabled;
+    delete next.hasPin;
+    delete next.hasPassword;
+    delete next.hasRecovery;
+    return next;
+  });
+}
+
+function base32EncodeServer(buf) {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = '';
+  for (const b of buf) bits += b.toString(2).padStart(8, '0');
+  let out = '';
+  for (let i = 0; i + 5 <= bits.length; i += 5) {
+    out += alphabet[parseInt(bits.slice(i, i + 5), 2)];
+  }
+  return out;
+}
+
+function generateTotpSecret() {
+  return base32EncodeServer(crypto.randomBytes(20));
+}
+
 // ---- Server-side login rate limiting ----
 // Same escalating-cooldown idea as the (still-present) client-side one, but
 // this one can't be cleared by wiping localStorage — it's the real gate now.
@@ -374,8 +438,9 @@ app.get('/api/staff-list', async (req, res) => {
       name: s.name,
       role: s.role,
       owner: !!s.owner,
-      authMethod: staffAuthMethodOf(s)
-      // never expose pin, password, or recoveryHash
+      authMethod: staffAuthMethodOf(s),
+      totpEnabled: !!s.totpEnabled
+      // never expose pin, password, recoveryHash, or totpSecret
     }));
     res.json({ staff, setupNeeded: staff.length === 0 });
   } catch (e) {
@@ -539,7 +604,7 @@ app.get('/api/data', requireSession, async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT data, version FROM clinic_store WHERE id = 1');
     if (rows.length === 0) return res.status(500).json({ error: 'store not initialized' });
-    res.json({ data: rows[0].data, version: rows[0].version });
+    res.json({ data: sanitizeClinicData(rows[0].data), version: rows[0].version });
   } catch (e) {
     console.error('GET /api/data failed:', e);
     res.status(500).json({ error: 'database error' });
@@ -558,29 +623,24 @@ app.put('/api/data', requireSession, async (req, res) => {
     const { rows } = await pool.query('SELECT version, data FROM clinic_store WHERE id = 1');
     const current = rows[0];
     if (current.version !== version) {
-      return res.status(409).json({ data: current.data, version: current.version });
+      return res.status(409).json({ data: sanitizeClinicData(current.data), version: current.version });
     }
     // Non-admin cannot change clinic identity or role permission matrix
     const isOwner = !!(req.staffSession && req.staffSession.owner);
     if (!isOwner && current.data) {
       if (current.data.clinicInfo) data.clinicInfo = current.data.clinicInfo;
       if (current.data.rolePerms) data.rolePerms = current.data.rolePerms;
-      // Preserve other staff credential hashes if client strips them incorrectly
-      if (Array.isArray(current.data.staff) && Array.isArray(data.staff)) {
-        const byName = Object.fromEntries(current.data.staff.map(s => [s.name, s]));
+    }
+    // Always restore credential material the GET response deliberately omitted.
+    // TOTP secrets are never writable through this document API.
+    if (current.data && Array.isArray(data.staff)) {
+      data.staff = mergeStaffSecrets(data.staff, current.data.staff);
+      if (!isOwner) {
+        const byName = Object.fromEntries((current.data.staff || []).map(s => [s.name, s]));
         data.staff = data.staff.map(s => {
           const prev = byName[s.name];
           if (!prev) return s;
-          return {
-            ...prev,
-            ...s,
-            pin: prev.pin,
-            password: prev.password,
-            recoveryHash: prev.recoveryHash,
-            totpSecret: prev.totpSecret,
-            totpEnabled: prev.totpEnabled,
-            owner: prev.owner
-          };
+          return { ...s, owner: prev.owner, pin: prev.pin, password: prev.password, recoveryHash: prev.recoveryHash };
         });
       }
     }
@@ -593,6 +653,87 @@ app.put('/api/data', requireSession, async (req, res) => {
   } catch (e) {
     console.error('PUT /api/data failed:', e);
     res.status(500).json({ error: 'database error' });
+  }
+});
+
+app.post('/api/2fa/setup', requireSession, async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT data FROM clinic_store WHERE id = 1');
+    if (rows.length === 0) return res.status(500).json({ error: 'store not initialized' });
+    const clinicData = rows[0].data;
+    const staff = (clinicData.staff || []).find(s => s.name === req.staffSession.name);
+    if (!staff) return res.status(404).json({ error: 'staff not found' });
+    if (staff.totpEnabled && staff.totpSecret) {
+      return res.status(409).json({ error: 'already_enabled' });
+    }
+    const secret = generateTotpSecret();
+    staff.totpSecret = secret;
+    staff.totpEnabled = false;
+    await pool.query(
+      'UPDATE clinic_store SET data = $1, version = version + 1, updated_at = now() WHERE id = 1',
+      [clinicData]
+    );
+    const issuer = encodeURIComponent((clinicData.clinicInfo && clinicData.clinicInfo.shortName) || 'MMC');
+    const label = encodeURIComponent(`${issuer}:${staff.name}`);
+    const otpauth = `otpauth://totp/${label}?secret=${secret}&issuer=${issuer}&digits=6&period=30`;
+    res.json({ ok: true, secret, otpauth });
+  } catch (e) {
+    console.error('POST /api/2fa/setup failed:', e);
+    res.status(500).json({ error: 'server error' });
+  }
+});
+
+app.post('/api/2fa/enable', requireSession, async (req, res) => {
+  const { totpCode } = req.body || {};
+  try {
+    const { rows } = await pool.query('SELECT data FROM clinic_store WHERE id = 1');
+    if (rows.length === 0) return res.status(500).json({ error: 'store not initialized' });
+    const clinicData = rows[0].data;
+    const staff = (clinicData.staff || []).find(s => s.name === req.staffSession.name);
+    if (!staff || !staff.totpSecret) return res.status(400).json({ error: 'setup_required' });
+    if (!verifyTotp(staff.totpSecret, totpCode)) {
+      return res.status(401).json({ error: 'invalid_totp' });
+    }
+    staff.totpEnabled = true;
+    await pool.query(
+      'UPDATE clinic_store SET data = $1, version = version + 1, updated_at = now() WHERE id = 1',
+      [clinicData]
+    );
+    res.json({ ok: true, totpEnabled: true });
+  } catch (e) {
+    console.error('POST /api/2fa/enable failed:', e);
+    res.status(500).json({ error: 'server error' });
+  }
+});
+
+app.post('/api/2fa/disable', requireSession, async (req, res) => {
+  const { pin, password, totpCode } = req.body || {};
+  try {
+    const { rows } = await pool.query('SELECT data FROM clinic_store WHERE id = 1');
+    if (rows.length === 0) return res.status(500).json({ error: 'store not initialized' });
+    const clinicData = rows[0].data;
+    const staff = (clinicData.staff || []).find(s => s.name === req.staffSession.name);
+    if (!staff) return res.status(404).json({ error: 'staff not found' });
+    const method = staffAuthMethodOf(staff);
+    let ok = false;
+    if (method === 'password') ok = verifySecret(password, staff.password);
+    else ok = verifySecret(pin, staff.pin);
+    if (!ok) return res.status(401).json({ error: 'invalid credentials' });
+    if (staff.totpEnabled && staff.totpSecret) {
+      if (!verifyTotp(staff.totpSecret, totpCode)) {
+        return res.status(401).json({ error: 'invalid_totp' });
+      }
+    }
+    staff.totpEnabled = false;
+    delete staff.totpSecret;
+    await pool.query(
+      'UPDATE clinic_store SET data = $1, version = version + 1, updated_at = now() WHERE id = 1',
+      [clinicData]
+    );
+    res.json({ ok: true, totpEnabled: false });
+  } catch (e) {
+    console.error('POST /api/2fa/disable failed:', e);
+    res.status(500).json({ error: 'server error' });
   }
 });
 

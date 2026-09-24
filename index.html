@@ -960,6 +960,8 @@ let state = {
   pedChartSex: 'Male',
   billingUnpaidOnly: false,
   loginSelectedName: '',
+  loginNeedsTotp: false,
+  totpSetup: null,
   ui: { editingPatient: false, resetConfirmText: '', editingStaffName: null },
   regDupeAcknowledged: false, // set once staff confirms a phone-match warning isn't the same person
   mergeUI: null,
@@ -1583,6 +1585,8 @@ function staffAuthMethod(name){
 function onLoginStaffChange(name){
   state.loginSelectedName = name;
   state.loginAuthMethod = staffAuthMethod(name);
+  const staff = (state.data.staff||[]).find(s=>s.name===name);
+  state.loginNeedsTotp = !!(staff && staff.totpEnabled);
   const lock = pinLockStatus(name);
   state.loginError = lock.locked ? `Too many incorrect attempts. Try again in ${Math.ceil(lock.remainingMs/1000)}s.` : '';
   render();
@@ -1864,7 +1868,9 @@ async function doLogin(){
     render();
     return;
   }
+  const totpCode = ((document.getElementById('login-totp')||{}).value||'').replace(/\s/g,'');
   const body = method === 'password' ? {staffName: name, password} : {staffName: name, pin};
+  if(totpCode) body.totpCode = totpCode;
   const btn = document.querySelector('.auth-card .btn-primary');
   if(btn){ btn.disabled = true; btn.textContent = 'Signing in…'; }
   state.loginError = '';
@@ -1892,6 +1898,23 @@ async function doLogin(){
       }
       // Real wrong credentials (401/403, and 400 which some servers use for bad PIN)
       if(res.status === 401 || res.status === 403 || res.status === 400){
+        const json = await res.json().catch(()=>({}));
+        if(json.error === 'totp_required'){
+          state.loginNeedsTotp = true;
+          state.loginError = 'Enter the 6-digit code from your authenticator app.';
+          state.loginInProgress = false;
+          render();
+          const totpEl = document.getElementById('login-totp');
+          if(totpEl) totpEl.focus();
+          return;
+        }
+        if(json.error === 'invalid_totp'){
+          state.loginNeedsTotp = true;
+          state.loginError = 'Incorrect authenticator code. Try again.';
+          state.loginInProgress = false;
+          render();
+          return;
+        }
         const rec = recordFailedPin(name);
         if(rec.lockedUntil && Date.now() < rec.lockedUntil){
           state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil((rec.lockedUntil-Date.now())/1000)}s.`;
@@ -2100,7 +2123,7 @@ async function loadStaffListForLogin(){
         state.data.staff = json.staff || [];
         ensureStaffAuthMethods();
         state.loadError = null;
-        try{ localStorage.setItem('mmc_staff_cache', JSON.stringify(state.data.staff.map(s=>({name:s.name,role:s.role,owner:!!s.owner,authMethod:s.authMethod||'pin',recoveryHash:s.recoveryHash||null})))); }catch(e){}
+        try{ localStorage.setItem('mmc_staff_cache', JSON.stringify(state.data.staff.map(s=>({name:s.name,role:s.role,owner:!!s.owner,authMethod:s.authMethod||'pin',totpEnabled:!!s.totpEnabled})))); }catch(e){}
         state.loading = false;
         render();
         return;
@@ -3702,6 +3725,8 @@ function loginView(){
   const lock = pinLockStatus(selectedName);
   const method = staffAuthMethod(selectedName);
   state.loginAuthMethod = method;
+  const selectedStaff = state.data.staff.find(s=>s.name===selectedName);
+  if(selectedStaff && selectedStaff.totpEnabled) state.loginNeedsTotp = true;
   const staffOptions = state.data.staff.map(s=>`<option value="${esc(s.name)}" ${s.name===selectedName?'selected':''}>${esc(s.name)} — ${esc(s.role)}</option>`).join('');
   const credField = method === 'password'
     ? `<div class="field"><label>Password</label><input id="login-password" type="password" placeholder="Your password" autocomplete="current-password" ${lock.locked?'disabled':''} onkeydown="if(event.key==='Enter')doLogin()"></div>`
@@ -3717,6 +3742,7 @@ function loginView(){
       </div>
       <div class="field"><label>Staff</label><select id="login-select" onchange="onLoginStaffChange(this.value)">${staffOptions}</select></div>
       ${credField}
+      ${state.loginNeedsTotp ? `<div class="field"><label>Authenticator code</label><input id="login-totp" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code" onkeydown="if(event.key==='Enter')doLogin()"></div>` : ''}
       ${state.loginError ? `<div class="error-text">${esc(state.loginError)}</div>` : ''}
       <button class="btn btn-primary btn-block" ${lock.locked?'disabled':''} onclick="doLogin()">Log in</button>
       <button type="button" class="auth-link" onclick="showForgotAuth()">${forgotLabel}</button>
@@ -8468,7 +8494,101 @@ async function toggleRolePerm(role, key, checked){
   await saveData();
 }
 
+function totpSettingsHTML(){
+  const me = currentStaffRecord() || {};
+  if(state.totpSetup && state.totpSetup.secret){
+    return `
+      <p class="muted" style="font-size:12.5px;">Scan this with Google Authenticator / Authy, or type the secret. Then enter a code to confirm.</p>
+      <div class="recovery-code-box">${esc(state.totpSetup.secret)}</div>
+      <p class="faint" style="word-break:break-all;">${esc(state.totpSetup.otpauth||'')}</p>
+      <div class="field"><label>6-digit code</label><input id="totp-confirm" inputmode="numeric" maxlength="6" placeholder="000000"></div>
+      <div id="totp-error" class="error-text"></div>
+      <div class="row" style="gap:8px;">
+        <button class="btn btn-primary btn-sm" onclick="confirmEnableTotp()">Confirm and enable</button>
+        <button class="btn btn-ghost btn-sm" onclick="state.totpSetup=null;render()">Cancel</button>
+      </div>`;
+  }
+  if(me.totpEnabled){
+    return `
+      <p class="muted">2FA is <strong>on</strong> for your account.</p>
+      <div class="field"><label>Current ${staffAuthMethod(me.name)==='password'?'password':'PIN'}</label>
+        <input id="totp-disable-cred" type="password" ${staffAuthMethod(me.name)==='password'?'':'inputmode="numeric" maxlength="4"'}></div>
+      <div class="field"><label>Current authenticator code</label>
+        <input id="totp-disable-code" inputmode="numeric" maxlength="6" placeholder="000000"></div>
+      <div id="totp-error" class="error-text"></div>
+      <button class="btn btn-danger btn-sm" onclick="disableTotp()">Turn off 2FA</button>`;
+  }
+  return `<p class="muted">2FA is off. Enable it to require an authenticator code after your PIN or password.</p>
+    <div id="totp-error" class="error-text"></div>
+    <button class="btn btn-sm" onclick="beginTotpSetup()">Enable 2FA</button>`;
+}
+async function beginTotpSetup(){
+  const err = document.getElementById('totp-error');
+  try{
+    const res = await fetch('/api/2fa/setup', {method:'POST', credentials:'same-origin'});
+    const json = await res.json().catch(()=>({}));
+    if(!res.ok){
+      if(err) err.textContent = json.error === 'already_enabled' ? '2FA is already enabled.' : 'Could not start 2FA setup.';
+      return;
+    }
+    state.totpSetup = {secret: json.secret, otpauth: json.otpauth};
+    render();
+  }catch(e){
+    if(err) err.textContent = 'Could not reach the server.';
+  }
+}
+async function confirmEnableTotp(){
+  const code = ((document.getElementById('totp-confirm')||{}).value||'').trim();
+  const err = document.getElementById('totp-error');
+  try{
+    const res = await fetch('/api/2fa/enable', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({totpCode: code})
+    });
+    const json = await res.json().catch(()=>({}));
+    if(!res.ok){
+      if(err) err.textContent = json.error === 'invalid_totp' ? 'That code is not valid. Try the next one.' : 'Could not enable 2FA.';
+      return;
+    }
+    state.totpSetup = null;
+    const me = currentStaffRecord();
+    if(me) me.totpEnabled = true;
+    logAudit('Enabled 2FA', state.session.staffName||'');
+    render();
+  }catch(e){
+    if(err) err.textContent = 'Could not reach the server.';
+  }
+}
+async function disableTotp(){
+  const cred = ((document.getElementById('totp-disable-cred')||{}).value||'').trim();
+  const code = ((document.getElementById('totp-disable-code')||{}).value||'').trim();
+  const err = document.getElementById('totp-error');
+  const method = staffAuthMethod(state.session.staffName);
+  const body = {totpCode: code};
+  if(method === 'password') body.password = cred; else body.pin = cred;
+  try{
+    const res = await fetch('/api/2fa/disable', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    const json = await res.json().catch(()=>({}));
+    if(!res.ok){
+      if(err) err.textContent = json.error === 'invalid_totp' ? 'Incorrect authenticator code.' : 'Could not disable 2FA — check your login details.';
+      return;
+    }
+    const me = currentStaffRecord();
+    if(me) me.totpEnabled = false;
+    logAudit('Disabled 2FA', state.session.staffName||'');
+    render();
+  }catch(e){
+    if(err) err.textContent = 'Could not reach the server.';
+  }
+}
+
 function settingsView(){
+
 
   const ci = state.data.clinicInfo;
   const canManageStaff = isOwner();
@@ -8538,6 +8658,11 @@ function settingsView(){
         </select>
       </div>
       <p class="faint">Press Ctrl+K (⌘K on Mac) anytime for ${t('Quick search')}.</p>
+    </div>
+    <div class="card" style="margin-bottom:18px;max-width:520px;">
+      <h2 style="margin-bottom:8px;">Two-factor authentication</h2>
+      <p class="muted" style="font-size:12.5px;">Protects only <strong>your</strong> login. The authenticator secret never leaves the server after setup.</p>
+      <div id="totp-settings-box">${totpSettingsHTML()}</div>
     </div>
     <div class="card" style="margin-bottom:18px;max-width:520px;">
       <h2 style="margin-bottom:12px;">Clinic info</h2>
