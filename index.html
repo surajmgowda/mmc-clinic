@@ -712,16 +712,14 @@
   .opd-card .rx-line{margin-left:0;margin-right:0;}
   .opd-card .sheet-divider{margin-left:22px;margin-right:22px;}
 
-  /* ---- OPD / prescription / investigation card redesign (v3 clinic theme) ---- */
-  .opdx-card{position:relative;border:1px solid #D8E0EA;border-radius:14px;overflow:hidden;background:#fff;}
-  .opdx-card::before{
-    content:"";position:absolute;left:0;top:0;bottom:0;width:5px;
-    background:linear-gradient(180deg,#C99412 0%,#1B4F6E 55%,#249688 100%);
-  }
-  .opdx-inner{padding-left:5px;}
+  /* ---- OPD / Rx / certificate print cards (simple clinic letterhead) ---- */
+  .opdx-card{position:relative;border:1px solid #C9D3DE;border-radius:8px;overflow:hidden;background:#fff;}
+  .opdx-card::before{display:none;}
+  .opdx-inner{padding:0;}
   .opdx-head{
     display:flex;align-items:flex-start;justify-content:space-between;gap:14px;
-    padding:18px 22px 16px;background:linear-gradient(145deg,#132038 0%,#1A2F4A 100%);color:#fff;
+    padding:16px 22px 12px;background:#fff;color:#132038;
+    border-bottom:2px solid #1B4F6E;
   }
   .opdx-brand{display:flex;align-items:center;gap:12px;min-width:0;}
   .opdx-crest{
@@ -730,16 +728,16 @@
     font-family:'Source Serif 4',serif;font-weight:700;color:#132038;font-size:12px;letter-spacing:0.02em;
     box-shadow:0 2px 8px rgba(201,148,18,0.35);
   }
-  .opdx-clinic-name{font-family:'Source Serif 4',serif;font-size:18px;font-weight:700;letter-spacing:0.01em;line-height:1.25;}
-  .opdx-clinic-meta{font-size:11px;color:rgba(255,255,255,0.72);margin-top:3px;line-height:1.45;}
+  .opdx-clinic-name{font-family:'Source Serif 4',serif;font-size:20px;font-weight:700;letter-spacing:0.01em;line-height:1.2;color:#132038;}
+  .opdx-clinic-meta{font-size:11.5px;color:#5A6578;margin-top:3px;line-height:1.45;}
   .opdx-doc-top{text-align:right;flex-shrink:0;max-width:42%;}
-  .opdx-doc-top-name{font-size:13.5px;font-weight:700;color:#fff;}
-  .opdx-doc-top-qual{font-size:11px;color:rgba(255,255,255,0.7);margin-top:2px;}
+  .opdx-doc-top-name{font-size:13.5px;font-weight:700;color:#132038;}
+  .opdx-doc-top-qual{font-size:11px;color:#5A6578;margin-top:2px;}
   .opdx-strip{
-    padding:8px 22px;background:linear-gradient(90deg,#1B4F6E,#249688);
-    color:#fff;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;
+    padding:7px 22px;background:#F3F6F9;border-bottom:1px solid #E1E7EF;
+    color:#1B4F6E;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;
   }
-  .opdx-patient-band{padding:16px 22px 10px;background:linear-gradient(180deg,#F3F8FB 0%,#fff 100%);}
+  .opdx-patient-band{padding:14px 22px 8px;background:#fff;}
   .opdx-patient-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
   .opdx-patient-name{font-family:'Source Serif 4',serif;font-size:19px;font-weight:700;color:#132038;}
   .opdx-patient-id{font-size:11.5px;font-weight:700;color:#1B4F6E;background:#E7F2F7;padding:4px 11px;border-radius:99px;border:1px solid #D0E6F0;}
@@ -775,28 +773,21 @@
   .opdx-c-text{font-size:13.5px;line-height:1.55;color:#152033;white-space:pre-wrap;}
   .opdx-c-block.dx .opdx-c-icon{background:#FBF4E0;color:#A67A0C;}
   .opdx-c-block.dx .opdx-c-text{font-size:15.5px;font-weight:700;color:#132038;}
-  .opdx-rx-card{margin:14px 22px 0;border:1px solid #D8E0EA;border-radius:10px;overflow:hidden;}
-  .opdx-rx-head{padding:8px 14px;background:#F3F8FB;border-bottom:1px solid #E1E7EF;}
+  .opdx-rx-card{margin:14px 22px 0;border:1px solid #E1E7EF;border-radius:12px;overflow:hidden;}
+  .opdx-rx-head{padding:8px 14px;background:#F3F6F9;border-bottom:1px solid #E1E7EF;}
   .opdx-rx-head-title{font-size:11px;font-weight:700;letter-spacing:0.07em;text-transform:uppercase;color:#1B4F6E;}
-  .opdx-rx-body{padding:0;}
-  .opdx-rx-item{display:flex;gap:12px;padding:10px 14px;border-bottom:1px solid #EEF2F6;font-size:13.5px;align-items:flex-start;}
+  .opdx-rx-body{padding:6px 14px 10px;}
+  .opdx-rx-item{display:flex;gap:12px;padding:10px 0;border-bottom:1px dotted #E1E7EF;font-size:13.5px;align-items:flex-start;}
   .opdx-rx-item:last-child{border-bottom:none;}
   .opdx-rx-num{
-    width:22px;height:22px;border-radius:50%;background:#1B4F6E;color:#fff;
+    width:22px;height:22px;border-radius:4px;background:#1B4F6E;color:#fff;
     display:inline-flex;align-items:center;justify-content:center;
-    font-weight:700;font-size:11px;flex-shrink:0;line-height:1;margin-top:1px;
+    font-weight:700;font-size:11px;flex-shrink:0;line-height:1;
   }
+  .opdx-rx-freq{font-family:ui-monospace,Menlo,monospace;font-weight:700;color:#1B4F6E;letter-spacing:0.04em;}
+  .opdx-rx-dose{font-weight:600;color:#132038;}
   .opdx-rx-med{font-weight:700;color:#152033;font-size:14px;}
   .opdx-rx-sub{color:#5A6578;font-size:12.5px;margin-top:2px;}
-  .opdx-rx-freq{
-    font-family:ui-monospace,Menlo,monospace;font-weight:700;font-size:13px;
-    letter-spacing:0.04em;color:#132038;background:#FBF4E0;border:1px solid #E8D48A;
-    padding:2px 8px;border-radius:6px;white-space:nowrap;flex-shrink:0;margin-left:auto;
-  }
-  .cert-sheet .cert-title-line{
-    text-align:center;font-family:'Source Serif 4',serif;font-size:16px;font-weight:700;
-    letter-spacing:0.06em;color:#132038;padding:14px 22px 0;text-transform:uppercase;
-  }
   .opdx-followup-band{
     display:flex;justify-content:space-between;align-items:center;gap:10px;
     margin:14px 22px;padding:12px 14px;background:#FBF4E0;border-radius:10px;
@@ -810,6 +801,10 @@
   .opdx-sign-box{width:150px;text-align:center;flex-shrink:0;}
   .opdx-sign-line{height:48px;margin-bottom:4px;}
   .opdx-sign-lbl{font-size:10px;font-weight:700;color:#8A94A6;text-transform:uppercase;letter-spacing:0.05em;}
+  .cert-sheet .cert-body{padding:18px 22px 8px;font-size:14.5px;line-height:1.75;color:#152033;}
+  .cert-sheet .cert-body p{margin:0 0 12px;}
+  .cert-sheet .opdx-strip{text-align:center;}
+
   .opdx-lab-table{width:100%;border-collapse:collapse;font-size:13px;margin:8px 0 4px;}
   .opdx-lab-table th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:0.04em;color:#5A6578;padding:8px 10px;border-bottom:2px solid #1B4F6E;background:#F3F8FB;}
   .opdx-lab-table td{padding:8px 10px;border-bottom:1px solid #E1E7EF;color:#152033;}
@@ -1191,32 +1186,11 @@ function displayAge(p){
 // "Fever × 3days, Cough" → "C/O Fever × 3days\nC/O Cough"
 function formatComplaintsForOpd(raw){
   if(!raw || !String(raw).trim()) return '—';
-  return String(raw)
-    .split(/[\n;]+|(?:,\s*(?=c\/?o\b|[A-Z]))/i)
-    .flatMap(chunk => chunk.split(/\s+(?:and|&)\s+(?=c\/?o\b)/i))
-    .map(s=>s.trim().replace(/^[•\-\d.)]+\s*/, ''))
-    .filter(Boolean)
-    .map(s=>{
-      // If doctor already typed C/O / c/o / C.O., keep one clean prefix.
-      if(/^(c\/?o|c\.o)\b/i.test(s)) return s.replace(/^(c\/?o|c\.o)\.?\s*/i, 'C/O ');
-      return 'C/O ' + s;
-    }).join('\n');
-}
-
-// Show frequencies on printouts as 1-0-1 / 1-1-1 style when possible.
-function formatFrequencyForPrint(freq){
-  if(!freq) return '';
-  const raw = String(freq).trim();
-  const compact = raw.replace(/\s+/g,'');
-  if(/^\d+(\.\d+)?(-\d+(\.\d+)?){1,3}$/.test(compact)) return compact;
-  const f = raw.toLowerCase();
-  if(/\bstat\b/.test(f)) return 'STAT';
-  if(/\bqid\b|four times/.test(f)) return '1-1-1-1';
-  if(/\btds\b|\btid\b|thrice|three times/.test(f)) return '1-1-1';
-  if(/\bbd\b|twice/.test(f)) return '1-0-1';
-  if(/\bhs\b|bedtime|at night/.test(f)) return '0-0-1';
-  if(/\bod\b|once daily|once a day|once/.test(f)) return '1-0-0';
-  return raw;
+  return String(raw).split(/[,;\n]+/).map(s=>s.trim()).filter(Boolean).map(s=>{
+    // If the doctor already typed c/o (any casing), leave that complaint as-is
+    if(/^c\/?o\b/i.test(s)) return s;
+    return 'c/o ' + s;
+  }).join('\n');
 }
 
 // BMI classification:
@@ -3420,17 +3394,26 @@ function rxCardHTML(prescriptions){
     <div class="opdx-rx-body">
       ${prescriptions.map((r,i)=>{
         const days = daysLabel(r.duration);
-        const qty = computeQuantityLabel(r.medicine, r.frequency, r.duration);
-        const freqPrint = formatFrequencyForPrint(r.frequency);
-        const subParts = [r.dosage, days?('× '+days):'', r.instructions].filter(Boolean).join(' · ');
+        const freqShown = formatFrequencyDisplay(r.frequency);
+        const qty = computeQuantityLabel(r.medicine, r.frequency, r.duration, r.dosage);
+        let doseShown = (r.dosage||'').trim();
+        if(isSyrupMedicine(r.medicine)){
+          const ml = extractDoseMl(r.dosage, r.medicine);
+          if(ml) doseShown = ml + ' ml';
+        }
+        const subParts = [
+          doseShown ? `<span class="opdx-rx-dose">${esc(doseShown)}</span>` : '',
+          freqShown ? `<span class="opdx-rx-freq">${esc(freqShown)}</span>` : '',
+          days ? esc('× '+days) : '',
+          r.instructions ? esc(r.instructions) : ''
+        ].filter(Boolean).join(' · ');
         return `<div class="opdx-rx-item">
           <span class="opdx-rx-num">${i+1}</span>
-          <span style="flex:1;min-width:0;">
+          <span>
             <span class="opdx-rx-med">${esc(r.medicine)}</span>
-            ${subParts?`<div class="opdx-rx-sub">${esc(subParts)}</div>`:''}
+            ${subParts?`<div class="opdx-rx-sub">${subParts}</div>`:''}
             ${qty?`<div class="opdx-rx-sub">${esc(qty)}</div>`:''}
           </span>
-          ${freqPrint?`<span class="opdx-rx-freq">${esc(freqPrint)}</span>`:''}
         </div>`;
       }).join('')}
     </div>
@@ -4707,7 +4690,7 @@ function patientView(patientId){
     <div class="card" style="margin-bottom:14px;">
       <h3 style="margin-bottom:8px;">Medication history</h3>
       <table><thead><tr><th>Date</th><th>Medicine</th><th>Dose / Frequency</th><th>Days</th></tr></thead>
-      <tbody>${medHist.map(x=>`<tr><td>${fmtDate(x.date)}</td><td>${esc(x.medicine)}</td><td>${esc(x.dosage)||'—'} ${esc(formatFrequencyForPrint(x.frequency))||''}</td><td>${esc(x.duration)||'—'}</td></tr>`).join('')}</tbody></table>
+      <tbody>${medHist.map(x=>`<tr><td>${fmtDate(x.date)}</td><td>${esc(x.medicine)}</td><td>${esc(x.dosage)||'—'} ${esc(x.frequency)||''}</td><td>${esc(x.duration)||'—'}</td></tr>`).join('')}</tbody></table>
     </div>` : '';
   const bmiHTML = bmiSvg ? `<div class="card" style="margin-bottom:14px;"><h3 style="margin-bottom:8px;">BMI trend</h3>${bmiSvg}</div>` : '';
 
@@ -5846,16 +5829,56 @@ function parseFrequencyPerDay(freq){
   return map[head] !== undefined ? map[head] : null;
 }
 
+// Show frequency on printouts as 1-0-1 / 1-1-1 style when possible.
+function formatFrequencyDisplay(freq){
+  if(!freq) return '';
+  const raw = String(freq).trim();
+  const dashParts = raw.split('-').map(s=>s.trim());
+  if(dashParts.length>=2 && dashParts.every(p=>/^\d+(\.\d+)?$/.test(p))){
+    return dashParts.join('-');
+  }
+  const head = raw.toLowerCase().split(/[\s(/]/)[0];
+  const map = {
+    od:'1-0-0', once:'1-0-0',
+    bd:'1-0-1', twice:'1-0-1',
+    tds:'1-1-1', tid:'1-1-1', thrice:'1-1-1',
+    qid:'1-1-1-1',
+    hs:'0-0-1', bedtime:'0-0-1',
+    stat:'STAT'
+  };
+  return map[head] || raw;
+}
+
+function extractDoseMl(dosage, medicine){
+  const blob = ((dosage||'') + ' ' + (medicine||'')).toString();
+  const m = blob.match(/(\d+(?:\.\d+)?)\s*ml\b/i);
+  return m ? m[1] : '';
+}
+function isSyrupMedicine(medicine){
+  const m = (medicine||'').toLowerCase();
+  return /\bsyp\.?\b/.test(m) || m.startsWith('syp.') || m.startsWith('syrup');
+}
+
 // Only tablets/capsules get a "how many to buy" total — syrups, injections
 // and IV fluids don't map to a simple per-dose count the same way.
-function computeQuantityLabel(medicine, freq, duration){
+function computeQuantityLabel(medicine, freq, duration, dosage){
   const m = (medicine||'').trim().toLowerCase();
+  const days = parseInt(duration,10);
+  const perDay = parseFrequencyPerDay(freq);
+  if(isSyrupMedicine(medicine)){
+    const ml = extractDoseMl(dosage, medicine);
+    const parts = [];
+    if(ml) parts.push('Take ' + ml + ' ml each time');
+    if(ml && perDay && days && days>0){
+      const total = Math.round(parseFloat(ml)*perDay*days*10)/10;
+      parts.push('Total about ' + total + ' ml');
+    }
+    return parts.join(' · ');
+  }
   let unit = null;
   if(m.startsWith('tab.')) unit = 'tablet';
   else if(m.startsWith('cap.')) unit = 'capsule';
   if(!unit) return '';
-  const perDay = parseFrequencyPerDay(freq);
-  const days = parseInt(duration,10);
   if(!perDay || !days || days<=0) return '';
   const qty = Math.ceil(perDay*days);
   return `Total: ${qty} ${unit}${qty===1?'':'s'}`;
@@ -6565,11 +6588,13 @@ function visitPrintView(patientId, visitId){
   if(!v) return `<p class="error-text">Visit not found.</p>`;
   if(!can('viewClinical') && !can('clinicalVisit')){
     return `<div class="page-head"><h1>Visit summary</h1></div><p class="muted">Clinical details are limited for this role. The clinic admin can change this in Settings → Role permissions.</p>
-      <button class="btn btn-ghost" onclick="go('patient',{patientId:p.id})">Back to patient</button>`;
+      <button class="btn btn-ghost" onclick="go('patient',{patientId:'${p.id}'})">Back to patient</button>`;
   }
   const ci = state.data.clinicInfo;
 
-  const rxOnlySheet = (v.prescriptions||[]).length ? `
+  const rxList = v.prescriptions || [];
+  const invList = v.investigations || [];
+  const rxOnlySheet = rxList.length ? `
     <div class="print-sheet opdx-card" id="sheet-rx-only">
       <div class="opdx-inner">
         <div class="opdx-head">
@@ -6596,7 +6621,7 @@ function visitPrintView(patientId, visitId){
 
         ${v.diagnosis ? `<div class="opdx-clinical"><div class="opdx-c-block dx"><div class="opdx-c-icon">D</div><div class="opdx-c-body"><div class="opdx-c-title">Diagnosis</div><div class="opdx-c-text">${esc(v.diagnosis)}</div></div></div></div>` : ''}
 
-        ${rxCardHTML(v.prescriptions||[])}
+        ${rxCardHTML(rxList)}
         ${v.followUpDate ? `<div class="opdx-followup-band"><span class="opdx-followup-k">Follow-up</span><span class="opdx-followup-v">${fmtDate(v.followUpDate)}</span></div>` : ''}
 
         <div class="opdx-foot">
@@ -6666,7 +6691,7 @@ function visitPrintView(patientId, visitId){
           ${v.referredTo ? `<div class="opdx-c-block"><div class="opdx-c-icon">R</div><div class="opdx-c-body"><div class="opdx-c-title">Referred to</div><div class="opdx-c-text">${esc(v.referredTo)}${v.referralReason?' — '+esc(v.referralReason):''}</div></div></div>` : ''}
         </div>
 
-        ${rxCardHTML(v.prescriptions||[])}
+        ${rxCardHTML(rxList)}
         ${v.followUpDate ? `<div class="opdx-followup-band"><span class="opdx-followup-k">Follow-up</span><span class="opdx-followup-v">${fmtDate(v.followUpDate)}</span></div>` : ''}
 
         <div class="opdx-foot">
@@ -6679,7 +6704,7 @@ function visitPrintView(patientId, visitId){
       </div>
     </div>`;
 
-  const invSheet = (v.investigations||[]).length ? `
+  const invSheet = invList.length ? `
     <div class="print-sheet opdx-card" id="sheet-inv">
       <div class="opdx-inner">
         <div class="opdx-head">
@@ -6709,7 +6734,7 @@ function visitPrintView(patientId, visitId){
         <div class="opdx-rx-card">
           <div class="opdx-rx-head"><span class="opdx-rx-head-title">Investigations requested</span></div>
           <div class="opdx-rx-body">
-            ${v.investigations.map((r,i)=>`<div class="opdx-rx-item"><span class="opdx-rx-num">${i+1}</span><span><span class="opdx-rx-med">${esc(r.test)}</span>${r.notes?`<div class="opdx-rx-sub">${esc(r.notes)}</div>`:''}</span></div>`).join('')}
+            ${invList.map((r,i)=>`<div class="opdx-rx-item"><span class="opdx-rx-num">${i+1}</span><span><span class="opdx-rx-med">${esc(r.test)}</span>${r.notes?`<div class="opdx-rx-sub">${esc(r.notes)}</div>`:''}</span></div>`).join('')}
           </div>
         </div>
 
@@ -6723,11 +6748,11 @@ function visitPrintView(patientId, visitId){
       </div>
     </div>` : '';
 
-  const resultsCard = (v.investigations||[]).length ? `
+  const resultsCard = invList.length ? `
     <div class="card" style="margin-bottom:16px;max-width:720px;">
       <h2 style="margin-bottom:4px;">Investigation results</h2>
       <p class="faint" style="margin-bottom:12px;">Structured panels show standard parameters with units and approximate Indian reference ranges by age/sex. Confirm against your lab’s ranges.</p>
-      ${invResultEntryHTML(p, v.investigations)}
+      ${invResultEntryHTML(p, invList)}
       <button class="btn btn-primary btn-sm" onclick="saveInvestigationResults('${p.id}','${v.id}')">Save results</button>
       <span id="results-saved-msg" class="faint" style="margin-left:8px;"></span>
     </div>` : '';
@@ -6737,13 +6762,13 @@ function visitPrintView(patientId, visitId){
   return `
     <div class="page-head">
       <div><h1>Visit summary</h1><p class="muted">${esc(p.name)} (${p.id}) — ${fmtDate(v.date)}</p></div>
-      <button class="btn btn-ghost" onclick="go('patient',{patientId:p.id})">Back to patient</button>
+      <button class="btn btn-ghost" onclick="go('patient',{patientId:'${p.id}'})">Back to patient</button>
     </div>
     <div class="row" style="margin-bottom:18px;flex-wrap:wrap;gap:8px;">
-      <button class="btn btn-primary" onclick="printSection('sheet-opd')">Print OPD card${(v.prescriptions||[]).length?' + prescription':''}</button>
+      <button class="btn btn-primary" onclick="printSection('sheet-opd')">Print OPD card${rxList.length?' + prescription':''}</button>
       ${can('clinicalVisit')?`<button class="btn btn-accent" onclick="printOpdAndOpenNext('${p.id}','${v.id}')">Print OPD &amp; next patient</button>`:''}
-      ${(v.prescriptions||[]).length?`<button class="btn" onclick="printSection('sheet-rx-only')">Print prescription only</button>`:''}
-      ${(v.investigations||[]).length?`<button class="btn" onclick="printSection('sheet-inv')">Print investigation form</button>`:''}
+      ${rxList.length?`<button class="btn" onclick="printSection('sheet-rx-only')">Print prescription only</button>`:''}
+      ${invList.length?`<button class="btn" onclick="printSection('sheet-inv')">Print investigation form</button>`:''}
       ${invResultsSheet?`<button class="btn" onclick="printSection('sheet-inv-results')">Print lab report</button>`:''}
       ${v.referredTo?`<button class="btn" onclick="printSection('sheet-referral')">Print referral letter</button>`:''}
       ${v.referredTo?`<button class="btn" onclick="printSection('sheet-referral-slim')">Print slim referral</button>`:''}
@@ -7869,8 +7894,7 @@ function certificateSheetHTML(p, built, ci){
             ${built.qual?`<div class="opdx-doc-top-qual">${esc(built.qual)}</div>`:''}
           </div>
         </div>
-        <div class="opdx-strip">Medical certificate</div>
-        <div class="cert-title-line">${esc(built.title)}</div>
+        <div class="opdx-strip">${esc(built.title)}</div>
         <div class="opdx-patient-band">
           <div class="opdx-meta-grid">
             <div class="opdx-meta-item"><span class="opdx-meta-k">Certificate No.</span><span class="opdx-meta-v">${esc(built.certNo)}</span></div>
