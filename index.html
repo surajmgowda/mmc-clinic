@@ -5867,13 +5867,7 @@ function computeQuantityLabel(medicine, freq, duration, dosage){
   const perDay = parseFrequencyPerDay(freq);
   if(isSyrupMedicine(medicine)){
     const ml = extractDoseMl(dosage, medicine);
-    const parts = [];
-    if(ml) parts.push('Take ' + ml + ' ml each time');
-    if(ml && perDay && days && days>0){
-      const total = Math.round(parseFloat(ml)*perDay*days*10)/10;
-      parts.push('Total about ' + total + ' ml');
-    }
-    return parts.join(' · ');
+    return ml ? 'Take ' + ml + ' ml each time' : '';
   }
   let unit = null;
   if(m.startsWith('tab.')) unit = 'tablet';
