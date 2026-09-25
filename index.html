@@ -914,10 +914,25 @@
   @media print{
     body.printing-token *{visibility:hidden !important;}
     body.printing-token .token-slip,body.printing-token .token-slip *{visibility:visible !important;}
-    body.printing-token .token-slip{display:block !important;position:fixed;left:0;top:0;width:80mm;padding:8mm;font-family:sans-serif;}
-    .token-slip .t-num{font-size:48px;font-weight:700;text-align:center;line-height:1.1;margin:8px 0;}
-    .token-slip .t-clinic{font-size:14px;font-weight:700;text-align:center;}
-    .token-slip .t-line{text-align:center;font-size:12px;margin:4px 0;}
+    body.printing-token{
+      margin:0 !important;padding:0 !important;
+    }
+    body.printing-token .token-slip{
+      display:block !important;position:fixed;left:0;top:0;
+      width:58mm;max-width:58mm;padding:0;
+      font-family:'Public Sans',sans-serif;color:#132038;
+      border:1.5px solid #1B4F6E;border-radius:4px;overflow:hidden;
+      box-sizing:border-box;
+    }
+    .token-slip .t-head{background:#1B4F6E;color:#fff;padding:4px 6px;text-align:center;}
+    .token-slip .t-clinic{font-family:'Source Serif 4',serif;font-size:11px;font-weight:700;letter-spacing:0.01em;line-height:1.2;}
+    .token-slip .t-meta{font-size:8.5px;opacity:0.9;margin-top:1px;line-height:1.25;}
+    .token-slip .t-body{padding:6px 8px 5px;text-align:center;}
+    .token-slip .t-label{font-size:8px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#1B4F6E;margin-bottom:1px;}
+    .token-slip .t-num{font-family:'Source Serif 4',serif;font-size:28px;font-weight:700;line-height:1;color:#132038;margin:2px 0 4px;}
+    .token-slip .t-name{font-size:12px;font-weight:700;color:#132038;line-height:1.2;}
+    .token-slip .t-line{font-size:9.5px;color:#5A6578;margin:1px 0;line-height:1.3;}
+    .token-slip .t-foot{padding:3px 6px;background:#F3F6F9;border-top:1px solid #E1E7EF;text-align:center;font-size:8.5px;color:#5A6578;}
   }
   .lang-toggle{display:inline-flex;gap:0;border:1px solid var(--line);border-radius:8px;overflow:hidden;}
   .lang-toggle button{border:none;background:var(--bg);padding:6px 12px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--ink-soft);}
@@ -983,7 +998,15 @@ let state = {
 
 function defaultData(){
   return {
-    clinicInfo: { name: 'Male Madeshwara Clinic', shortName: 'MMC', address: '', phone: '', logoDataUrl: '' },
+    clinicInfo: {
+      name: 'Male Madeshwara Clinic', shortName: 'MMC', address: '', phone: '', logoDataUrl: '',
+      regNo: '',
+      printPrefs: {
+        showAddress: true, showPhone: true, showLogo: true,
+        showVitalsOnRx: false, showQtyOnRx: true, alwaysShowAllergyOnRx: true,
+        labelLang: 'en', showRegNo: true
+      }
+    },
     rolePerms: JSON.parse(JSON.stringify(typeof ROLE_PERM_DEFAULTS!=='undefined'?ROLE_PERM_DEFAULTS:{})),
 
     nextPatientSeq: 1,
@@ -1404,6 +1427,7 @@ function tokenBoardHTML(){
       <button class="btn btn-primary btn-sm" onclick="callNextToken()">Call next token</button>
       ${now && can('clinicalVisit') ? `<button class="btn btn-primary" onclick="startTokenConsult('${now.patient.id}','${now.visit.id}')">Open consult — ${esc(now.patient.name)}</button>` : ''}
       ${now ? `<button class="btn btn-ghost btn-sm" onclick="printTokenSlip('${now.patient.id}','${now.visit.id}')">Reprint token</button>` : ''}
+      ${(state.data.lastPrinted&&state.data.lastPrinted.patientId) ? `<button class="btn btn-ghost btn-sm" onclick="reprintLast()">Reprint last document</button>` : ''}
     </div>`;
 }
 
@@ -1750,7 +1774,37 @@ function isOwner(){
   return !!(s && s.owner);
 }
 // Ensure at least one owner exists (legacy data / first account).
-function bootClinicGuards(){ ensureOwnerExists(); if(typeof ensureRolePerms==='function') ensureRolePerms(); }
+function bootClinicGuards(){
+  ensureOwnerExists();
+  if(typeof ensureRolePerms==='function') ensureRolePerms();
+  ensurePrintPrefs();
+}
+function defaultPrintPrefs(){
+  return {
+    showAddress: true, showPhone: true, showLogo: true,
+    showVitalsOnRx: false, showQtyOnRx: true, alwaysShowAllergyOnRx: true,
+    labelLang: 'en', showRegNo: true
+  };
+}
+function ensurePrintPrefs(){
+  if(!state.data) return;
+  if(!state.data.clinicInfo) state.data.clinicInfo = {};
+  const ci = state.data.clinicInfo;
+  if(ci.regNo == null) ci.regNo = '';
+  const d = defaultPrintPrefs();
+  if(!ci.printPrefs || typeof ci.printPrefs !== 'object') ci.printPrefs = Object.assign({}, d);
+  else ci.printPrefs = Object.assign({}, d, ci.printPrefs);
+}
+function printPrefs(){
+  ensurePrintPrefs();
+  return (state.data.clinicInfo && state.data.clinicInfo.printPrefs) || defaultPrintPrefs();
+}
+function printLabel(en, kn){
+  const lang = (printPrefs().labelLang) || 'en';
+  if(lang === 'kn' && kn) return kn;
+  if(lang === 'both' && kn) return en + ' / ' + kn;
+  return en;
+}
 function ensureOwnerExists(){
   if(!state.data || !state.data.staff || !state.data.staff.length) return;
   if(state.data.staff.some(s=>s.owner)) return;
@@ -2253,18 +2307,24 @@ function printTokenSlip(patientId, visitId){
   const v = (p.visits||[]).find(x=>x.id===visitId);
   const ci = state.data.clinicInfo || {};
   const token = v && v.token != null ? v.token : '—';
+  const doctor = (v && (v.doctorName || v.assignedDoctor)) || '';
+  const shortClinic = (ci.shortName || ci.name || 'MMC').trim();
   const slip = document.getElementById('token-slip-root') || document.createElement('div');
   slip.id = 'token-slip-root';
   slip.className = 'token-slip';
   slip.innerHTML = `
-    <div class="t-clinic">${esc(ci.name || 'MMC Clinic')}</div>
-    <div class="t-line">${esc(ci.address||'')}</div>
-    <div class="t-line" style="margin-top:8px;letter-spacing:0.12em;font-weight:700;">TOKEN</div>
-    <div class="t-num">${esc(String(token))}</div>
-    <div class="t-line"><strong>${esc(p.name)}</strong></div>
-    <div class="t-line">${esc(p.id)}${p.sex? ' · '+esc(p.sex):''}</div>
-    <div class="t-line">${esc(fmtDate(todayStr()))}${v && v.time ? ' · ' + esc(v.time) : ''}</div>
-    <div class="t-line" style="margin-top:10px;font-size:11px;">Please wait for your number to be called</div>
+    <div class="t-head">
+      <div class="t-clinic">${esc(shortClinic)}</div>
+      ${ci.phone?`<div class="t-meta">${esc(ci.phone)}</div>`:''}
+    </div>
+    <div class="t-body">
+      <div class="t-label">Token</div>
+      <div class="t-num">${esc(String(token))}</div>
+      <div class="t-name">${esc(p.name)}</div>
+      <div class="t-line">${esc(p.id)}${p.sex? ' · '+esc(p.sex):''}</div>
+      <div class="t-line">${esc(fmtDate(v && v.date ? v.date : todayStr()))}${v && v.time ? ' · ' + esc(v.time) : ''}${doctor ? ' · ' + esc(doctor) : ''}</div>
+    </div>
+    <div class="t-foot">Wait for your number</div>
   `;
   if(!slip.parentNode) document.body.appendChild(slip);
   document.body.classList.add('printing-token');
@@ -2273,7 +2333,7 @@ function printTokenSlip(patientId, visitId){
     window.removeEventListener('afterprint', afterTok);
   };
   window.addEventListener('afterprint', afterTok);
-  window.print();
+  setTimeout(()=>window.print(), 50);
 }
 
 /* ============================= DAILY CASH ============================= */
@@ -3331,19 +3391,24 @@ async function printOpdAndOpenNext(patientId, visitId){
   }, 600);
 }
 
-function printSection(id){
-  if(id==='sheet-opd' || id==='sheet-rx-only'){
-    const m = location.hash; // unused
-    // Capture last OPD from current route if on visit print
-    if(state.route==='visitPrint' && state.routeParams.patientId && state.routeParams.visitId){
-      state.data.lastPrinted = {patientId: state.routeParams.patientId, visitId: state.routeParams.visitId, at: new Date().toISOString(), sheet: id};
-      saveData();
-    }
+function recordLastPrinted(sheetId){
+  if(state.route==='visitPrint' && state.routeParams.patientId && state.routeParams.visitId){
+    state.data.lastPrinted = {
+      patientId: state.routeParams.patientId,
+      visitId: state.routeParams.visitId,
+      at: new Date().toISOString(),
+      sheet: sheetId || 'sheet-opd'
+    };
+    try{ saveData(); }catch(e){}
   }
-
+}
+function printSection(id){
+  if(id==='sheet-opd' || id==='sheet-rx-only' || id==='sheet-inv' || id==='sheet-referral' || id==='sheet-receipt'){
+    recordLastPrinted(id);
+  }
   document.querySelectorAll('.print-sheet').forEach(el=>el.classList.remove('print-active'));
   const el = document.getElementById(id);
-  if(!el) return;
+  if(!el){ alert('Nothing to print — open the document first.'); return; }
   el.classList.add('print-active');
   document.body.classList.remove('printing-token');
   const after = ()=>{
@@ -3352,6 +3417,125 @@ function printSection(id){
   };
   window.addEventListener('afterprint', after);
   window.print();
+}
+/** Opens a clean print window so the user can choose "Save as PDF". */
+function saveSheetAsPdf(id){
+  const el = document.getElementById(id);
+  if(!el){ alert('Nothing to save — open the document first.'); return; }
+  recordLastPrinted(id);
+  const styles = Array.from(document.querySelectorAll('style')).map(s=>s.innerHTML).join('\n');
+  const w = window.open('', '_blank', 'noopener,width=800,height=900');
+  if(!w){ alert('Pop-up blocked. Allow pop-ups for this site, or use Print and choose “Save as PDF”.'); printSection(id); return; }
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>MMC document</title>
+    <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>${styles}
+      body{background:#fff;margin:0;padding:12px;font-family:'Public Sans',sans-serif;color:#152033;}
+      .print-sheet{display:block !important;box-shadow:none !important;border:1px solid #C9D3DE !important;max-width:640px;margin:0 auto;}
+      .print-sheet *{visibility:visible !important;}
+      @media print{body{padding:0;} .print-sheet{border:none !important;}}
+    </style></head><body>${el.outerHTML}
+    <script>window.onload=function(){setTimeout(function(){window.print();},300);};<\/script>
+    </body></html>`);
+  w.document.close();
+}
+function printPack(ids){
+  const list = (ids||[]).filter(id => document.getElementById(id));
+  if(!list.length){ alert('Nothing to print in this pack.'); return; }
+  let i = 0;
+  const runNext = ()=>{
+    if(i >= list.length) return;
+    const id = list[i++];
+    document.querySelectorAll('.print-sheet').forEach(el=>el.classList.remove('print-active'));
+    const el = document.getElementById(id);
+    if(!el){ runNext(); return; }
+    if(i === 1) recordLastPrinted(id);
+    el.classList.add('print-active');
+    document.body.classList.remove('printing-token');
+    const after = ()=>{
+      el.classList.remove('print-active');
+      window.removeEventListener('afterprint', after);
+      if(i < list.length) setTimeout(runNext, 400);
+    };
+    window.addEventListener('afterprint', after);
+    window.print();
+  };
+  runNext();
+}
+function reprintLast(){
+  const lp = state.data && state.data.lastPrinted;
+  if(!lp || !lp.patientId || !lp.visitId){
+    alert('No recent print recorded yet. Print an OPD card or prescription first.');
+    return;
+  }
+  go('visitPrint', {patientId: lp.patientId, visitId: lp.visitId});
+  setTimeout(()=>{
+    const sheet = lp.sheet || 'sheet-opd';
+    if(document.getElementById(sheet)) printSection(sheet);
+    else if(document.getElementById('sheet-opd')) printSection('sheet-opd');
+    else alert('Could not open the last printed visit.');
+  }, 500);
+}
+function rxWhatsAppText(p, v){
+  const ci = state.data.clinicInfo || {};
+  const clinic = ci.name || 'MMC Clinic';
+  const lines = [`Namaste ${p.name || ''},`, '', `Prescription from ${clinic}`];
+  if(v && v.date) lines.push('Date: ' + fmtDate(v.date));
+  if(v && v.diagnosis) lines.push('Diagnosis: ' + v.diagnosis);
+  lines.push('');
+  const rx = (v && v.prescriptions) || [];
+  if(rx.length){
+    lines.push('Medicines:');
+    rx.forEach((r,i)=>{
+      if(!r.medicine) return;
+      const bits = [r.medicine];
+      if(r.dosage) bits.push(r.dosage);
+      if(r.frequency) bits.push(formatFrequencyDisplay(r.frequency) || r.frequency);
+      if(r.duration) bits.push(daysLabel(r.duration) || r.duration);
+      if(r.instructions) bits.push(r.instructions);
+      lines.push((i+1) + '. ' + bits.join(' · '));
+    });
+  } else {
+    lines.push('No medicines listed.');
+  }
+  if(v && v.followUpDate) lines.push('', 'Follow-up: ' + fmtDate(v.followUpDate));
+  if(ci.phone) lines.push('', 'Clinic phone: ' + ci.phone);
+  lines.push('', 'Please take medicines as advised.');
+  return lines.join('\n');
+}
+function shareRxWhatsApp(patientId, visitId){
+  const p = state.data.patients.find(x=>x.id===patientId);
+  if(!p) return;
+  const v = (p.visits||[]).find(x=>x.id===visitId);
+  if(!p.phone){ alert('No phone number on this patient record.'); return; }
+  shareWhatsApp(p.phone, rxWhatsAppText(p, v));
+}
+function previewDraftRxPrint(){
+  const dv = state.draftVisit;
+  if(!dv) return;
+  const p = dv.patientId ? state.data.patients.find(x=>x.id===dv.patientId) : null;
+  const name = p ? p.name : (dv.newPatient && dv.newPatient.name) || 'Patient';
+  const rx = (dv.prescriptions||[]).filter(r=>r && r.medicine);
+  if(!rx.length){ alert('Add at least one medicine to preview.'); return; }
+  const ci = state.data.clinicInfo || {};
+  const body = `<div class="print-sheet opdx-card" style="max-width:560px;margin:16px auto;">
+    <div class="opdx-inner">
+      <div class="opdx-head"><div class="opdx-brand">${letterheadCrestHTML(ci)}<div>
+        <div class="opdx-clinic-name">${esc(ci.name||'')}</div>
+        <div class="opdx-clinic-meta">${clinicMetaHTML(ci)}</div></div></div></div>
+      <div class="opdx-strip">Prescription preview (not saved)</div>
+      <div class="opdx-patient-band"><div class="opdx-patient-name">${esc(name)}</div>
+        ${dv.diagnosis?`<div class="faint" style="margin-top:6px;">Dx: ${esc(dv.diagnosis)}</div>`:''}</div>
+      ${p?allergyChipsHTML(p):''}
+      ${rxCardHTML(rx)}
+    </div></div>
+    <p style="text-align:center;color:#5A6578;font-size:13px;">Close this window when done. Save the visit to print the official copy.</p>`;
+  const styles = Array.from(document.querySelectorAll('style')).map(s=>s.innerHTML).join('\n');
+  const w = window.open('', '_blank', 'noopener,width=640,height=800');
+  if(!w){ alert('Pop-up blocked — allow pop-ups to preview.'); return; }
+  w.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Rx preview</title>
+    <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,600;8..60,700&family=Public+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>${styles}body{background:#F3F6F9;padding:12px;font-family:'Public Sans',sans-serif;}</style></head><body>${body}</body></html>`);
+  w.document.close();
 }
 
 /* ============================= SETTINGS ============================= */
@@ -3368,9 +3552,31 @@ async function saveClinicInfo(){
   state.data.clinicInfo.phone = phoneEl ? phoneEl.value.trim() : state.data.clinicInfo.phone;
   const nsEl = document.getElementById('ci-noshow');
   if(nsEl) state.data.clinicInfo.noShowMinutes = parseInt(nsEl.value,10) || 45;
+  const regEl = document.getElementById('ci-regno');
+  if(regEl) state.data.clinicInfo.regNo = regEl.value.trim();
   logAudit('Updated clinic info', state.data.clinicInfo.name);
   await saveData();
   render();
+}
+async function savePrintPrefs(){
+  if(!isOwner()){ alert('Only the clinic admin can change print preferences.'); return; }
+  ensurePrintPrefs();
+  const g = id => document.getElementById(id);
+  const prefs = state.data.clinicInfo.printPrefs;
+  const bool = id => !!(g(id) && g(id).checked);
+  prefs.showAddress = bool('pp-address');
+  prefs.showPhone = bool('pp-phone');
+  prefs.showLogo = bool('pp-logo');
+  prefs.showRegNo = bool('pp-regno');
+  prefs.showVitalsOnRx = bool('pp-vitals-rx');
+  prefs.showQtyOnRx = bool('pp-qty');
+  prefs.alwaysShowAllergyOnRx = bool('pp-allergy');
+  const langEl = g('pp-lang');
+  if(langEl) prefs.labelLang = langEl.value || 'en';
+  logAudit('Updated print preferences', '');
+  await saveData();
+  const msg = document.getElementById('pp-saved-msg');
+  if(msg){ msg.textContent = 'Saved ✓'; setTimeout(()=>{ if(msg) msg.textContent=''; }, 2000); }
 }
 function uploadClinicLogo(file){
   if(!isOwner()){ alert('Only the clinic admin can change the clinic logo.'); return; }
@@ -3404,6 +3610,8 @@ async function removeClinicLogo(){
 }
 // Used at the top of every printed letterhead — empty string if no logo uploaded.
 function logoImgHTML(ci){
+  const prefs = (ci && ci.printPrefs) || (typeof printPrefs==='function' ? printPrefs() : {});
+  if(prefs.showLogo === false) return '';
   return ci && ci.logoDataUrl
     ? `<img src="${ci.logoDataUrl}" alt="" style="max-height:50px;max-width:170px;margin:0 auto 6px;display:block;">`
     : '';
@@ -3411,24 +3619,42 @@ function logoImgHTML(ci){
 // Redesigned letterhead mark: the clinic's uploaded logo if there is one,
 // otherwise a circular initials badge built from its short name.
 function letterheadCrestHTML(ci){
-  if(ci && ci.logoDataUrl){
+  const prefs = (ci && ci.printPrefs) || (typeof printPrefs==='function' ? printPrefs() : {});
+  if(prefs.showLogo !== false && ci && ci.logoDataUrl){
     return `<img src="${ci.logoDataUrl}" alt="" style="width:42px;height:42px;border-radius:11px;object-fit:cover;flex-shrink:0;box-shadow:0 2px 8px rgba(201,148,18,0.25);">`;
   }
   const source = (ci && ci.shortName) ? ci.shortName : ((ci && ci.name) ? ci.name : 'MMC');
   const initials = source.replace(/[^A-Za-z]/g,'').slice(0,3).toUpperCase() || 'MMC';
   return `<div class="opdx-crest">${esc(initials)}</div>`;
 }
+function clinicMetaHTML(ci){
+  const prefs = (ci && ci.printPrefs) || (typeof printPrefs==='function' ? printPrefs() : {});
+  const parts = [];
+  if(prefs.showAddress !== false && ci && ci.address) parts.push(esc(ci.address));
+  if(prefs.showPhone !== false && ci && ci.phone) parts.push(esc(ci.phone));
+  if(prefs.showRegNo !== false && ci && ci.regNo) parts.push(esc('Reg. No. ' + ci.regNo));
+  return parts.length ? parts.join('<br>') : '';
+}
+function signBoxHTML(ci, label){
+  const lbl = label || "Doctor's signature";
+  return `<div class="opdx-sign-box">
+    <div class="opdx-sign-line"></div>
+    <div class="opdx-sign-lbl">${esc(lbl)}</div>
+  </div>`;
+}
 // Shared prescription list card used on both the combined OPD card and the
 // standalone "Prescription only" print sheet, so the two always match.
 function rxCardHTML(prescriptions){
   if(!prescriptions || !prescriptions.length) return '';
+  const prefs = typeof printPrefs==='function' ? printPrefs() : {};
+  const showQty = prefs.showQtyOnRx !== false;
   return `<div class="opdx-rx-card">
-    <div class="opdx-rx-head"><span class="opdx-rx-head-title">℞  Prescription</span></div>
+    <div class="opdx-rx-head"><span class="opdx-rx-head-title">℞  ${esc(typeof printLabel==='function'?printLabel('Prescription','ಪ್ರಿಸ್ಕ್ರಿಪ್ಷನ್'):'Prescription')}</span></div>
     <div class="opdx-rx-body">
       ${prescriptions.map((r,i)=>{
         const days = daysLabel(r.duration);
         const freqShown = formatFrequencyDisplay(r.frequency);
-        const qty = computeQuantityLabel(r.medicine, r.frequency, r.duration, r.dosage);
+        const qty = showQty ? computeQuantityLabel(r.medicine, r.frequency, r.duration, r.dosage) : '';
         let doseShown = (r.dosage||'').trim();
         if(isSyrupMedicine(r.medicine)){
           const ml = extractDoseMl(r.dosage, r.medicine);
@@ -3450,6 +3676,16 @@ function rxCardHTML(prescriptions){
         </div>`;
       }).join('')}
     </div>
+  </div>`;
+}
+function allergyChipsHTML(p){
+  if(!p) return '';
+  const prefs = typeof printPrefs==='function' ? printPrefs() : {};
+  if(prefs.alwaysShowAllergyOnRx === false && !p.allergies && !p.chronicConditions) return '';
+  if(!p.allergies && !p.chronicConditions) return '';
+  return `<div class="opdx-alert-row">
+    ${p.allergies?`<span class="opdx-alert-chip">⚠ Allergy — ${esc(p.allergies)}</span>`:''}
+    ${p.chronicConditions?`<span class="opdx-alert-chip chronic">${esc(p.chronicConditions)}</span>`:''}
   </div>`;
 }
 
@@ -4606,7 +4842,7 @@ function referralLetterHTML(p, v, ci){
             ${letterheadCrestHTML(ci)}
             <div>
               <div class="opdx-clinic-name">${esc(ci.name)}</div>
-              <div class="opdx-clinic-meta">${esc(ci.address||'')}${ci.address&&ci.phone?'<br>':''}${esc(ci.phone||'')}</div>
+              <div class="opdx-clinic-meta">${clinicMetaHTML(ci)}</div>
             </div>
           </div>
           ${v.doctorName?`<div class="opdx-doc-top"><div class="opdx-doc-top-name">${esc(v.doctorName)}</div><div class="opdx-doc-top-qual">${esc(staffQualification(v.doctorName))}</div></div>`:''}
@@ -4633,10 +4869,7 @@ function referralLetterHTML(p, v, ci){
         <div style="padding:8px 22px 4px;font-size:13.5px;color:#152033;line-height:1.55;">Kindly assess and advise. Thank you for your care of this patient.</div>
         <div class="opdx-foot">
           ${doctorBlockHTML(v.doctorName)}
-          <div class="opdx-sign-box">
-            <div class="opdx-sign-line"></div>
-            <div class="opdx-sign-lbl">Doctor's signature</div>
-          </div>
+          ${signBoxHTML(ci, "Doctor's signature")}
         </div>
       </div>
     </div>
@@ -4669,10 +4902,7 @@ function referralLetterHTML(p, v, ci){
         </div>
         <div class="opdx-foot">
           ${doctorBlockHTML(v.doctorName)}
-          <div class="opdx-sign-box">
-            <div class="opdx-sign-line"></div>
-            <div class="opdx-sign-lbl">Doctor's signature</div>
-          </div>
+          ${signBoxHTML(ci, "Doctor's signature")}
         </div>
       </div>
     </div>`;
@@ -5568,7 +5798,7 @@ function investigationResultsSheetHTML(p, v, ci){
             ${letterheadCrestHTML(ci)}
             <div>
               <div class="opdx-clinic-name">${esc(ci.name)}</div>
-              <div class="opdx-clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?'<br>':''}${esc(ci.phone||'')}</div>
+              <div class="opdx-clinic-meta">${clinicMetaHTML(ci)}</div>
             </div>
           </div>
           ${v.doctorName?`<div class="opdx-doc-top"><div class="opdx-doc-top-name">${esc(v.doctorName)}</div><div class="opdx-doc-top-qual">${esc(staffQualification(v.doctorName))}</div></div>`:''}
@@ -6425,20 +6655,36 @@ function dueListPrintHTML(){
       if(due.overdue||due.due) vax.push({p, due});
     });
   }
-  const fRows = follow.map(x=>`<tr><td>${esc(x.p.name)}</td><td>${esc(x.p.phone)||'—'}</td><td>${esc(x.v.diagnosis)||'—'}</td><td>Follow-up</td></tr>`).join('');
-  const vRows = vax.slice(0,30).map(x=>`<tr><td>${esc(x.p.name)}</td><td>${esc(x.p.phone)||'—'}</td><td>${x.due.overdue||0} overdue / ${x.due.due||0} due</td><td>Vaccine</td></tr>`).join('');
+  const ci = state.data.clinicInfo || {};
+  const fRows = follow.map(x=>`<tr><td><strong>${esc(x.p.name)}</strong><div class="faint">${esc(x.p.id)}</div></td><td>${esc(x.p.phone)||'—'}</td><td>${esc(x.v.diagnosis)||'—'}</td><td>${esc(x.v.doctorName)||'—'}</td></tr>`).join('');
+  const vRows = vax.slice(0,40).map(x=>`<tr><td><strong>${esc(x.p.name)}</strong><div class="faint">${esc(x.p.id)}</div></td><td>${esc(x.p.phone)||'—'}</td><td>${x.due.overdue||0} overdue / ${x.due.due||0} due</td><td>Vaccine</td></tr>`).join('');
   return `
-    <div class="print-sheet" id="sheet-due-list" style="max-width:680px;">
-      <div class="letterhead">${logoImgHTML(state.data.clinicInfo||{})}<div class="clinic-name">${esc((state.data.clinicInfo||{}).name||'')}</div></div>
-      <div class="sheet-title">Due list — ${fmtDate(tomorrow)}</div>
-      <h3>Follow-ups</h3>
-      <table><thead><tr><th>Patient</th><th>Phone</th><th>Last Dx</th><th>Type</th></tr></thead>
-      <tbody>${fRows||'<tr><td colspan="4" class="faint">None</td></tr>'}</tbody></table>
-      <h3 style="margin-top:16px;">Vaccines due / overdue</h3>
-      <table><thead><tr><th>Patient</th><th>Phone</th><th>Status</th><th>Type</th></tr></thead>
-      <tbody>${vRows||'<tr><td colspan="4" class="faint">None</td></tr>'}</tbody></table>
+    <div class="print-sheet opdx-card" id="sheet-due-list">
+      <div class="opdx-inner">
+        <div class="opdx-head">
+          <div class="opdx-brand">${letterheadCrestHTML(ci)}
+            <div>
+              <div class="opdx-clinic-name">${esc(ci.name||'')}</div>
+              <div class="opdx-clinic-meta">${clinicMetaHTML(ci)}</div>
+            </div>
+          </div>
+        </div>
+        <div class="opdx-strip">Due list · ${fmtDate(tomorrow)}</div>
+        <div style="padding:12px 22px 18px;">
+          <h3 style="margin:0 0 8px;font-size:14px;">Follow-ups (${follow.length})</h3>
+          <table><thead><tr><th>Patient</th><th>Phone</th><th>Last Dx</th><th>Doctor</th></tr></thead>
+          <tbody>${fRows||'<tr><td colspan="4" class="faint">None scheduled for tomorrow</td></tr>'}</tbody></table>
+          <h3 style="margin:16px 0 8px;font-size:14px;">Vaccines due / overdue</h3>
+          <table><thead><tr><th>Patient</th><th>Phone</th><th>Status</th><th>Type</th></tr></thead>
+          <tbody>${vRows||'<tr><td colspan="4" class="faint">None</td></tr>'}</tbody></table>
+          <p class="faint" style="margin-top:12px;">Call patients on this list to remind them of their visit.</p>
+        </div>
+      </div>
     </div>
-    <button class="btn btn-primary" onclick="printSection('sheet-due-list')">Print due list</button>`;
+    <div class="row" style="gap:8px;margin-top:12px;">
+      <button class="btn btn-primary" onclick="printSection('sheet-due-list')">Print due list</button>
+      <button class="btn" onclick="saveSheetAsPdf('sheet-due-list')">Save PDF</button>
+    </div>`;
 }
 
 function newVisitView(){
@@ -6586,6 +6832,7 @@ function newVisitView(){
           </select>
           <button class="btn btn-sm" onclick="applyRxTemplate()">Apply</button>` : ''}
           <button class="btn btn-sm" onclick="saveCurrentAsTemplate()">Save as template</button>
+          <button class="btn btn-sm" onclick="previewDraftRxPrint()">Preview print</button>
           <button class="btn btn-sm btn-accent" onclick="addRxRow()">+ Add medicine</button>
         </div>
       </div>
@@ -6682,7 +6929,7 @@ function visitPrintView(patientId, visitId){
             ${letterheadCrestHTML(ci)}
             <div>
               <div class="opdx-clinic-name">${esc(ci.name)}</div>
-              <div class="opdx-clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?'<br>':''}${esc(ci.phone||'')}</div>
+              <div class="opdx-clinic-meta">${clinicMetaHTML(ci)}</div>
             </div>
           </div>
           ${v.doctorName?`<div class="opdx-doc-top"><div class="opdx-doc-top-name">${esc(v.doctorName)}</div><div class="opdx-doc-top-qual">${esc(staffQualification(v.doctorName))}</div></div>`:''}
@@ -6699,6 +6946,21 @@ function visitPrintView(patientId, visitId){
             ${v.doctorName ? `<div class="opdx-meta-item"><span class="opdx-meta-k">Doctor</span><span class="opdx-meta-v">${doctorQualLine(v.doctorName)}</span></div>` : ''}
           </div>
         </div>
+        ${allergyChipsHTML(p)}
+        ${(()=>{
+          const prefs = printPrefs();
+          if(!prefs.showVitalsOnRx) return '';
+          const vt = v.vitals || {};
+          if(!vt.bp && !vt.pulse && !vt.temp && !vt.weight) return '';
+          return `<div class="opdx-vitals-row" style="margin-top:8px;">
+            <div class="opdx-vital"><span class="opdx-vital-lbl">BP</span><span class="opdx-vital-val">${esc(vt.bp)||'—'}</span></div>
+            <div class="opdx-vital"><span class="opdx-vital-lbl">Pulse</span><span class="opdx-vital-val">${esc(vt.pulse)||'—'}</span></div>
+            <div class="opdx-vital"><span class="opdx-vital-lbl">Temp</span><span class="opdx-vital-val">${esc(vt.temp)||'—'}</span></div>
+            <div class="opdx-vital"><span class="opdx-vital-lbl">Weight</span><span class="opdx-vital-val">${esc(vt.weight)||'—'}</span></div>
+            <div class="opdx-vital"><span class="opdx-vital-lbl">Height</span><span class="opdx-vital-val">${esc(vt.height)||'—'}</span></div>
+            <div class="opdx-vital"><span class="opdx-vital-lbl">BMI</span><span class="opdx-vital-val">—</span></div>
+          </div>`;
+        })()}
 
         ${v.diagnosis ? `<div class="opdx-clinical"><div class="opdx-c-block dx"><div class="opdx-c-icon">D</div><div class="opdx-c-body"><div class="opdx-c-title">Diagnosis</div><div class="opdx-c-text">${esc(v.diagnosis)}</div></div></div></div>` : ''}
 
@@ -6709,10 +6971,7 @@ function visitPrintView(patientId, visitId){
 
         <div class="opdx-foot">
           ${doctorBlockHTML(v.doctorName)}
-          <div class="opdx-sign-box">
-            <div class="opdx-sign-line"></div>
-            <div class="opdx-sign-lbl">Doctor's signature</div>
-          </div>
+          ${signBoxHTML(ci, "Doctor's signature")}
         </div>
       </div>
     </div>` : '';
@@ -6733,7 +6992,7 @@ function visitPrintView(patientId, visitId){
             ${letterheadCrestHTML(ci)}
             <div>
               <div class="opdx-clinic-name">${esc(ci.name)}</div>
-              <div class="opdx-clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?'<br>':''}${esc(ci.phone||'')}</div>
+              <div class="opdx-clinic-meta">${clinicMetaHTML(ci)}</div>
             </div>
           </div>
           ${v.doctorName?`<div class="opdx-doc-top"><div class="opdx-doc-top-name">${esc(v.doctorName)}</div><div class="opdx-doc-top-qual">${esc(staffQualification(v.doctorName))}</div></div>`:''}
@@ -6790,10 +7049,7 @@ function visitPrintView(patientId, visitId){
 
         <div class="opdx-foot">
           ${doctorBlockHTML(v.doctorName)}
-          <div class="opdx-sign-box">
-            <div class="opdx-sign-line"></div>
-            <div class="opdx-sign-lbl">Doctor's signature</div>
-          </div>
+          ${signBoxHTML(ci, "Doctor's signature")}
         </div>
       </div>
     </div>`;
@@ -6806,7 +7062,7 @@ function visitPrintView(patientId, visitId){
             ${letterheadCrestHTML(ci)}
             <div>
               <div class="opdx-clinic-name">${esc(ci.name)}</div>
-              <div class="opdx-clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?'<br>':''}${esc(ci.phone||'')}</div>
+              <div class="opdx-clinic-meta">${clinicMetaHTML(ci)}</div>
             </div>
           </div>
           ${v.doctorName?`<div class="opdx-doc-top"><div class="opdx-doc-top-name">${esc(v.doctorName)}</div><div class="opdx-doc-top-qual">${esc(staffQualification(v.doctorName))}</div></div>`:''}
@@ -6835,10 +7091,7 @@ function visitPrintView(patientId, visitId){
 
         <div class="opdx-foot">
           ${doctorBlockHTML(v.doctorName)}
-          <div class="opdx-sign-box">
-            <div class="opdx-sign-line"></div>
-            <div class="opdx-sign-lbl">Doctor's signature</div>
-          </div>
+          ${signBoxHTML(ci, "Doctor's signature")}
         </div>
       </div>
     </div>` : '';
@@ -6861,8 +7114,12 @@ function visitPrintView(patientId, visitId){
     </div>
     <div class="row" style="margin-bottom:18px;flex-wrap:wrap;gap:8px;">
       <button class="btn btn-primary" onclick="printSection('sheet-opd')">Print OPD card${rxList.length?' + prescription':''}</button>
+      <button class="btn" onclick="printPack(['sheet-opd'${rxList.length?",'sheet-rx-only'":''}${invList.length?",'sheet-inv'":''}${v.referredTo?",'sheet-referral'":''}])">Print pack</button>
       ${can('clinicalVisit')?`<button class="btn btn-accent" onclick="printOpdAndOpenNext('${p.id}','${v.id}')">Print OPD &amp; next patient</button>`:''}
       ${rxList.length?`<button class="btn" onclick="printSection('sheet-rx-only')">Print prescription only</button>`:''}
+      ${rxList.length && p.phone?`<button class="btn wa-btn" onclick="shareRxWhatsApp('${p.id}','${v.id}')">WhatsApp Rx</button>`:''}
+      <button class="btn" onclick="saveSheetAsPdf('sheet-opd')">Save PDF (OPD)</button>
+      ${rxList.length?`<button class="btn" onclick="saveSheetAsPdf('sheet-rx-only')">Save PDF (Rx)</button>`:''}
       ${invList.length?`<button class="btn" onclick="printSection('sheet-inv')">Print investigation form</button>`:''}
       ${invResultsSheet?`<button class="btn" onclick="printSection('sheet-inv-results')">Print lab report</button>`:''}
       ${v.referredTo?`<button class="btn" onclick="printSection('sheet-referral')">Print referral letter</button>`:''}
@@ -7478,7 +7735,7 @@ function billingDetailView(patientId, visitId){
             ${letterheadCrestHTML(ci)}
             <div>
               <div class="opdx-clinic-name">${esc(ci.name)}</div>
-              <div class="opdx-clinic-meta">${esc(ci.address||'')}${ci.address&&ci.phone?'<br>':''}${esc(ci.phone||'')}</div>
+              <div class="opdx-clinic-meta">${clinicMetaHTML(ci)}</div>
             </div>
           </div>
         </div>
@@ -7504,10 +7761,7 @@ function billingDetailView(patientId, visitId){
         </div>
         <div class="opdx-foot">
           <div class="opdx-doctor-block"><div class="faint">Thank you</div></div>
-          <div class="opdx-sign-box">
-            <div class="opdx-sign-line"></div>
-            <div class="opdx-sign-lbl">Authorised signature</div>
-          </div>
+          ${signBoxHTML(ci, 'Authorised signature')}
         </div>
       </div>
     </div>`;
@@ -7995,6 +8249,24 @@ function buildCertificateContent(p, fields){
       ${remarks?`<p><strong>Remarks:</strong> ${esc(remarks)}</p>`:''}`;
     }
   }
+  // Optional bilingual closing line (Kannada) when print preference requests it
+  if(bodyHtml && !error){
+    const lang = (typeof printPrefs==='function' && printPrefs().labelLang) || 'en';
+    if(lang === 'kn' || lang === 'both'){
+      const knClose = {
+        sick: 'ಈ ಪ್ರಮಾಣಪತ್ರವನ್ನು ರೋಗಿಯ ಕೋರಿಕೆಯ ಮೇರೆಗೆ ರಜೆ / ಅಧಿಕೃತ ಉದ್ದೇಶಗಳಿಗಾಗಿ ನೀಡಲಾಗಿದೆ.',
+        fitness: 'ಪರೀಕ್ಷೆಯ ಸಮಯದಲ್ಲಿ ಮೇಲ್ಕಂಡ ವ್ಯಕ್ತಿ ಹೇಳಲಾದ ಉದ್ದೇಶಕ್ಕೆ ವೈದ್ಯಕೀಯವಾಗಿ ಅರ್ಹರಾಗಿದ್ದಾರೆ.',
+        school: 'ಈ ಪ್ರಮಾಣಪತ್ರವನ್ನು ಶಾಲೆ / ಕಾಲೇಜು ಅಧಿಕಾರಿಗಳಿಗೆ ಸಲ್ಲಿಸಲು ನೀಡಲಾಗಿದೆ.',
+        general: 'ಈ ಪ್ರಮಾಣಪತ್ರವನ್ನು ರೋಗಿಯ ಕೋರಿಕೆಯ ಮೇರೆಗೆ ನೀಡಲಾಗಿದೆ.'
+      };
+      const line = knClose[type] || knClose.general;
+      if(lang === 'kn'){
+        bodyHtml += `<p style="margin-top:12px;font-size:13.5px;">${esc(line)}</p>`;
+      } else {
+        bodyHtml += `<p style="margin-top:12px;font-size:13px;color:#5A6578;">${esc(line)}</p>`;
+      }
+    }
+  }
   return {error, title, bodyHtml, doctor, qual, certDate, certDateRaw, certNo, place};
 }
 
@@ -8007,7 +8279,7 @@ function certificateSheetHTML(p, built, ci){
             ${letterheadCrestHTML(ci)}
             <div>
               <div class="opdx-clinic-name">${esc(ci.name)}</div>
-              <div class="opdx-clinic-meta">${esc(ci.address||'')}${ci.address&&ci.phone?'<br>':''}${esc(ci.phone||'')}</div>
+              <div class="opdx-clinic-meta">${clinicMetaHTML(ci)}</div>
             </div>
           </div>
           <div class="opdx-doc-top">
@@ -8436,12 +8708,7 @@ function exportAuditCSV(){
   URL.revokeObjectURL(url);
 }
 
-function reprintLastOpd(){
-  const lp = state.data.lastPrinted;
-  if(!lp || !lp.patientId || !lp.visitId){ alert('No OPD has been printed yet in this session.'); return; }
-  go('visitPrint', {patientId: lp.patientId, visitId: lp.visitId});
-  setTimeout(()=>printSection(lp.sheet||'sheet-opd'), 400);
-}
+function reprintLastOpd(){ reprintLast(); }
 
 async function remindAllVaccineDue(){
   const list = pediatricPatients().map(p=>{
@@ -8689,8 +8956,7 @@ async function disableTotp(){
 }
 
 function settingsView(){
-
-
+  ensurePrintPrefs();
   const ci = state.data.clinicInfo;
   const canManageStaff = isOwner();
   const editingName = state.ui.editingStaffName || null;
@@ -8773,6 +9039,7 @@ function settingsView(){
       <div class="field"><label>Address (shown on printouts)</label><input id="ci-address" value="${esc(ci.address)}"></div>
       <div class="field"><label>Phone (shown on printouts)</label><input id="ci-phone" value="${esc(ci.phone)}"></div>
       <div class="field"><label>Mark long wait / missed after (minutes)</label><input id="ci-noshow" type="number" min="10" max="180" value="${esc(ci.noShowMinutes||45)}"></div>
+      <div class="field"><label>Clinic registration / RMP number (shown on printouts)</label><input id="ci-regno" value="${esc(ci.regNo||'')}" placeholder="e.g. KA-12345"></div>
       <button class="btn btn-primary" onclick="saveClinicInfo()">Save</button>
       ` : `
       <p class="faint" style="margin-bottom:10px;">Only the clinic admin can change name, address, phone or logo.</p>
@@ -8796,7 +9063,29 @@ function settingsView(){
       ` : `<p class="faint">Logo can be changed only by the clinic admin.</p>`}
     </div>
 
-    ${isOwner() ? `
+${isOwner() ? `
+    <div class="card" style="margin-bottom:18px;max-width:560px;">
+      <h2 style="margin-bottom:6px;">Print preferences</h2>
+      <p class="muted" style="font-size:12.5px;margin-bottom:12px;">Applies to OPD cards, prescriptions, certificates, referrals and receipts.</p>
+      ${(()=>{ const pp = (ci.printPrefs)||{}; const chk=(id,on)=>`<label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13.5px;"><input type="checkbox" id="${id}" ${on?'checked':''}> `; return `
+      ${chk('pp-address', pp.showAddress!==false)}Show address on letterhead</label>
+      ${chk('pp-phone', pp.showPhone!==false)}Show phone on letterhead</label>
+      ${chk('pp-logo', pp.showLogo!==false)}Show logo / crest</label>
+      ${chk('pp-regno', pp.showRegNo!==false)}Show registration number</label>
+      ${chk('pp-qty', pp.showQtyOnRx!==false)}Show medicine quantity on prescriptions</label>
+      ${chk('pp-vitals-rx', !!pp.showVitalsOnRx)}Show vitals on prescription-only sheet</label>
+      ${chk('pp-allergy', pp.alwaysShowAllergyOnRx!==false)}Always show allergies on prescriptions</label>
+      <div class="field" style="margin-top:12px;"><label>Document title language</label>
+        <select id="pp-lang">
+          <option value="en" ${pp.labelLang!=='kn'&&pp.labelLang!=='both'?'selected':''}>English</option>
+          <option value="kn" ${pp.labelLang==='kn'?'selected':''}>ಕನ್ನಡ</option>
+          <option value="both" ${pp.labelLang==='both'?'selected':''}>English / ಕನ್ನಡ</option>
+        </select>
+      </div>`; })()}
+      <button class="btn btn-primary btn-sm" onclick="savePrintPrefs()">Save print preferences</button>
+      <span id="pp-saved-msg" class="faint" style="margin-left:8px;"></span>
+    </div>
+
     <div class="card" style="margin-bottom:18px;max-width:520px;">
       <h2 style="margin-bottom:6px;">Backup &amp; export</h2>
       ${(()=>{ const lb=state.data.lastBackupAt; if(!lb) return '<div class="banner" style="background:var(--accent-tint);color:var(--accent-dark);margin-bottom:10px;"><strong>No full backup yet.</strong> Download one and store it safely.</div>'; const days=Math.floor((Date.now()-new Date(lb).getTime())/86400000); if(days>=7) return '<div class="banner" style="background:var(--accent-tint);color:var(--accent-dark);margin-bottom:10px;">Last backup <strong>'+days+' days ago</strong> ('+fmtDate(lb.slice(0,10))+'). Consider downloading a fresh copy.</div>'; return '<p class="faint" style="margin-bottom:8px;">Last backup: '+fmtDate(lb.slice(0,10))+' · '+days+' day(s) ago</p>'; })()}
