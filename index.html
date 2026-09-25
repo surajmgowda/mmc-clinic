@@ -712,18 +712,18 @@
   .opd-card .rx-line{margin-left:0;margin-right:0;}
   .opd-card .sheet-divider{margin-left:22px;margin-right:22px;}
 
-  /* ---- OPD / Rx / certificate print cards (simple clinic letterhead) ---- */
-  .opdx-card{position:relative;border:1px solid #C9D3DE;border-radius:8px;overflow:hidden;background:#fff;}
+  /* ---- OPD / Rx / certificate / referral / receipt print cards ---- */
+  .opdx-card{position:relative;border:1px solid #C9D3DE;border-radius:10px;overflow:hidden;background:#fff;max-width:640px;}
   .opdx-card::before{display:none;}
   .opdx-inner{padding:0;}
   .opdx-head{
     display:flex;align-items:flex-start;justify-content:space-between;gap:14px;
-    padding:16px 22px 12px;background:#fff;color:#132038;
-    border-bottom:2px solid #1B4F6E;
+    padding:16px 22px 14px;background:#fff;color:#132038;
+    border-bottom:2.5px solid #1B4F6E;
   }
   .opdx-brand{display:flex;align-items:center;gap:12px;min-width:0;}
   .opdx-crest{
-    width:42px;height:42px;border-radius:11px;background:linear-gradient(145deg,#E8B923,#C99412);
+    width:44px;height:44px;border-radius:12px;background:linear-gradient(145deg,#E8B923,#C99412);
     display:flex;align-items:center;justify-content:center;flex-shrink:0;
     font-family:'Source Serif 4',serif;font-weight:700;color:#132038;font-size:12px;letter-spacing:0.02em;
     box-shadow:0 2px 8px rgba(201,148,18,0.35);
@@ -734,8 +734,8 @@
   .opdx-doc-top-name{font-size:13.5px;font-weight:700;color:#132038;}
   .opdx-doc-top-qual{font-size:11px;color:#5A6578;margin-top:2px;}
   .opdx-strip{
-    padding:7px 22px;background:#F3F6F9;border-bottom:1px solid #E1E7EF;
-    color:#1B4F6E;font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;
+    padding:8px 22px;background:#1B4F6E;border-bottom:none;
+    color:#fff;font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;
   }
   .opdx-patient-band{padding:14px 22px 8px;background:#fff;}
   .opdx-patient-top{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
@@ -759,8 +759,17 @@
   .opdx-vital{padding:12px 6px;text-align:center;border-right:1px solid #E1E7EF;background:#fff;}
   .opdx-vital:last-child{border-right:none;}
   .opdx-vital-lbl{display:block;font-size:9.5px;font-weight:700;color:#8A94A6;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px;}
-  .opdx-vital-val{font-family:'Source Serif 4',serif;font-size:16px;font-weight:700;color:#132038;}
+  .opdx-vital-val{font-family:'Source Serif 4',serif;font-size:16px;font-weight:700;color:#132038;line-height:1.2;}
   .opdx-vital-unit{font-size:9.5px;color:#8A94A6;font-weight:500;}
+  .opdx-rx-symbol{font-family:'Source Serif 4',serif;font-size:28px;font-weight:700;color:#1B4F6E;line-height:1;margin:4px 0 8px;}
+  .opdx-advice-box{margin:12px 22px 0;padding:12px 14px;background:#E5F5F3;border:1px solid rgba(36,150,136,0.25);border-radius:10px;font-size:13px;color:#152033;}
+  .opdx-advice-box .opdx-c-title{margin-bottom:4px;color:#1B6E63;}
+  .opdx-receipt-total{font-family:'Source Serif 4',serif;font-size:22px;font-weight:700;color:#132038;}
+  .opdx-receipt-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dotted #E1E7EF;font-size:13.5px;}
+  .opdx-receipt-row:last-child{border-bottom:none;}
+  .opdx-receipt-row .lbl{color:#5A6578;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:0.03em;}
+  .opdx-paid-chip{display:inline-block;padding:4px 12px;border-radius:99px;font-size:12px;font-weight:700;background:#E5F5F3;color:#1B6E63;}
+  .opdx-unpaid-chip{display:inline-block;padding:4px 12px;border-radius:99px;font-size:12px;font-weight:700;background:#F8EBE9;color:#C03D32;}
   .opdx-clinical{padding:2px 22px 4px;}
   .opdx-c-block{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid #E1E7EF;}
   .opdx-c-block:last-child{border-bottom:none;}
@@ -817,7 +826,8 @@
     .opdx-vital:nth-child(3){border-right:none;}
   }
   @media print{
-    .opdx-head,.opdx-strip,.opdx-crest,.opdx-alert-chip,.opdx-patient-id,.opdx-rx-head,.opdx-followup-band{
+    .opdx-head,.opdx-strip,.opdx-crest,.opdx-alert-chip,.opdx-patient-id,.opdx-rx-head,.opdx-followup-band,
+    .opdx-vitals-row,.opdx-vital,.opdx-paid-chip,.opdx-unpaid-chip,.opdx-advice-box,.opdx-rx-num{
       -webkit-print-color-adjust:exact;print-color-adjust:exact;
     }
   }
@@ -4589,33 +4599,82 @@ function patientBmiTrendSVG(p){
 function referralLetterHTML(p, v, ci){
   if(!v.referredTo) return '';
   return `
-    <div class="print-sheet" id="sheet-referral" style="max-width:680px;">
-      <div class="letterhead">${logoImgHTML(ci)}<div class="clinic-name">${esc(ci.name)}</div>
-        <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?' · ':''}${esc(ci.phone||'')}</div></div>
-      <div class="sheet-title">REFERRAL LETTER</div>
-      <p>Date: ${fmtDate(v.date)}</p>
-      <p>To,<br><strong>${esc(v.referredTo)}</strong></p>
-      <p>Dear Doctor,</p>
-      <p>I am referring <strong>${esc(p.name)}</strong> (${esc(p.id)}, ${esc(displayAge(p))}${p.sex?', '+esc(p.sex):''}) for further evaluation and management.</p>
-      ${v.diagnosis?`<p><strong>Clinical diagnosis:</strong> ${esc(v.diagnosis)}</p>`:''}
-      ${v.referralReason?`<p><strong>Reason for referral:</strong> ${esc(v.referralReason)}</p>`:''}
-      ${v.complaints?`<p><strong>Chief complaints:</strong> ${esc(formatComplaintsForOpd(v.complaints))}</p>`:''}
-      ${v.examination?`<p><strong>Examination:</strong> ${esc(v.examination)}</p>`:''}
-      <p>Kindly assess and advise. Thank you for your care of this patient.</p>
-      <div style="margin-top:36px;text-align:right;">
-        <div>${doctorQualLine(v.doctorName)}</div>
-        <div class="faint" style="margin-top:24px;">Signature</div>
+    <div class="print-sheet opdx-card" id="sheet-referral">
+      <div class="opdx-inner">
+        <div class="opdx-head">
+          <div class="opdx-brand">
+            ${letterheadCrestHTML(ci)}
+            <div>
+              <div class="opdx-clinic-name">${esc(ci.name)}</div>
+              <div class="opdx-clinic-meta">${esc(ci.address||'')}${ci.address&&ci.phone?'<br>':''}${esc(ci.phone||'')}</div>
+            </div>
+          </div>
+          ${v.doctorName?`<div class="opdx-doc-top"><div class="opdx-doc-top-name">${esc(v.doctorName)}</div><div class="opdx-doc-top-qual">${esc(staffQualification(v.doctorName))}</div></div>`:''}
+        </div>
+        <div class="opdx-strip">Referral letter · ${fmtDate(v.date)}</div>
+        <div class="opdx-patient-band">
+          <div class="opdx-patient-top">
+            <div class="opdx-patient-name">${esc(p.name)}</div>
+            <div class="opdx-patient-id">${esc(p.id)}</div>
+          </div>
+          <div class="opdx-meta-grid">
+            <div class="opdx-meta-item"><span class="opdx-meta-k">Age / Sex</span><span class="opdx-meta-v">${esc(displayAge(p))}${p.sex?' · '+esc(p.sex):''}</span></div>
+            <div class="opdx-meta-item"><span class="opdx-meta-k">Phone</span><span class="opdx-meta-v">${esc(p.phone)||'—'}</span></div>
+            ${p.address?`<div class="opdx-meta-item" style="grid-column:1 / -1;"><span class="opdx-meta-k">Address</span><span class="opdx-meta-v">${esc(p.address)}</span></div>`:''}
+          </div>
+        </div>
+        <div class="opdx-clinical">
+          <div class="opdx-c-block"><div class="opdx-c-icon">→</div><div class="opdx-c-body"><div class="opdx-c-title">Referred to</div><div class="opdx-c-text"><strong>${esc(v.referredTo)}</strong></div></div></div>
+          ${v.diagnosis?`<div class="opdx-c-block dx"><div class="opdx-c-icon">D</div><div class="opdx-c-body"><div class="opdx-c-title">Clinical diagnosis</div><div class="opdx-c-text">${esc(v.diagnosis)}</div></div></div>`:''}
+          ${v.referralReason?`<div class="opdx-c-block"><div class="opdx-c-icon">R</div><div class="opdx-c-body"><div class="opdx-c-title">Reason for referral</div><div class="opdx-c-text">${esc(v.referralReason)}</div></div></div>`:''}
+          ${v.complaints?`<div class="opdx-c-block"><div class="opdx-c-icon">C</div><div class="opdx-c-body"><div class="opdx-c-title">Chief complaints</div><div class="opdx-c-text">${esc(formatComplaintsForOpd(v.complaints))}</div></div></div>`:''}
+          ${v.examination?`<div class="opdx-c-block"><div class="opdx-c-icon">E</div><div class="opdx-c-body"><div class="opdx-c-title">Examination</div><div class="opdx-c-text">${esc(v.examination)}</div></div></div>`:''}
+        </div>
+        <div style="padding:8px 22px 4px;font-size:13.5px;color:#152033;line-height:1.55;">Kindly assess and advise. Thank you for your care of this patient.</div>
+        <div class="opdx-foot">
+          ${doctorBlockHTML(v.doctorName)}
+          <div class="opdx-sign-box">
+            <div class="opdx-sign-line"></div>
+            <div class="opdx-sign-lbl">Doctor's signature</div>
+          </div>
+        </div>
       </div>
     </div>
-    <div class="print-sheet" id="sheet-referral-slim" style="max-width:420px;">
-      <div class="letterhead">${logoImgHTML(ci)}<div class="clinic-name">${esc(ci.name)}</div></div>
-      <div class="sheet-title">REFERRAL</div>
-      <p><strong>${esc(p.name)}</strong> · ${esc(p.id)} · ${esc(displayAge(p))}${p.sex?'/'+esc(p.sex):''}</p>
-      <p>${esc(p.phone)||''}${p.address?' · '+esc(p.address):''}</p>
-      <p>To: <strong>${esc(v.referredTo)}</strong></p>
-      ${v.diagnosis?`<p>Dx: <strong>${esc(v.diagnosis)}</strong></p>`:''}
-      ${v.referralReason?`<p>${esc(v.referralReason)}</p>`:''}
-      <p class="faint">${fmtDate(v.date)} · ${esc(v.doctorName)||''}</p>
+    <div class="print-sheet opdx-card" id="sheet-referral-slim" style="max-width:420px;">
+      <div class="opdx-inner">
+        <div class="opdx-head">
+          <div class="opdx-brand">
+            ${letterheadCrestHTML(ci)}
+            <div>
+              <div class="opdx-clinic-name">${esc(ci.name)}</div>
+              <div class="opdx-clinic-meta">${esc(ci.phone||'')}</div>
+            </div>
+          </div>
+        </div>
+        <div class="opdx-strip">Referral</div>
+        <div class="opdx-patient-band">
+          <div class="opdx-patient-top">
+            <div class="opdx-patient-name">${esc(p.name)}</div>
+            <div class="opdx-patient-id">${esc(p.id)}</div>
+          </div>
+          <div class="opdx-meta-grid">
+            <div class="opdx-meta-item"><span class="opdx-meta-k">Age / Sex</span><span class="opdx-meta-v">${esc(displayAge(p))}${p.sex?' / '+esc(p.sex):''}</span></div>
+            <div class="opdx-meta-item"><span class="opdx-meta-k">Date</span><span class="opdx-meta-v">${fmtDate(v.date)}</span></div>
+          </div>
+        </div>
+        <div class="opdx-clinical">
+          <div class="opdx-c-block"><div class="opdx-c-icon">→</div><div class="opdx-c-body"><div class="opdx-c-title">To</div><div class="opdx-c-text"><strong>${esc(v.referredTo)}</strong></div></div></div>
+          ${v.diagnosis?`<div class="opdx-c-block dx"><div class="opdx-c-icon">D</div><div class="opdx-c-body"><div class="opdx-c-title">Dx</div><div class="opdx-c-text">${esc(v.diagnosis)}</div></div></div>`:''}
+          ${v.referralReason?`<div class="opdx-c-block"><div class="opdx-c-icon">R</div><div class="opdx-c-body"><div class="opdx-c-title">Reason</div><div class="opdx-c-text">${esc(v.referralReason)}</div></div></div>`:''}
+        </div>
+        <div class="opdx-foot">
+          ${doctorBlockHTML(v.doctorName)}
+          <div class="opdx-sign-box">
+            <div class="opdx-sign-line"></div>
+            <div class="opdx-sign-lbl">Doctor's signature</div>
+          </div>
+        </div>
+      </div>
     </div>`;
 }
 
@@ -5512,6 +5571,7 @@ function investigationResultsSheetHTML(p, v, ci){
               <div class="opdx-clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?'<br>':''}${esc(ci.phone||'')}</div>
             </div>
           </div>
+          ${v.doctorName?`<div class="opdx-doc-top"><div class="opdx-doc-top-name">${esc(v.doctorName)}</div><div class="opdx-doc-top-qual">${esc(staffQualification(v.doctorName))}</div></div>`:''}
         </div>
         <div class="opdx-strip">Laboratory report · ${fmtDate(v.date)}</div>
         <div class="opdx-patient-band">
@@ -6625,6 +6685,7 @@ function visitPrintView(patientId, visitId){
               <div class="opdx-clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?'<br>':''}${esc(ci.phone||'')}</div>
             </div>
           </div>
+          ${v.doctorName?`<div class="opdx-doc-top"><div class="opdx-doc-top-name">${esc(v.doctorName)}</div><div class="opdx-doc-top-qual">${esc(staffQualification(v.doctorName))}</div></div>`:''}
         </div>
         <div class="opdx-strip">Prescription · ${fmtDate(v.date)}${v.time?' · '+esc(v.time):''}</div>
 
@@ -6641,14 +6702,16 @@ function visitPrintView(patientId, visitId){
 
         ${v.diagnosis ? `<div class="opdx-clinical"><div class="opdx-c-block dx"><div class="opdx-c-icon">D</div><div class="opdx-c-body"><div class="opdx-c-title">Diagnosis</div><div class="opdx-c-text">${esc(v.diagnosis)}</div></div></div></div>` : ''}
 
+        <div style="padding:4px 22px 0;"><div class="opdx-rx-symbol">℞</div></div>
         ${rxCardHTML(rxList)}
+        ${v.notes ? `<div class="opdx-advice-box"><div class="opdx-c-title">Advice</div>${esc(v.notes)}</div>` : ''}
         ${v.followUpDate ? `<div class="opdx-followup-band"><span class="opdx-followup-k">Follow-up</span><span class="opdx-followup-v">${fmtDate(v.followUpDate)}</span></div>` : ''}
 
         <div class="opdx-foot">
           ${doctorBlockHTML(v.doctorName)}
           <div class="opdx-sign-box">
             <div class="opdx-sign-line"></div>
-            <div class="opdx-sign-lbl">Signature</div>
+            <div class="opdx-sign-lbl">Doctor's signature</div>
           </div>
         </div>
       </div>
@@ -6675,7 +6738,7 @@ function visitPrintView(patientId, visitId){
           </div>
           ${v.doctorName?`<div class="opdx-doc-top"><div class="opdx-doc-top-name">${esc(v.doctorName)}</div><div class="opdx-doc-top-qual">${esc(staffQualification(v.doctorName))}</div></div>`:''}
         </div>
-        <div class="opdx-strip">${isPediatricPatient(p)?'Pediatric OPD card':'OPD card'} · ${fmtDate(v.date)}${v.time?' · '+esc(v.time):''}</div>
+        <div class="opdx-strip">${isPediatricPatient(p)?'Pediatric outpatient card':'Outpatient department card'} · ${fmtDate(v.date)}${v.time?' · '+esc(v.time):''}</div>
 
         <div class="opdx-patient-band">
           <div class="opdx-patient-top">
@@ -6694,14 +6757,18 @@ function visitPrintView(patientId, visitId){
           ${p.chronicConditions?`<span class="opdx-alert-chip chronic">${esc(p.chronicConditions)}</span>`:''}
         </div>` : ''}
 
-        <div class="opdx-vitals-row">
-          <div class="opdx-vital"><span class="opdx-vital-lbl">BP</span><span class="opdx-vital-val">${esc(v.vitals.bp)||'—'}</span></div>
-          <div class="opdx-vital"><span class="opdx-vital-lbl">Pulse</span><span class="opdx-vital-val">${esc(v.vitals.pulse)||'—'}</span></div>
-          <div class="opdx-vital"><span class="opdx-vital-lbl">Temp</span><span class="opdx-vital-val">${esc(v.vitals.temp)||'—'}${v.vitals.temp?'<span class="opdx-vital-unit">°F</span>':''}</span></div>
-          <div class="opdx-vital"><span class="opdx-vital-lbl">Weight</span><span class="opdx-vital-val">${esc(v.vitals.weight)||'—'}${v.vitals.weight?'<span class="opdx-vital-unit"> kg</span>':''}</span></div>
-          <div class="opdx-vital"><span class="opdx-vital-lbl">Height</span><span class="opdx-vital-val">${esc(v.vitals.height)||'—'}${v.vitals.height?'<span class="opdx-vital-unit"> cm</span>':''}</span></div>
-          <div class="opdx-vital"><span class="opdx-vital-lbl">BMI</span>${(()=>{ const r=calcBMI(v.vitals.weight,v.vitals.height,patientAgeYearsForBmi(p)); return r?`<span class="opdx-vital-val">${r.value}</span><div class="opdx-vital-unit">${esc(r.label)}</div>`:'<span class="opdx-vital-val">—</span>'; })()}</div>
-        </div>
+        ${(()=>{
+          const vt = v.vitals || {};
+          const bmiR = calcBMI(vt.weight, vt.height, patientAgeYearsForBmi(p));
+          return `<div class="opdx-vitals-row">
+          <div class="opdx-vital"><span class="opdx-vital-lbl">BP</span><span class="opdx-vital-val">${esc(vt.bp)||'—'}</span></div>
+          <div class="opdx-vital"><span class="opdx-vital-lbl">Pulse</span><span class="opdx-vital-val">${esc(vt.pulse)||'—'}</span></div>
+          <div class="opdx-vital"><span class="opdx-vital-lbl">Temp</span><span class="opdx-vital-val">${esc(vt.temp)||'—'}${vt.temp?'<span class="opdx-vital-unit">°F</span>':''}</span></div>
+          <div class="opdx-vital"><span class="opdx-vital-lbl">Weight</span><span class="opdx-vital-val">${esc(vt.weight)||'—'}${vt.weight?'<span class="opdx-vital-unit"> kg</span>':''}</span></div>
+          <div class="opdx-vital"><span class="opdx-vital-lbl">Height</span><span class="opdx-vital-val">${esc(vt.height)||'—'}${vt.height?'<span class="opdx-vital-unit"> cm</span>':''}</span></div>
+          <div class="opdx-vital"><span class="opdx-vital-lbl">BMI</span>${bmiR?`<span class="opdx-vital-val">${bmiR.value}</span><div class="opdx-vital-unit">${esc(bmiR.label)}</div>`:'<span class="opdx-vital-val">—</span>'}</div>
+        </div>`;
+        })()}
 
         <div class="opdx-clinical">
           <div class="opdx-c-block"><div class="opdx-c-icon">C</div><div class="opdx-c-body"><div class="opdx-c-title">Chief complaints</div><div class="opdx-c-text">${complaintsHtmlX}</div></div></div>
@@ -6712,13 +6779,20 @@ function visitPrintView(patientId, visitId){
         </div>
 
         ${rxCardHTML(rxList)}
+        ${invList.length ? `<div class="opdx-rx-card" style="margin-top:12px;">
+          <div class="opdx-rx-head"><span class="opdx-rx-head-title">Investigations</span></div>
+          <div class="opdx-rx-body">
+            ${invList.map((r,i)=>`<div class="opdx-rx-item"><span class="opdx-rx-num">${i+1}</span><span class="opdx-rx-med">${esc(r.test)}</span>${r.notes?`<div class="opdx-rx-sub">${esc(r.notes)}</div>`:''}</div>`).join('')}
+          </div>
+        </div>` : ''}
+        ${v.notes && !rxList.length ? `<div class="opdx-advice-box"><div class="opdx-c-title">Advice / notes</div>${esc(v.notes)}</div>` : ''}
         ${v.followUpDate ? `<div class="opdx-followup-band"><span class="opdx-followup-k">Follow-up</span><span class="opdx-followup-v">${fmtDate(v.followUpDate)}</span></div>` : ''}
 
         <div class="opdx-foot">
           ${doctorBlockHTML(v.doctorName)}
           <div class="opdx-sign-box">
             <div class="opdx-sign-line"></div>
-            <div class="opdx-sign-lbl">Signature</div>
+            <div class="opdx-sign-lbl">Doctor's signature</div>
           </div>
         </div>
       </div>
@@ -6735,6 +6809,7 @@ function visitPrintView(patientId, visitId){
               <div class="opdx-clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?'<br>':''}${esc(ci.phone||'')}</div>
             </div>
           </div>
+          ${v.doctorName?`<div class="opdx-doc-top"><div class="opdx-doc-top-name">${esc(v.doctorName)}</div><div class="opdx-doc-top-qual">${esc(staffQualification(v.doctorName))}</div></div>`:''}
         </div>
         <div class="opdx-strip">Investigation request · ${fmtDate(v.date)}</div>
 
@@ -6762,7 +6837,7 @@ function visitPrintView(patientId, visitId){
           ${doctorBlockHTML(v.doctorName)}
           <div class="opdx-sign-box">
             <div class="opdx-sign-line"></div>
-            <div class="opdx-sign-lbl">Signature</div>
+            <div class="opdx-sign-lbl">Doctor's signature</div>
           </div>
         </div>
       </div>
@@ -7396,19 +7471,45 @@ function billingDetailView(patientId, visitId){
   const ci = state.data.clinicInfo;
   const total = billingTotal(b);
   const receiptSheet = `
-    <div class="print-sheet" id="sheet-receipt">
-      <div class="letterhead">${logoImgHTML(ci)}<div class="clinic-name">${esc(ci.name)}</div>
-        <div class="clinic-meta">${esc(ci.address)}${ci.address&&ci.phone?'<br>':''}${ci.phone}</div></div>
-      <div class="sheet-title">RECEIPT</div>
-      <div class="patient-strip">
-        <span><strong>${esc(p.name)}</strong> (${p.id})</span>
-        <span>${fmtDate(v.date)}</span>
+    <div class="print-sheet opdx-card" id="sheet-receipt">
+      <div class="opdx-inner">
+        <div class="opdx-head">
+          <div class="opdx-brand">
+            ${letterheadCrestHTML(ci)}
+            <div>
+              <div class="opdx-clinic-name">${esc(ci.name)}</div>
+              <div class="opdx-clinic-meta">${esc(ci.address||'')}${ci.address&&ci.phone?'<br>':''}${esc(ci.phone||'')}</div>
+            </div>
+          </div>
+        </div>
+        <div class="opdx-strip">Payment receipt · ${fmtDate(v.date)}</div>
+        <div class="opdx-patient-band">
+          <div class="opdx-patient-top">
+            <div class="opdx-patient-name">${esc(p.name)}</div>
+            <div class="opdx-patient-id">${esc(p.id)}</div>
+          </div>
+          <div class="opdx-meta-grid">
+            <div class="opdx-meta-item"><span class="opdx-meta-k">Age / Sex</span><span class="opdx-meta-v">${esc(displayAge(p))}${p.sex?' · '+esc(p.sex):''}</span></div>
+            <div class="opdx-meta-item"><span class="opdx-meta-k">Visit date</span><span class="opdx-meta-v">${fmtDate(v.date)}</span></div>
+          </div>
+        </div>
+        <div style="padding:4px 22px 16px;">
+          <div class="opdx-receipt-row"><span class="lbl">Consultation fee</span><span>₹${(parseFloat(b.fee)||0).toFixed(2)}</span></div>
+          ${(b.charges||[]).filter(c=>c.label).map(c=>`<div class="opdx-receipt-row"><span class="lbl">${esc(c.label)}</span><span>₹${(parseFloat(c.amount)||0).toFixed(2)}</span></div>`).join('')}
+          <div class="opdx-receipt-row" style="padding-top:12px;border-top:2px solid #1B4F6E;margin-top:6px;"><span class="lbl" style="color:#132038;font-size:13px;">Total</span><span class="opdx-receipt-total">₹${total.toFixed(2)}</span></div>
+          <div style="margin-top:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <span class="${b.paid?'opdx-paid-chip':'opdx-unpaid-chip'}">${b.paid?'Paid':'Unpaid'}</span>
+            ${b.paid&&b.mode?`<span style="font-size:13px;color:#5A6578;">via ${esc(b.mode)}</span>`:''}
+          </div>
+        </div>
+        <div class="opdx-foot">
+          <div class="opdx-doctor-block"><div class="faint">Thank you</div></div>
+          <div class="opdx-sign-box">
+            <div class="opdx-sign-line"></div>
+            <div class="opdx-sign-lbl">Authorised signature</div>
+          </div>
+        </div>
       </div>
-      <div class="sheet-section"><span class="lbl">Consultation fee</span><div>₹${(parseFloat(b.fee)||0).toFixed(2)}</div></div>
-      ${(b.charges||[]).filter(c=>c.label).map(c=>`<div class="sheet-section"><span class="lbl">${esc(c.label)}</span><div>₹${(parseFloat(c.amount)||0).toFixed(2)}</div></div>`).join('')}
-      <div class="sheet-divider"></div>
-      <div class="sheet-section"><span class="lbl">Total</span><div style="font-size:20px;font-family:'Source Serif 4',serif;color:var(--primary-dark);">₹${total.toFixed(2)}</div></div>
-      <div class="sheet-section" style="margin-top:14px;"><span class="lbl">Payment status</span><div>${b.paid?'Paid'+(b.mode?' — '+esc(b.mode):''):'Unpaid'}</div></div>
     </div>`;
 
   return `
@@ -7923,7 +8024,7 @@ function certificateSheetHTML(p, built, ci){
             <div class="opdx-meta-item"><span class="opdx-meta-k">Age / Sex</span><span class="opdx-meta-v">${esc(displayAge(p))}${p.sex?' · '+esc(p.sex):''}</span></div>
           </div>
         </div>
-        <div class="cert-body" style="padding:16px 22px;">
+        <div class="cert-body" style="padding:18px 22px 8px;font-size:14.5px;line-height:1.75;color:#152033;">
           ${built.bodyHtml}
         </div>
         <div class="opdx-foot">
@@ -7935,7 +8036,7 @@ function certificateSheetHTML(p, built, ci){
             <div class="opdx-sign-line"></div>
             <div class="opdx-doctor-name">${esc(built.doctor)}</div>
             ${built.qual?`<div style="font-size:11px;color:#5A6578;">${esc(built.qual)}</div>`:''}
-            <div class="opdx-sign-lbl">Signature</div>
+            <div class="opdx-sign-lbl">Doctor's signature</div>
           </div>
         </div>
       </div>
