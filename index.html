@@ -1567,7 +1567,7 @@ async function saveData(){
     state.saveError = null;
     return true;
   } catch(e){
-    state.saveError = 'Could not save — check your connection and try again.';
+    state.saveError = (typeof navigator!=='undefined' && navigator.onLine===false) ? 'You appear offline — reconnect, then save again. Data was not written to the server.' : 'Could not save — the server may be waking up. Wait 30 seconds and try again.';
     return false;
   }
 }
@@ -2642,6 +2642,28 @@ function referralDirectorySettingsHTML(){
 
 /* ============================= PATIENT QR ============================= */
 // Offline-capable QR (byte mode, small payloads). Adapted from public-domain compact QR logic.
+function copyPatientLink(patientId){
+  const url = patientQrPayload(patientId);
+  const done = ()=>{
+    const el = document.getElementById('copy-link-msg');
+    if(el){ el.textContent = 'Link copied'; setTimeout(()=>{ if(el) el.textContent=''; }, 2000); }
+    else try{ alert('Link copied:\\n'+url); }catch(e){}
+  };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(done).catch(()=>{
+      // fallback
+      const ta = document.createElement('textarea');
+      ta.value = url; document.body.appendChild(ta); ta.select();
+      try{ document.execCommand('copy'); done(); }catch(e){ prompt('Copy this patient link:', url); }
+      document.body.removeChild(ta);
+    });
+  } else {
+    const ta = document.createElement('textarea');
+    ta.value = url; document.body.appendChild(ta); ta.select();
+    try{ document.execCommand('copy'); done(); }catch(e){ prompt('Copy this patient link:', url); }
+    document.body.removeChild(ta);
+  }
+}
 function patientQrPayload(patientId){
   const base = (typeof location !== 'undefined' && location.origin) ? location.origin : '';
   // Path form works better when scanning from phone camera than #hash
@@ -4430,8 +4452,17 @@ async function doReset(){
 
 /* ============================= VIEWS ============================= */
 function loadingView(){
-  return `<div class="center-screen"><p class="muted">Loading clinic records…</p></div>`;
+  const waking = state.retryStartedAt && (Date.now() - state.retryStartedAt < 90000);
+  return `<div class="center-screen"><div class="auth-card" style="text-align:center;">
+    ${typeof brandMarkHTML==='function'?brandMarkHTML({size:48}):'<div class="brand-mark">MMC</div>'}
+    <h1 style="font-size:18px;">${waking ? 'Connecting to clinic…' : 'Loading…'}</h1>
+    <p class="muted" style="font-size:13px;margin-top:8px;">${waking
+      ? 'Free hosting often needs 20–60 seconds to wake. Please wait — this page will open when ready.'
+      : 'Fetching clinic records…'}</p>
+    <div class="faint" style="margin-top:14px;">Do not close this tab</div>
+  </div></div>`;
 }
+
 
 function setupView(){
   return `
@@ -4643,6 +4674,11 @@ function dashPanelWrap(id, innerHTML){
   return `<div class="dash-panel-slot" data-panel="${id}">${edit}${hidden && state.dashboardCustomize ? `<div style="opacity:0.45">${innerHTML}</div>` : innerHTML}</div>`;
 }
 
+function offlineBannerHTML(){
+  if(typeof navigator === 'undefined') return '';
+  if(navigator.onLine !== false) return '';
+  return `<div class="banner banner-error" style="margin:0 0 12px;">No internet — changes may not save until you are back online. Check Wi‑Fi or mobile data.</div>`;
+}
 function shellView(){
   const mainItems = [
     ['dashboard', t('Dashboard')],
@@ -4740,6 +4776,7 @@ function shellView(){
       </div>
     </div>
     <div class="main">
+      ${offlineBannerHTML()}
       ${state.saveError ? `<div class="banner banner-error">${esc(state.saveError)}</div>` : ''}
       ${routeContent()}
     </div>
@@ -5589,10 +5626,12 @@ function patientView(patientId){
   return `
     <div class="page-head">
       <div><h1>${esc(p.name)} <span class="pill">${p.id}</span></h1></div>
-      <div class="row" style="gap:8px;">
+      <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;">
         <button class="btn btn-accent" onclick="go('newVisit',{patientId:'${p.id}'})">${can('clinicalVisit')?'+ New OPD Visit':'+ Check in'}</button>
         ${can('certificates')?`<button class="btn" onclick="state.certPatientId='${p.id}';state.certType='sick';go('certificates')">Certificate</button>`:''}
         ${p.phone?`<button class="btn wa-btn" onclick="shareWhatsApp(${jsAttr(p.phone)}, patientWhatsAppText(state.data.patients.find(x=>x.id===${jsAttr(p.id)})))">${t('WhatsApp')}</button>`:''}
+        <button class="btn btn-ghost btn-sm" type="button" onclick="copyPatientLink('${p.id}')">Copy link</button>
+        <span id="copy-link-msg" class="faint"></span>
       </div>
     </div>
     ${pedBanner}
@@ -7366,12 +7405,13 @@ function dailyCloseHTML(){
   const checks = state.eodChecks || {};
   const item = (key, title, sub, actionHtml) => {
     const done = !!checks[key];
+    const locked = !!checks.dayClosed;
     return `<div class="eod-check ${done?'done':''}">
-      <input type="checkbox" ${done?'checked':''} onchange="toggleEodCheck('${key}', this.checked)">
+      <input type="checkbox" ${done?'checked':''} ${locked?'disabled':''} onchange="toggleEodCheck('${key}', this.checked)">
       <div class="eod-body">
         <div class="eod-title">${title}</div>
         <div class="eod-sub">${sub}</div>
-        ${actionHtml||''}
+        ${locked?'':(actionHtml||'')}
       </div>
     </div>`;
   };
@@ -7393,8 +7433,17 @@ function dailyCloseHTML(){
       ${item('ownerWa', 'Owner summary sent', 'WhatsApp daily totals to clinic owner',
         `<button class="btn btn-sm btn-accent" style="margin-top:6px;" onclick="sendDailyCloseWhatsApp(); toggleEodCheck('ownerWa', true);">WhatsApp owner</button>`)}
       <p class="faint" style="margin-top:10px;">${Object.keys(checks).filter(k=>checks[k]).length} / 6 items done</p>
+      ${checks.dayClosed ? `
+        <div class="banner" style="background:var(--teal-tint);color:var(--teal);margin-top:12px;">
+          <strong>Day closed</strong>${checks.dayClosedAt ? ' · '+esc(checks.dayClosedAt) : ''}
+          ${checks.dayClosedBy ? ' · by '+esc(checks.dayClosedBy) : ''}
+          <button class="btn btn-ghost btn-sm" style="margin-left:8px;" onclick="reopenEodDay()">Reopen checklist</button>
+        </div>` : `
+        <button class="btn btn-primary" style="margin-top:12px;" onclick="markEodDayClosed()">Mark day closed</button>
+        <p class="faint" style="margin-top:6px;">Stamps today’s checklist as finished on this device. You can still print or WhatsApp after.</p>`}
     </div>`;
   return `
+    ${checks.dayClosed ? `<div class="banner" style="background:var(--teal-tint);color:var(--teal);margin-bottom:12px;max-width:640px;"><strong>Clinic day marked closed</strong> for ${fmtDate(today)}${checks.dayClosedBy?' · '+esc(checks.dayClosedBy):''}</div>` : ''}
     ${checklist}
     <div class="print-sheet" id="sheet-daily-close" style="max-width:640px;">
       <div class="letterhead">${logoImgHTML(state.data.clinicInfo||{})}<div class="clinic-name">${esc((state.data.clinicInfo||{}).name||'')}</div></div>
@@ -7422,6 +7471,28 @@ function toggleEodCheck(key, on){
   const day = todayStr();
   if(state.eodCheckDay !== day){ state.eodChecks = {}; state.eodCheckDay = day; }
   state.eodChecks[key] = !!on;
+  try{ localStorage.setItem('mmc_eod_'+day, JSON.stringify(state.eodChecks)); }catch(e){}
+  render();
+}
+function markEodDayClosed(){
+  if(!state.eodChecks) state.eodChecks = {};
+  const day = todayStr();
+  if(state.eodCheckDay !== day){ state.eodChecks = {}; state.eodCheckDay = day; }
+  // Tick remaining optional items? User asked mark complete once — stamp only
+  state.eodChecks.dayClosed = true;
+  state.eodChecks.dayClosedAt = new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+  state.eodChecks.dayClosedBy = state.session.staffName || '';
+  try{ localStorage.setItem('mmc_eod_'+day, JSON.stringify(state.eodChecks)); }catch(e){}
+  try{ logAudit('Day closed', day); }catch(e){}
+  render();
+}
+function reopenEodDay(){
+  if(!confirm('Reopen today’s end-of-day checklist?')) return;
+  if(!state.eodChecks) state.eodChecks = {};
+  delete state.eodChecks.dayClosed;
+  delete state.eodChecks.dayClosedAt;
+  delete state.eodChecks.dayClosedBy;
+  const day = todayStr();
   try{ localStorage.setItem('mmc_eod_'+day, JSON.stringify(state.eodChecks)); }catch(e){}
   render();
 }
@@ -10148,25 +10219,43 @@ async function removeCustomMedicine(idx){
 }
 
 function connectionErrorView(){
+  const offline = (typeof navigator !== 'undefined' && navigator.onLine === false);
   return `<div class="center-screen"><div class="auth-card" style="text-align:center;">
     ${brandMarkHTML({size:48})}
-    <h1 style="font-size:18px;">Can't reach the clinic server</h1>
-    <p class="muted" style="font-size:13px;">${esc(state.loadError || 'Could not reach the clinic server. Check your connection and reload the page.')}</p>
-    <p class="faint" style="margin:10px 0 14px;">On free hosting the app can sleep after idle time. The first request after wake often takes 20–60 seconds — wait a moment, then try again.</p>
-    <button class="btn btn-primary btn-block" onclick="retryLoad()">Try again</button>
+    <h1 style="font-size:18px;">${offline ? 'No internet connection' : 'Clinic server is waking up'}</h1>
+    <p class="muted" style="font-size:13px;">${esc(state.loadError || (offline
+      ? 'This device is offline. Check mobile data / Wi‑Fi, then try again.'
+      : 'Could not reach the clinic server yet.'))}</p>
+    <div class="banner banner-info" style="text-align:left;margin:12px 0;">
+      <strong>What to do</strong>
+      <ol style="margin:8px 0 0 18px;padding:0;font-size:13px;line-height:1.45;">
+        <li>Wait <strong>30–60 seconds</strong> (free host may be starting).</li>
+        <li>Tap <strong>Try again</strong> below — do not keep refreshing rapidly.</li>
+        <li>If it still fails, check this phone’s internet, then try once more.</li>
+      </ol>
+    </div>
+    <p class="faint" style="margin:0 0 14px;">Your patient data is safe on the server. This screen only means the app could not connect right now.</p>
+    <button class="btn btn-primary btn-block" id="retry-load-btn" onclick="retryLoad()">Try again</button>
+    <p class="faint" id="retry-countdown" style="margin-top:10px;"></p>
   </div></div>`;
 }
 function retryLoad(){
   state.loading = true;
   state.loadError = null;
+  state.retryStartedAt = Date.now();
   render();
   if(state.session.staffName) loadData();
-  else initSession();
+  else window.addEventListener('online', ()=>{ try{ render(); }catch(e){} });
+window.addEventListener('offline', ()=>{ try{ render(); }catch(e){} });
+initSession();
 }
+
 
 /* ============================= ROOT RENDER ============================= */
 function render(){
   applyDarkMode();
+  if(typeof loadEodChecks==='function') loadEodChecks();
+  if(typeof cacheClinicBranding==='function' && state.data) cacheClinicBranding();
   resetIdleTimer();
   const app = document.getElementById('app');
   if(state.loading){ app.innerHTML = loadingView(); return; }
