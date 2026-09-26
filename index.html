@@ -1498,7 +1498,47 @@ function tokenBoardHTML(){
       ${now && can('clinicalVisit') ? `<button class="btn btn-primary" onclick="startTokenConsult('${now.patient.id}','${now.visit.id}')">Open consult — ${esc(now.patient.name)}</button>` : ''}
       ${now ? `<button class="btn btn-ghost btn-sm" onclick="printTokenSlip('${now.patient.id}','${now.visit.id}')">Reprint token</button>` : ''}
       ${(state.data.lastPrinted&&state.data.lastPrinted.patientId) ? `<button class="btn btn-ghost btn-sm" onclick="reprintLast()">Reprint last document</button>` : ''}
+      <button class="btn btn-ghost btn-sm" onclick="go('waitingBoard')">Open waiting-room display</button>
     </div>`;
+}
+
+// ---- Waiting-room display ----
+// A no-chrome, large-text version of the token queue meant to be left open
+// full-screen on a TV/tablet in the waiting area so patients can see their
+// own turn without asking staff. Requires being logged in like the rest of
+// the app (no new unauthenticated endpoint) — open it once on a shared
+// device and leave the tab running; it refreshes itself every 10s.
+let _waitingBoardTickScheduled = false;
+function scheduleWaitingBoardTick(){
+  if(_waitingBoardTickScheduled) return;
+  _waitingBoardTickScheduled = true;
+  setTimeout(async ()=>{
+    _waitingBoardTickScheduled = false;
+    if(state.route==='waitingBoard' && state.session.staffName){
+      await loadData(); // loadData() re-renders when it finishes
+    }
+  }, 10000);
+}
+function waitingBoardView(){
+  const now = nowServingEntry();
+  const next = nextWaitingEntry();
+  const waiting = waitingTokenQueue().filter(({visit:v})=>tokenQueueStatus(v)==='waiting');
+  const clinic = (state.data.clinicInfo||{}).name || 'Clinic';
+  scheduleWaitingBoardTick();
+  return `<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;">
+    <button class="btn btn-ghost btn-sm" style="position:fixed;top:14px;right:14px;" onclick="go('dashboard')">Exit display</button>
+    <div style="font-size:18px;color:var(--ink-soft);margin-bottom:24px;">${esc(clinic)}</div>
+    <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:40px 60px;margin-bottom:28px;min-width:280px;">
+      <div style="font-size:20px;color:var(--ink-soft);letter-spacing:1px;">NOW SERVING</div>
+      <div style="font-size:120px;font-weight:800;color:var(--primary-dark,var(--primary));line-height:1.1;">${now && now.visit.token!=null ? '#'+now.visit.token : '—'}</div>
+      <div style="font-size:26px;">${now ? esc(now.patient.name) : 'No patient called'}</div>
+    </div>
+    <div style="background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px 40px;min-width:220px;">
+      <div style="font-size:15px;color:var(--ink-soft);letter-spacing:1px;">UP NEXT</div>
+      <div style="font-size:48px;font-weight:700;">${next && next.visit.token!=null ? '#'+next.visit.token : '—'}</div>
+      <div style="font-size:16px;color:var(--ink-soft);margin-top:4px;">${waiting.length} waiting</div>
+    </div>
+  </div>`;
 }
 
 
@@ -2525,6 +2565,28 @@ function remindApptWhatsApp(apptId){
     if(p){ phone = phone || p.phone || ''; name = name || p.name || ''; }
   }
   shareWhatsApp(phone, appointmentWhatsAppText({name, date:a.date, time:a.time, doctorName:a.doctorName}));
+}
+// Bulk version of remindApptWhatsApp — same "open WhatsApp, no Business API"
+// approach as remindAllDueList: WhatsApp's own click-to-chat links can't be
+// fired silently from the server, so this opens one wa.me tab per patient
+// with tomorrow's appointment, in one confirmed batch instead of clicking
+// each "WhatsApp" button on the dashboard one at a time.
+async function remindAllApptsTomorrow(){
+  const tomorrow = tomorrowStr();
+  const targets = appointmentsForDate(tomorrow).filter(a=>(a.status==='booked' || !a.status)).map(a=>{
+    let phone = a.phone || '';
+    let name = a.name || '';
+    if(a.patientId){
+      const p = state.data.patients.find(x=>x.id===a.patientId);
+      if(p){ phone = phone || p.phone || ''; name = name || p.name || ''; }
+    }
+    return {a, phone, name};
+  }).filter(x=>x.phone);
+  if(!targets.length){ alert('No appointments tomorrow with a phone number.'); return; }
+  if(!confirm(`Open WhatsApp for ${targets.length} appointment(s) tomorrow?`)) return;
+  for(const {a, phone, name} of targets){
+    shareWhatsApp(phone, appointmentWhatsAppText({name, date:a.date, time:a.time, doctorName:a.doctorName}));
+  }
 }
 function appointmentWhatsAppText(a){
   const ci = state.data.clinicInfo || {};
@@ -4636,6 +4698,7 @@ const DASH_PANEL_META = [
   {id:'vaccines', label:'Pediatric vaccines due'},
   {id:'unfinished', label:"Today's unfinished"},
   {id:'lowstock', label:'Low stock'},
+  {id:'expiringstock', label:'Expiring stock'},
   {id:'quick', label:'Quick actions'}
 ];
 const DASH_DEFAULT_ORDER = DASH_PANEL_META.map(p=>p.id);
@@ -5112,7 +5175,8 @@ function dashboardView(){
   }).join('');
   const apptRemindCard = `
     <div class="dbx-panel">
-      <div class="dbx-panel-head"><h2>${t('Call tomorrow')}${tomorrowAppts.length?` <span class="count">${tomorrowAppts.length}</span>`:''}</h2></div>
+      <div class="dbx-panel-head"><h2>${t('Call tomorrow')}${tomorrowAppts.length?` <span class="count">${tomorrowAppts.length}</span>`:''}</h2>
+        ${tomorrowAppts.length?`<button class="link" onclick="remindAllApptsTomorrow()">Remind all</button>`:''}</div>
       ${tomorrowAppts.length ? apptRemindRows
         : `<div style="padding:0 4px;">${emptyState('📅', 'No appointments tomorrow', 'Booked appointments for tomorrow appear here so you can send reminders.')}</div>`}
     </div>`;
@@ -5168,6 +5232,20 @@ function dashboardView(){
       ${lows.length ? lowRows : `<div style="padding:0 4px;">${emptyState('📦','Stock levels look fine','Items at or below their alert quantity show up here.')}</div>`}
     </div>` : '';
 
+  const expiring = expiringStockItems();
+  const expiringRows = expiring.slice(0,12).map(s=>`
+    <div class="dbx-qrow dbx-clickable" onclick="go('stock')">
+      <div class="dbx-qtext"><div class="dbx-qname">${esc(s.name)}</div>
+      <div class="dbx-qsub">${s.expired?'Expired':'Expires'} ${fmtDate(s.expiryDate)}</div></div>
+      <span class="dbx-qstatus wait">${s.expired?'Expired':'Soon'}</span>
+    </div>`).join('');
+  const expiringStockCard = can('stock') ? `
+    <div class="dbx-panel">
+      <div class="dbx-panel-head"><h2>Expiring stock${expiring.length?` <span class="count">${expiring.length}</span>`:''}</h2>
+        <button class="link" onclick="go('stock')">Open stock</button></div>
+      ${expiring.length ? expiringRows : `<div style="padding:0 4px;">${emptyState('⏳','Nothing expiring soon','Items expiring within 30 days, or already expired, show up here.')}</div>`}
+    </div>` : '';
+
   const panelMap = {
     cash: cashStripHTML(),
     queue: queueSection,
@@ -5178,6 +5256,7 @@ function dashboardView(){
     vaccines: can('pediatrics') ? pedDueCard : '',
     unfinished: unfinishedCard,
     lowstock: lowStockCard,
+    expiringstock: expiringStockCard,
     quick: quickActionsCard
   };
   const prefs = getDashboardPrefs();
@@ -9702,16 +9781,28 @@ async function removeExpense(id){
   await saveData(); render();
 }
 
+function expiringStockItems(){
+  const today = todayStr();
+  const in30 = (()=>{ const d=new Date(); d.setDate(d.getDate()+30); return d.toISOString().slice(0,10); })();
+  return (state.data.drugStock||[]).filter(s=> s.expiryDate && s.expiryDate <= in30)
+    .sort((a,b)=> (a.expiryDate||'').localeCompare(b.expiryDate||''))
+    .map(s=> ({...s, expired: s.expiryDate < today}));
+}
 function stockView(){
   const q = (state.stockFilter||'').toLowerCase();
   let list = state.data.drugStock||[];
   if(q) list = list.filter(s=>(s.name||'').toLowerCase().includes(q));
+  const today = todayStr();
+  const in30 = (()=>{ const d=new Date(); d.setDate(d.getDate()+30); return d.toISOString().slice(0,10); })();
   const rows = list.map(s=>{
     const low = (parseFloat(s.lowAt)||0) > 0 && (parseFloat(s.quantity)||0) <= (parseFloat(s.lowAt)||0);
+    const expired = s.expiryDate && s.expiryDate < today;
+    const expiringSoon = s.expiryDate && !expired && s.expiryDate <= in30;
     return `<tr>
-      <td><strong>${esc(s.name)}</strong>${low?' <span class="pill" style="background:var(--danger-tint);color:var(--danger);">Low</span>':''}</td>
+      <td><strong>${esc(s.name)}</strong>${low?' <span class="pill" style="background:var(--danger-tint);color:var(--danger);">Low</span>':''}${expired?' <span class="pill" style="background:var(--danger-tint);color:var(--danger);">Expired</span>':expiringSoon?' <span class="pill" style="background:var(--warn-tint,#fff3cd);color:var(--warn,#946200);">Expiring soon</span>':''}</td>
       <td>${esc(s.quantity)} ${esc(s.unit)||''}</td>
       <td>${esc(s.lowAt)||'—'}</td>
+      <td>${s.expiryDate?fmtDate(s.expiryDate):'—'}</td>
       <td>${esc(s.notes)||'—'}</td>
       <td style="white-space:nowrap;">
         <button class="btn btn-sm" onclick="adjustStock('${s.id}',1)">+</button>
@@ -9722,19 +9813,20 @@ function stockView(){
   }).join('');
   return `
     <div class="page-head"><div><h1>Drug stock</h1><p class="muted">Simple inventory for medicines you keep at the clinic</p></div></div>
-    <div class="card" style="margin-bottom:16px;max-width:560px;">
+    <div class="card" style="margin-bottom:16px;max-width:640px;">
       <h3 style="margin-bottom:10px;">Add item</h3>
       <div class="row">
         <div class="field" style="flex:2;"><label>Name</label><input id="st-name" placeholder="e.g. Tab. Paracetamol 500mg"></div>
         <div class="field"><label>Qty</label><input id="st-qty" type="number" min="0" value="0"></div>
         <div class="field"><label>Unit</label><input id="st-unit" placeholder="strips / bottles"></div>
         <div class="field"><label>Low at</label><input id="st-low" type="number" min="0" placeholder="Alert qty"></div>
+        <div class="field"><label>Expiry date</label><input id="st-exp" type="date"></div>
       </div>
       <button class="btn btn-primary btn-sm" onclick="addStockItem()">Add</button>
     </div>
     <div class="card">
       <div class="search-wrap" style="margin-bottom:12px;"><input placeholder="Filter stock…" value="${esc(state.stockFilter||'')}" oninput="state.stockFilter=this.value;render()"></div>
-      ${list.length?`<table><thead><tr><th>Medicine</th><th>Quantity</th><th>Low at</th><th>Notes</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:emptyState('📦','No stock items','Add medicines you dispense or keep on the shelf.')}
+      ${list.length?`<table><thead><tr><th>Medicine</th><th>Quantity</th><th>Low at</th><th>Expiry</th><th>Notes</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:emptyState('📦','No stock items','Add medicines you dispense or keep on the shelf.')}
     </div>`;
 }
 async function addStockItem(){
@@ -9742,9 +9834,10 @@ async function addStockItem(){
   const quantity = parseFloat(document.getElementById('st-qty').value)||0;
   const unit = document.getElementById('st-unit').value.trim();
   const lowAt = parseFloat(document.getElementById('st-low').value)||0;
+  const expiryDate = document.getElementById('st-exp').value || '';
   if(!name) return;
   if(!state.data.drugStock) state.data.drugStock = [];
-  state.data.drugStock.push({id:'stk-'+Date.now(), name, quantity, unit, lowAt, notes:''});
+  state.data.drugStock.push({id:'stk-'+Date.now(), name, quantity, unit, lowAt, expiryDate, notes:''});
   await saveData(); render();
 }
 async function adjustStock(id, delta){
@@ -10555,6 +10648,7 @@ function render(){
     app.innerHTML = state.data.staff.length===0 ? setupView() : loginView();
     return;
   }
+  if(state.route==='waitingBoard'){ app.innerHTML = waitingBoardView(); return; }
   app.innerHTML = shellView() + commandPaletteHTML();
   if(state.route==='certificates') applyPendingCertFields();
   handlePatientHashRoute();
