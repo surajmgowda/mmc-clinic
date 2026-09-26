@@ -990,6 +990,10 @@
   .cash-strip .cash-val{font-family:'Source Serif 4',serif;font-size:20px;font-weight:700;color:var(--primary-dark);}
   .cash-strip .cash-lbl{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
   .wa-btn{display:inline-flex;align-items:center;gap:5px;}
+  .boot-spinner{width:34px;height:34px;margin:16px auto 0;border-radius:50%;border:3px solid var(--line);border-top-color:var(--primary);animation:boot-spin 0.8s linear infinite;}
+  @keyframes boot-spin{to{transform:rotate(360deg);}}
+  .boot-progress{width:100%;max-width:220px;height:4px;margin:16px auto 0;background:var(--line);border-radius:2px;overflow:hidden;}
+  .boot-progress > div{height:100%;background:var(--primary);border-radius:2px;transition:width 0.4s linear;}
 
 </style>
 </head>
@@ -1016,6 +1020,7 @@
 
 let state = {
   loading: true,
+  pageLoadStartedAt: Date.now(), // first-visit clock, separate from retryStartedAt (set on manual retry)
   loadError: null, // set when the initial fetch of clinic data fails
   saveError: null,
   data: null,
@@ -4455,15 +4460,46 @@ async function doReset(){
 
 /* ============================= VIEWS ============================= */
 function loadingView(){
-  const waking = state.retryStartedAt && (Date.now() - state.retryStartedAt < 90000);
+  const startedAt = state.retryStartedAt || state.pageLoadStartedAt || Date.now();
+  const elapsed = Date.now() - startedAt;
+  const WAKE_THRESHOLD = 3000;   // below this, could just be a normal fast load — don't alarm anyone
+  const WAKE_EXPECTED_MAX = 60000; // typical free-tier cold start tops out around here
+  let title, sub, showBar = false, barPct = 0;
+  if(elapsed < WAKE_THRESHOLD){
+    title = 'Loading…';
+    sub = 'Fetching clinic records…';
+  } else if(elapsed < WAKE_EXPECTED_MAX){
+    title = 'Waking up the clinic server…';
+    sub = `Free hosting sleeps after a few idle minutes and can take 20–60 seconds to start (${Math.round(elapsed/1000)}s so far). Please wait — this page opens automatically once it's ready.`;
+    showBar = true;
+    barPct = Math.min(100, Math.round((elapsed / WAKE_EXPECTED_MAX) * 100));
+  } else {
+    title = 'Still waking up…';
+    sub = `This is taking longer than usual (${Math.round(elapsed/1000)}s). Keep this tab open — it should still come through. If nothing happens past 2 minutes, check your connection and reload.`;
+    showBar = true;
+    barPct = 100;
+  }
+  scheduleLoadingTick();
   return `<div class="center-screen"><div class="auth-card" style="text-align:center;">
     ${typeof brandMarkHTML==='function'?brandMarkHTML({size:48}):'<div class="brand-mark">MMC</div>'}
-    <h1 style="font-size:18px;">${waking ? 'Connecting to clinic…' : 'Loading…'}</h1>
-    <p class="muted" style="font-size:13px;margin-top:8px;">${waking
-      ? 'Free hosting often needs 20–60 seconds to wake. Please wait — this page will open when ready.'
-      : 'Fetching clinic records…'}</p>
+    <div class="boot-spinner" aria-hidden="true"></div>
+    <h1 style="font-size:18px;margin-top:14px;">${title}</h1>
+    <p class="muted" style="font-size:13px;margin-top:8px;">${sub}</p>
+    ${showBar ? `<div class="boot-progress" aria-hidden="true"><div style="width:${barPct}%;"></div></div>` : ''}
     <div class="faint" style="margin-top:14px;">Do not close this tab</div>
   </div></div>`;
+}
+// Re-renders the loading screen periodically so the elapsed-time message and
+// progress bar keep updating while we wait on a slow/cold server response.
+// Stops on its own once state.loading flips false (data arrived or failed).
+let _loadingTickScheduled = false;
+function scheduleLoadingTick(){
+  if(_loadingTickScheduled) return;
+  _loadingTickScheduled = true;
+  setTimeout(()=>{
+    _loadingTickScheduled = false;
+    if(state.loading) render();
+  }, 1500);
 }
 
 
