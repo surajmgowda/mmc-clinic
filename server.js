@@ -621,6 +621,7 @@ app.put('/api/data', requireSession, async (req, res) => {
   }
   try {
     const { rows } = await pool.query('SELECT version, data FROM clinic_store WHERE id = 1');
+    if (rows.length === 0) return res.status(500).json({ error: 'store not initialized' });
     const current = rows[0];
     if (current.version !== version) {
       return res.status(409).json({ data: sanitizeClinicData(current.data), version: current.version });

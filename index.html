@@ -2270,8 +2270,6 @@ async function loadStaffListForLogin(){
         const json = await res.json();
         state.data = defaultData();
   bootClinicGuards();
-      bootClinicGuards();
-        bootClinicGuards();
         state.data.staff = json.staff || [];
         ensureStaffAuthMethods();
         state.loadError = null;
@@ -2291,7 +2289,6 @@ async function loadStaffListForLogin(){
     if(cached && Array.isArray(cached) && cached.length){
       state.data = defaultData();
   bootClinicGuards();
-      bootClinicGuards();
       state.data.staff = cached;
       state.loadError = null;
       state.loginError = 'Using a cached staff list — the server may still be waking up. Log in, or tap Try again if login fails.';
