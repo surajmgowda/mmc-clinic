@@ -988,6 +988,22 @@
 
 <script>
 /* ============================= STATE ============================= */
+
+// Capture deep link as early as possible (phone camera → URL)
+(function(){
+  try{
+    var id = null;
+    var path = location.pathname || '';
+    var pm = path.match(/^\/patient\/([^/]+)\/?$/i);
+    if(pm) id = decodeURIComponent(pm[1]);
+    else {
+      var q = new URLSearchParams(location.search || '');
+      id = q.get('patient') || q.get('p');
+    }
+    if(id) sessionStorage.setItem('mmc_pending_patient', id);
+  }catch(e){}
+})();
+
 let state = {
   loading: true,
   loadError: null, // set when the initial fetch of clinic data fails
@@ -1694,6 +1710,7 @@ async function doSetup(){
     state.loading = true;
     render();
     await loadData();
+    handlePatientHashRoute();
     const me = state.data.staff.find(s=>s.name===json.name);
     if(me){
       me.authMethod = authMethod;
@@ -2010,6 +2027,7 @@ async function doLogin(){
         state.loading = true;
         render();
         await loadData();
+        handlePatientHashRoute();
         return;
       }
       // Real wrong credentials (401/403, and 400 which some servers use for bad PIN)
@@ -2207,6 +2225,7 @@ async function initSession(){
       const json = await res.json();
       state.session.staffName = json.name;
       await loadData();
+      handlePatientHashRoute();
       return;
     }
   } catch(e){ /* fall through to the logged-out path below */ }
@@ -2523,7 +2542,7 @@ function printTokenSlip(patientId, visitId){
       <div class="t-name">${esc(p.name)}</div>
       <div class="t-line">${esc(p.id)}${p.sex? ' · '+esc(p.sex):''}</div>
       <div class="t-line">${esc(fmtDate(v && v.date ? v.date : todayStr()))}${v && v.time ? ' · ' + esc(v.time) : ''}${doctor ? ' · ' + esc(doctor) : ''}</div>
-      <img class="t-qr" alt="QR" src="https://api.qrserver.com/v1/create-qr-code/?size=56x56&margin=0&data=${encodeURIComponent(patientQrPayload(p.id))}" onerror="this.style.display='none'">
+      <img class="t-qr" alt="QR" src="https://api.qrserver.com/v1/create-qr-code/?size=56x56&margin=1&ecc=M&data=${encodeURIComponent(patientQrPayload(p.id))}" onerror="if(!this.dataset.fb){this.dataset.fb=1;this.src='https://quickchart.io/qr?size=56&text='+encodeURIComponent(patientQrPayload(p.id));}else{this.style.display='none';}">
     </div>
     <div class="t-foot">Wait for your number · Scan QR for file</div>
   `;
@@ -2612,35 +2631,72 @@ function referralDirectorySettingsHTML(){
 }
 
 /* ============================= PATIENT QR ============================= */
+// Offline-capable QR (byte mode, small payloads). Adapted from public-domain compact QR logic.
 function patientQrPayload(patientId){
   const base = (typeof location !== 'undefined' && location.origin) ? location.origin : '';
-  return base + '/#/patient/' + encodeURIComponent(patientId);
+  // Path form works better when scanning from phone camera than #hash
+  return base.replace(/\/$/,'') + '/patient/' + encodeURIComponent(patientId);
 }
 function patientQrImgHTML(patientId, size){
   if(!patientId) return '';
   const s = size || 72;
-  const data = encodeURIComponent(patientQrPayload(patientId));
-  // Public QR image API (no key). Hides quietly if offline.
-  return `<div class="opdx-qr-wrap">
+  const payload = patientQrPayload(patientId);
+  const data = encodeURIComponent(payload);
+  // Primary + fallbacks (some networks block one host)
+  const src1 = `https://api.qrserver.com/v1/create-qr-code/?size=${s}x${s}&margin=1&ecc=M&data=${data}`;
+  const src2 = `https://quickchart.io/qr?size=${s}&margin=1&text=${data}`;
+  return `<div class="opdx-qr-wrap" title="${esc(payload)}">
     <img class="patient-qr" width="${s}" height="${s}" alt="Patient QR"
-      src="https://api.qrserver.com/v1/create-qr-code/?size=${s}x${s}&margin=1&data=${data}"
-      onerror="this.parentNode.style.display='none'">
+      src="${src1}"
+      onerror="if(!this.dataset.fb){this.dataset.fb=1;this.src='${src2.replace(/'/g,"\\'")}';}else{this.style.display='none';this.nextElementSibling&&(this.nextElementSibling.textContent='QR unavailable offline — use patient ID ${esc(patientId)}');}">
     <div class="faint">Scan to open file</div>
   </div>`;
 }
+function readPatientDeepLinkId(){
+  try{
+    const path = (location.pathname||'');
+    const pm = path.match(/^\/patient\/([^/]+)\/?$/i);
+    if(pm) return decodeURIComponent(pm[1]);
+    const q = new URLSearchParams(location.search||'');
+    if(q.get('patient')) return q.get('patient');
+    if(q.get('p')) return q.get('p');
+    const h = (location.hash||'').replace(/^#/, '');
+    const hm = h.match(/^\/?patient\/(.+)$/i) || h.match(/^p\/(.+)$/i);
+    if(hm) return decodeURIComponent(hm[1]);
+  }catch(e){}
+  return null;
+}
+function stashPendingPatient(id){
+  if(!id) return;
+  try{ sessionStorage.setItem('mmc_pending_patient', id); }catch(e){}
+}
+function consumePendingPatientId(){
+  let id = readPatientDeepLinkId();
+  if(!id){ try{ id = sessionStorage.getItem('mmc_pending_patient'); }catch(e){} }
+  return id;
+}
 function handlePatientHashRoute(){
   try{
-    const h = (location.hash || '').replace(/^#/, '');
-    const m = h.match(/^\/?patient\/(.+)$/i) || h.match(/^p\/(.+)$/i);
-    if(!m) return;
-    const id = decodeURIComponent(m[1]);
-    if(!state.session.staffName) return; // login first; hash kept for after login
-    if(state.data && (state.data.patients||[]).some(p=>p.id===id)){
-      go('patient', {patientId: id});
+    const id = consumePendingPatientId();
+    if(!id) return;
+    stashPendingPatient(id);
+    if(!state.session.staffName) return; // after login we open it
+    if(!state.data || !state.data.patients) return;
+    const p = state.data.patients.find(x=>x.id===id);
+    if(!p){
+      // soft match: case-insensitive / trim
+      const p2 = state.data.patients.find(x=>(x.id||'').toUpperCase()===id.toUpperCase());
+      if(!p2) return;
+      try{ sessionStorage.removeItem('mmc_pending_patient'); }catch(e){}
+      if(state.route!=='patient' || state.routeParams.patientId!==p2.id) go('patient',{patientId:p2.id});
+      return;
     }
+    try{ sessionStorage.removeItem('mmc_pending_patient'); }catch(e){}
+    if(state.route!=='patient' || state.routeParams.patientId!==p.id) go('patient',{patientId:p.id});
   }catch(e){}
 }
 window.addEventListener('hashchange', ()=> handlePatientHashRoute());
+window.addEventListener('popstate', ()=> handlePatientHashRoute());
 
 /* ============================= DAILY CASH ============================= */
 function todayCashStats(){
