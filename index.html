@@ -1088,6 +1088,7 @@ function defaultData(){
     dutyRoster: [], // {id, date, staffName, shift, notes}
     ancRegister: [], // {id, patientId, lmp, edd, gravida, para, risk, notes, visits:[]}
     referralDirectory: [], // {id, name, phone, address, notes}
+    adviceLibrary: [], // {id, title, text}
     lastPrinted: null // {patientId, visitId, at}
   };
 }
@@ -2037,6 +2038,7 @@ async function doLogin(){
         state.loading = true;
         render();
         await loadData();
+        logAudit('Login', 'Signed in' + (deviceLabel() ? ' · '+deviceLabel() : ''));
         handlePatientHashRoute();
         return;
       }
@@ -2571,6 +2573,7 @@ function printTokenSlip(patientId, visitId){
 /* ============================= REFERRAL DIRECTORY ============================= */
 function ensureReferralDirectory(){
   if(!state.data.referralDirectory) state.data.referralDirectory = [];
+    if(!state.data.adviceLibrary) state.data.adviceLibrary = [];
   return state.data.referralDirectory;
 }
 function referralDirectoryOptionsHTML(selected){
@@ -5726,9 +5729,256 @@ async function clearPatientDetails(patientId){
   render();
 }
 
+
+
+
+
+/* ============================= DEVICE LIST ============================= */
+function recentDeviceActivity(){
+  const cutoff = Date.now() - 14*24*60*60*1000;
+  const map = {};
+  (state.data.auditLog||[]).forEach(e=>{
+    const ts = e.ts ? new Date(e.ts).getTime() : 0;
+    if(ts < cutoff) return;
+    const dev = (e.device||'').trim() || '(unnamed device)';
+    const key = dev + '|' + (e.staff||'');
+    if(!map[key] || ts > map[key].lastTs){
+      map[key] = {device: dev, staff: e.staff||'—', lastTs: ts, lastAction: e.action||'', count: (map[key]?map[key].count:0)+1};
+    } else {
+      map[key].count++;
+    }
+  });
+  return Object.values(map).sort((a,b)=>b.lastTs-a.lastTs);
+}
+function deviceListSettingsHTML(){
+  const rows = recentDeviceActivity().map(d=>{
+    const when = new Date(d.lastTs).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'});
+    return `<tr>
+      <td><strong>${esc(d.device)}</strong></td>
+      <td>${esc(d.staff)}</td>
+      <td>${esc(when)}</td>
+      <td class="faint">${esc(d.lastAction)} · ${d.count} actions</td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="4" class="faint">No recent device activity in the audit log. Name this device below, then use the app — activity will appear here.</td></tr>';
+  const cur = esc(deviceLabel()||'');
+  return `
+    <div class="card" style="margin-bottom:18px;max-width:720px;">
+      <h2 style="margin-bottom:6px;">Devices</h2>
+      <p class="muted" style="font-size:12.5px;margin-bottom:12px;">Names this browser for the activity log (e.g. Reception phone, Doctor laptop). Not a live GPS list — based on recent audit entries (14 days).</p>
+      <div class="field"><label>Name of this device</label>
+        <input id="device-label-input" value="${cur}" placeholder="e.g. Reception desk" maxlength="40">
+      </div>
+      <button class="btn btn-sm" onclick="saveThisDeviceLabel()">Save device name</button>
+      <h3 style="margin:18px 0 8px;font-size:14px;">Recent activity by device</h3>
+      <table><thead><tr><th>Device</th><th>Staff</th><th>Last seen</th><th>Detail</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    </div>`;
+}
+function saveThisDeviceLabel(){
+  const v = (document.getElementById('device-label-input')||{}).value;
+  setDeviceLabel(v);
+  logAudit('Device named', deviceLabel()||'(cleared)');
+  saveData().then(()=>render());
+}
+
+/* ============================= FAMILY / LINKED PATIENTS ============================= */
+function linkedIdsOf(p){
+  return Array.isArray(p.linkedPatientIds) ? p.linkedPatientIds.filter(Boolean) : [];
+}
+function getLinkedPatients(p){
+  const ids = linkedIdsOf(p);
+  return (state.data.patients||[]).filter(x=>ids.includes(x.id));
+}
+async function linkPatientTo(patientId, otherId){
+  if(!patientId || !otherId || patientId===otherId) return;
+  const a = state.data.patients.find(x=>x.id===patientId);
+  const b = state.data.patients.find(x=>x.id===otherId);
+  if(!a || !b) return;
+  if(!a.linkedPatientIds) a.linkedPatientIds = [];
+  if(!b.linkedPatientIds) b.linkedPatientIds = [];
+  if(!a.linkedPatientIds.includes(otherId)) a.linkedPatientIds.push(otherId);
+  if(!b.linkedPatientIds.includes(patientId)) b.linkedPatientIds.push(patientId);
+  logAudit('Linked family', `${a.name} ↔ ${b.name}`);
+  await saveData();
+  render();
+}
+async function unlinkPatientFrom(patientId, otherId){
+  const a = state.data.patients.find(x=>x.id===patientId);
+  const b = state.data.patients.find(x=>x.id===otherId);
+  if(a && a.linkedPatientIds) a.linkedPatientIds = a.linkedPatientIds.filter(id=>id!==otherId);
+  if(b && b.linkedPatientIds) b.linkedPatientIds = b.linkedPatientIds.filter(id=>id!==patientId);
+  logAudit('Unlinked family', `${patientId} ↔ ${otherId}`);
+  await saveData();
+  render();
+}
+function familyLinkSearch(patientId, q){
+  state.familyLinkSearch = q;
+  const box = document.getElementById('family-link-results');
+  if(!box) return;
+  const qq = (q||'').trim().toLowerCase();
+  if(qq.length<2){ box.innerHTML = '<p class="faint">Type at least 2 characters</p>'; return; }
+  const linked = new Set(linkedIdsOf(state.data.patients.find(x=>x.id===patientId)||{}));
+  const hits = (state.data.patients||[]).filter(p=>
+    p.id!==patientId && !linked.has(p.id) &&
+    ((p.name||'').toLowerCase().includes(qq) || (p.id||'').toLowerCase().includes(qq) || (p.phone||'').includes(qq))
+  ).slice(0,8);
+  box.innerHTML = hits.length ? hits.map(p=>`
+    <div class="row" style="justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--line);">
+      <div><strong>${esc(p.name)}</strong> <span class="pill">${esc(p.id)}</span>
+        <div class="faint">${esc(displayAge(p))} · ${esc(p.phone)||'—'}</div></div>
+      <button class="btn btn-sm" onclick="linkPatientTo('${patientId}','${p.id}')">Link</button>
+    </div>`).join('') : '<p class="faint">No matches</p>';
+}
+function familyCardHTML(p){
+  const linked = getLinkedPatients(p);
+  const rows = linked.map(x=>`
+    <div class="row" style="justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);">
+      <div style="cursor:pointer;" onclick="go('patient',{patientId:'${x.id}'})">
+        <strong>${esc(x.name)}</strong> <span class="pill">${esc(x.id)}</span>
+        <div class="faint">${esc(displayAge(x))} / ${esc(x.sex)} · ${esc(x.phone)||'—'}</div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="unlinkPatientFrom('${p.id}','${x.id}')">Unlink</button>
+    </div>`).join('') || '<p class="muted">No linked family members yet.</p>';
+  return `
+    <div class="card" style="margin-bottom:18px;">
+      <h2 style="margin-bottom:8px;">Family / linked patients</h2>
+      <p class="faint" style="margin-bottom:10px;">Link mother, child or household members for quick switching.</p>
+      ${rows}
+      <div class="field" style="margin-top:12px;"><label>Link another patient</label>
+        <input type="text" placeholder="Search name, ID or phone" oninput="familyLinkSearch('${p.id}', this.value)">
+      </div>
+      <div id="family-link-results"></div>
+    </div>`;
+}
+
+/* ============================= ADVICE LIBRARY ============================= */
+function ensureAdviceLibrary(){
+  if(!state.data.adviceLibrary) state.data.adviceLibrary = [];
+  return state.data.adviceLibrary;
+}
+function adviceLibraryOptionsHTML(){
+  return ensureAdviceLibrary().map((a,i)=>`<option value="${i}">${esc(a.title||('Advice '+(i+1)))}</option>`).join('');
+}
+function insertAdviceFromLibrary(){
+  const sel = document.getElementById('advice-lib-select');
+  if(!sel || sel.value==='') return;
+  const a = ensureAdviceLibrary()[Number(sel.value)];
+  if(!a || !a.text) return;
+  const ta = document.getElementById('v-notes');
+  if(!ta) return;
+  const cur = ta.value.trim();
+  ta.value = cur ? (cur + (cur.endsWith('.')||cur.endsWith('\\n')?' ':'\\n') + a.text) : a.text;
+  if(state.draftVisit) state.draftVisit.notes = ta.value;
+  sel.value = '';
+}
+async function addAdviceLibraryEntry(){
+  const title = ((document.getElementById('adv-title')||{}).value||'').trim();
+  const text = ((document.getElementById('adv-text')||{}).value||'').trim();
+  if(!text){ alert('Enter the advice text.'); return; }
+  ensureAdviceLibrary().push({
+    id: 'ADV'+Date.now().toString(36).toUpperCase(),
+    title: title || text.slice(0,40),
+    text
+  });
+  logAudit('Added advice template', title || text.slice(0,40));
+  await saveData();
+  render();
+}
+async function removeAdviceLibraryEntry(idx){
+  if(!confirm('Remove this advice template?')) return;
+  ensureAdviceLibrary().splice(idx,1);
+  await saveData();
+  render();
+}
+function adviceLibrarySettingsHTML(){
+  const list = ensureAdviceLibrary();
+  const rows = list.map((a,i)=>`<tr>
+    <td><strong>${esc(a.title)}</strong><div class="faint" style="white-space:pre-wrap;">${esc(a.text)}</div></td>
+    <td><button class="btn btn-ghost btn-sm" onclick="removeAdviceLibraryEntry(${i})">Remove</button></td>
+  </tr>`).join('') || '<tr><td colspan="2" class="faint">No saved advice yet</td></tr>';
+  return `
+    <div class="card" style="margin-bottom:18px;max-width:720px;">
+      <h2 style="margin-bottom:6px;">Advice library</h2>
+      <p class="muted" style="font-size:12.5px;margin-bottom:12px;">Saved counselling lines for OPD notes (diet, rest, warning signs). Insert from the visit form.</p>
+      <table><thead><tr><th>Advice</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+      <div class="field" style="margin-top:12px;"><label>Short title</label><input id="adv-title" placeholder="e.g. Viral fever advice"></div>
+      <div class="field"><label>Advice text</label><textarea id="adv-text" rows="3" placeholder="e.g. Soft diet, plenty of fluids. Return if fever persists beyond 3 days."></textarea></div>
+      <button class="btn btn-sm" onclick="addAdviceLibraryEntry()">+ Save advice</button>
+    </div>`;
+}
+function adviceInsertControlHTML(){
+  const list = ensureAdviceLibrary();
+  if(!list.length) return `<p class="faint">No advice templates yet — add some in Settings → Advice library.</p>`;
+  return `<div class="row" style="gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+    <select id="advice-lib-select" style="max-width:220px;">
+      <option value="">Insert advice…</option>
+      ${adviceLibraryOptionsHTML()}
+    </select>
+    <button type="button" class="btn btn-sm" onclick="insertAdviceFromLibrary()">Insert into notes</button>
+  </div>`;
+}
+
+/* ============================= GROWTH ALERT ============================= */
+function patientWeightPoints(p){
+  const pts = [];
+  (p.growthRecords||[]).forEach(r=>{
+    const w = parseFloat(r.weight);
+    if(!isNaN(w) && w>0) pts.push({date:r.date||'', weight:w, source:'growth'});
+  });
+  (p.visits||[]).forEach(v=>{
+    const w = parseFloat(v.vitals && v.vitals.weight);
+    if(!isNaN(w) && w>0) pts.push({date:v.date||'', weight:w, source:'visit'});
+  });
+  pts.sort((a,b)=>(a.date||'').localeCompare(b.date||'') || (a.weight-b.weight));
+  return pts;
+}
+/** Alert if latest weight is clearly below the previous recorded weight */
+function growthWeightAlert(p, currentWeight){
+  if(!p || !isPediatricPatient(p)) return null;
+  const pts = patientWeightPoints(p);
+  let prev = null, last = null;
+  if(currentWeight!=null && currentWeight!==''){
+    const cw = parseFloat(currentWeight);
+    if(!isNaN(cw) && cw>0){
+      last = {date: todayStr(), weight: cw, source:'current'};
+      prev = pts.length ? pts[pts.length-1] : null;
+    }
+  }
+  if(!last && pts.length>=2){
+    last = pts[pts.length-1];
+    prev = pts[pts.length-2];
+  }
+  if(!last || !prev) return null;
+  if(last.weight >= prev.weight) return null;
+  const drop = Math.round((prev.weight - last.weight)*100)/100;
+  const pct = prev.weight ? Math.round((drop/prev.weight)*1000)/10 : 0;
+  // Threshold: ≥0.3 kg drop or ≥5% — avoids noise from tiny measurement error
+  if(drop < 0.3 && pct < 5) return null;
+  return {prev, last, drop, pct};
+}
+function updateVisitGrowthAlert(){
+  const el = document.getElementById('v-growth-alert');
+  if(!el || !state.draftVisit) return;
+  const wEl = document.getElementById('v-weight');
+  const ap = state.draftVisit.patientId && state.data.patients.find(x=>x.id===state.draftVisit.patientId);
+  el.innerHTML = ap ? growthAlertBannerHTML(ap, wEl ? wEl.value : state.draftVisit.vitals.weight) : '';
+}
+function growthAlertBannerHTML(p, currentWeight){
+  const a = growthWeightAlert(p, currentWeight);
+  if(!a) return '';
+  return `<div class="banner" style="background:var(--danger-tint);color:var(--danger);margin:10px 0;">
+    <strong>Growth alert:</strong> Weight ${a.last.weight} kg is down ${a.drop} kg (${a.pct}%) from previous ${a.prev.weight} kg
+    ${a.prev.date ? ' on '+esc(fmtDate(a.prev.date)) : ''}. Recheck measurement and review feeding / illness.
+  </div>`;
+}
+
 function growthRecordsCardHTML(p){
   const recs = p.growthRecords || [];
-  if(!recs.length) return '';
+  const alertOnly = !recs.length && growthWeightAlert(p);
+  if(!recs.length && !alertOnly) return '';
+  if(alertOnly){
+    return `<div class="card" style="margin-bottom:18px;"><h2 style="margin-bottom:8px;">Growth</h2>${growthAlertBannerHTML(p)}</div>`;
+  }
   const rows = recs.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(r=>`
     <tr><td>${fmtDate(r.date)}</td><td>${(r.ageMonths/12).toFixed(1)}y</td>
       <td>${r.weight?r.weight+'kg ('+pctZLabel(r.weightPercentile, r.weightZ)+')':'<span class="faint">—</span>'}</td>
@@ -5741,6 +5991,7 @@ function growthRecordsCardHTML(p){
         <h2 style="margin:0;">Growth records</h2>
         <button class="btn btn-sm" onclick="printGrowthChart('${p.id}')">🖶 Print chart</button>
       </div>
+      ${growthAlertBannerHTML(p)}
       <table><thead><tr><th>Date</th><th>Age</th><th>Weight</th><th>Height</th><th>Head circ.</th></tr></thead><tbody>${rows}</tbody></table>
     </div>
     ${growthChartPrintHTML(p)}`;
@@ -7683,9 +7934,10 @@ function newVisitView(){
         <div class="field"><label>Pulse</label><input id="v-pulse" placeholder="bpm" value="${esc(dv.vitals.pulse)}"></div>
         <div class="field"><label>Temp (°F)</label><input id="v-temp" placeholder="°F" value="${esc(dv.vitals.temp)}"></div>
         <div class="field"><label>Weight (kg)</label><input id="v-weight" placeholder="kg" value="${esc(dv.vitals.weight)}" oninput="updateBmiPreview();refreshAllRxDoseHints()"></div>
-        <div class="field"><label>Height (cm)</label><input id="v-height" placeholder="cm" value="${esc(dv.vitals.height||'')}" oninput="updateBmiPreview()"></div>
+        <div class="field"><label>Height (cm)</label><input id="v-height" placeholder="cm" value="${esc(dv.vitals.height||'')}" oninput="updateBmiPreview();updateVisitGrowthAlert()"></div>
       </div>
       <div id="v-bmi-preview" class="faint" style="margin-top:2px;">${(()=>{ const ap=dv.patientId&&state.data.patients.find(x=>x.id===dv.patientId); const r=calcBMI(dv.vitals.weight,dv.vitals.height,patientAgeYearsForBmi(ap)); return r?`BMI: ${r.value} (${r.label}) · ${r.standard}`:''; })()}</div>
+      <div id="v-growth-alert">${(()=>{ const ap=dv.patientId&&state.data.patients.find(x=>x.id===dv.patientId); return ap?growthAlertBannerHTML(ap, dv.vitals.weight):''; })()}</div>
     </div>
     <div class="visit-section">
       <div class="visit-section-title">3 · Clinical notes</div>
@@ -7698,7 +7950,10 @@ function newVisitView(){
         <input id="v-diagnosis" value="${esc(dv.diagnosis)}" oninput="onDiagnosisInput(this)" placeholder="">
         <div class="chip-row" id="diagnosis-chips">${chipRowHTML(chipsFor(dv.diagnosis, DIAGNOSIS_TERMS), 'insertDiagnosisChip')}</div>
       </div>
-      <div class="field"><label>Doctor's notes ${dictationBtn('v-notes')}</label><textarea id="v-notes" placeholder="">${esc(dv.notes)}</textarea></div>
+      <div class="field"><label>Doctor's notes ${dictationBtn('v-notes')}</label>
+        ${adviceInsertControlHTML()}
+        <textarea id="v-notes" placeholder="">${esc(dv.notes)}</textarea>
+      </div>
       ${(()=>{
         const ep = dv.patientId && state.data.patients.find(x=>x.id===dv.patientId);
         const first = ep && !(ep.visits||[]).length && !dv.editVisitId;
@@ -10085,6 +10340,8 @@ ${isOwner() ? `
       })()}
     </div>
     ${referralDirectorySettingsHTML()}
+    ${adviceLibrarySettingsHTML()}
+    ${deviceListSettingsHTML()}
 
     <div class="card" style="margin-bottom:18px;max-width:520px;">
       <h2 style="margin-bottom:6px;">Activity log</h2>
