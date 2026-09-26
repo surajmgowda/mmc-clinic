@@ -934,6 +934,16 @@
   .attach-actions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;}
   .attach-card{border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--surface);max-width:140px;}
 
+
+  .patient-qr{width:72px;height:72px;border:1px solid #E1E7EF;border-radius:6px;padding:3px;background:#fff;flex-shrink:0;}
+  .opdx-patient-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;}
+  .opdx-qr-wrap{text-align:center;}
+  .opdx-qr-wrap .faint{font-size:8px;color:#8A94A6;margin-top:2px;}
+  .token-slip .t-qr{margin:4px auto 2px;width:56px;height:56px;display:block;}
+  .dbx-qrow.long-wait-row{background:var(--danger-tint);border-left:3px solid var(--danger);}
+  .dbx-qrow.long-wait-row .dbx-qsub .long-wait{color:var(--danger);font-weight:700;}
+  .long-wait-panel .dbx-qrow{border-bottom:1px solid var(--line);}
+
   .long-wait{color:var(--danger);font-weight:600;}
   .missed-row{border-left:3px solid var(--accent);}
 
@@ -1051,6 +1061,7 @@ function defaultData(){
     drugStock: [], // {id, name, quantity, unit, lowAt, notes}
     dutyRoster: [], // {id, date, staffName, shift, notes}
     ancRegister: [], // {id, patientId, lmp, edd, gravida, para, risk, notes, visits:[]}
+    referralDirectory: [], // {id, name, phone, address, notes}
     lastPrinted: null // {patientId, visitId, at}
   };
 }
@@ -2512,8 +2523,9 @@ function printTokenSlip(patientId, visitId){
       <div class="t-name">${esc(p.name)}</div>
       <div class="t-line">${esc(p.id)}${p.sex? ' · '+esc(p.sex):''}</div>
       <div class="t-line">${esc(fmtDate(v && v.date ? v.date : todayStr()))}${v && v.time ? ' · ' + esc(v.time) : ''}${doctor ? ' · ' + esc(doctor) : ''}</div>
+      <img class="t-qr" alt="QR" src="https://api.qrserver.com/v1/create-qr-code/?size=56x56&margin=0&data=${encodeURIComponent(patientQrPayload(p.id))}" onerror="this.style.display='none'">
     </div>
-    <div class="t-foot">Wait for your number</div>
+    <div class="t-foot">Wait for your number · Scan QR for file</div>
   `;
   if(!slip.parentNode) document.body.appendChild(slip);
   document.body.classList.add('printing-token');
@@ -2524,6 +2536,111 @@ function printTokenSlip(patientId, visitId){
   window.addEventListener('afterprint', afterTok);
   setTimeout(()=>window.print(), 50);
 }
+
+
+
+/* ============================= REFERRAL DIRECTORY ============================= */
+function ensureReferralDirectory(){
+  if(!state.data.referralDirectory) state.data.referralDirectory = [];
+  return state.data.referralDirectory;
+}
+function referralDirectoryOptionsHTML(selected){
+  const list = ensureReferralDirectory();
+  return list.map(r=>`<option value="${esc(r.name)}" ${selected===r.name?'selected':''}>${esc(r.name)}${r.phone?' · '+esc(r.phone):''}</option>`).join('');
+}
+function referralDatalistHTML(){
+  const list = ensureReferralDirectory();
+  if(!list.length) return '';
+  return `<datalist id="referral-directory-list">${list.map(r=>`<option value="${esc(r.name)}">`).join('')}</datalist>`;
+}
+function applyReferralFromDirectory(name){
+  const r = ensureReferralDirectory().find(x=>x.name===name);
+  if(!r) return;
+  const el = document.getElementById('v-referred-to');
+  if(el) el.value = r.name + (r.address ? ' — ' + r.address : '');
+  // store for save via draft
+  if(state.draftVisit){
+    state.draftVisit.referredTo = el ? el.value : r.name;
+  }
+}
+async function addReferralDirectoryEntry(){
+  if(!isOwner() && !can('clinicalVisit')){ alert('Not allowed.'); return; }
+  const name = (document.getElementById('ref-dir-name')||{}).value;
+  if(!name || !String(name).trim()){ alert('Enter a name (hospital / specialist).'); return; }
+  const phone = ((document.getElementById('ref-dir-phone')||{}).value||'').trim();
+  const address = ((document.getElementById('ref-dir-address')||{}).value||'').trim();
+  const notes = ((document.getElementById('ref-dir-notes')||{}).value||'').trim();
+  ensureReferralDirectory().push({
+    id: 'R'+Date.now().toString(36).toUpperCase(),
+    name: name.trim(), phone, address, notes
+  });
+  logAudit('Added referral contact', name.trim());
+  await saveData();
+  render();
+}
+async function removeReferralDirectoryEntry(id){
+  if(!isOwner()){ alert('Only admin can remove directory entries.'); return; }
+  if(!confirm('Remove this referral contact?')) return;
+  state.data.referralDirectory = ensureReferralDirectory().filter(r=>r.id!==id);
+  await saveData();
+  render();
+}
+function referralDirectorySettingsHTML(){
+  const list = ensureReferralDirectory();
+  const rows = list.map(r=>`<tr>
+    <td><strong>${esc(r.name)}</strong>${r.notes?`<div class="faint">${esc(r.notes)}</div>`:''}</td>
+    <td>${esc(r.phone)||'—'}</td>
+    <td>${esc(r.address)||'—'}</td>
+    <td>${isOwner()?`<button class="btn btn-ghost btn-sm" onclick="removeReferralDirectoryEntry(${jsAttr(r.id)})">Remove</button>`:''}</td>
+  </tr>`).join('') || '<tr><td colspan="4" class="faint">No referral contacts yet</td></tr>';
+  return `
+    <div class="card" style="margin-bottom:18px;max-width:720px;">
+      <h2 style="margin-bottom:6px;">Referral directory</h2>
+      <p class="muted" style="font-size:12.5px;margin-bottom:12px;">Saved hospitals and specialists for referral letters. Pick from the list when writing a visit referral.</p>
+      <table><thead><tr><th>Name</th><th>Phone</th><th>Address</th><th></th></tr></thead><tbody>${rows}</tbody></table>
+      ${isOwner()||can('clinicalVisit')?`
+      <div class="row" style="margin-top:12px;">
+        <div class="field" style="flex:2;"><label>Name</label><input id="ref-dir-name" placeholder="e.g. District Hospital — Orthopaedics"></div>
+        <div class="field"><label>Phone</label><input id="ref-dir-phone" placeholder="Optional"></div>
+      </div>
+      <div class="row">
+        <div class="field" style="flex:2;"><label>Address</label><input id="ref-dir-address" placeholder="Optional"></div>
+        <div class="field"><label>Notes</label><input id="ref-dir-notes" placeholder="e.g. Bring X-rays"></div>
+      </div>
+      <button class="btn btn-sm" onclick="addReferralDirectoryEntry()">+ Add contact</button>`:''}
+    </div>`;
+}
+
+/* ============================= PATIENT QR ============================= */
+function patientQrPayload(patientId){
+  const base = (typeof location !== 'undefined' && location.origin) ? location.origin : '';
+  return base + '/#/patient/' + encodeURIComponent(patientId);
+}
+function patientQrImgHTML(patientId, size){
+  if(!patientId) return '';
+  const s = size || 72;
+  const data = encodeURIComponent(patientQrPayload(patientId));
+  // Public QR image API (no key). Hides quietly if offline.
+  return `<div class="opdx-qr-wrap">
+    <img class="patient-qr" width="${s}" height="${s}" alt="Patient QR"
+      src="https://api.qrserver.com/v1/create-qr-code/?size=${s}x${s}&margin=1&data=${data}"
+      onerror="this.parentNode.style.display='none'">
+    <div class="faint">Scan to open file</div>
+  </div>`;
+}
+function handlePatientHashRoute(){
+  try{
+    const h = (location.hash || '').replace(/^#/, '');
+    const m = h.match(/^\/?patient\/(.+)$/i) || h.match(/^p\/(.+)$/i);
+    if(!m) return;
+    const id = decodeURIComponent(m[1]);
+    if(!state.session.staffName) return; // login first; hash kept for after login
+    if(state.data && (state.data.patients||[]).some(p=>p.id===id)){
+      go('patient', {patientId: id});
+    }
+  }catch(e){}
+}
+window.addEventListener('hashchange', ()=> handlePatientHashRoute());
 
 /* ============================= DAILY CASH ============================= */
 function todayCashStats(){
@@ -4599,21 +4716,26 @@ function dashboardView(){
     }catch(e){ return null; }
   }
 
+  const longWaitVisits = waitingVisits.filter(({visit})=>{
+    const m = waitingMins(visit);
+    return m!=null && m >= noShowMinutes();
+  });
   const waitingRows = waitingVisits.slice(0, 20).map(({patient,visit})=>{
     const mins = waitingMins(visit);
-    const waitLabel = mins!=null ? ((mins>=noShowMinutes()?'Long wait ':'')+`waiting ${mins} min`) : (visit.time || '');
+    const isLong = mins!=null && mins >= noShowMinutes();
+    const waitLabel = mins!=null ? ((isLong?'Long wait ':'')+`waiting ${mins} min`) : (visit.time || '');
     const lastDx = showClinical ? ((patient.visits||[]).filter(x=>x.id!==visit.id && x.diagnosis).sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0]||{}).diagnosis : '';
     const click = can('clinicalVisit')
       ? `startTokenConsult('${patient.id}','${visit.id}')`
       : `go('patient',{patientId:'${patient.id}'})`;
     const stTok = tokenQueueStatus(visit);
     return `
-    <div class="dbx-qrow dbx-clickable" onclick="${click}">
+    <div class="dbx-qrow dbx-clickable ${isLong?'long-wait-row':''}" onclick="${click}">
       <div class="dbx-qtoken-lg">${visit.token!=null?'#'+visit.token:''}</div>
       <div class="dbx-avatar ${avatarColorClass(patient.name)}">${esc(initialsOf(patient.name))}</div>
       <div class="dbx-qtext">
-        <div class="dbx-qname">${esc(patient.name)} ${stTok==='called'?'<span class="pill">Called</span>':stTok==='with_doctor'?'<span class="pill">With doctor</span>':''}</div>
-        <div class="dbx-qsub">${esc(patient.id)}${waitLabel ? ' · '+esc(waitLabel) : ''}${patient.allergies && showClinical ? ' · ⚠ '+esc(patient.allergies) : ''}${lastDx ? ' · last: '+esc(lastDx) : ''}</div>
+        <div class="dbx-qname">${esc(patient.name)} ${stTok==='called'?'<span class="pill">Called</span>':stTok==='with_doctor'?'<span class="pill">With doctor</span>':''}${isLong?' <span class="pill" style="background:var(--danger-tint);color:var(--danger);">Long wait</span>':''}</div>
+        <div class="dbx-qsub">${esc(patient.id)}${waitLabel ? ' · <span class="'+(isLong?'long-wait':'')+'">'+esc(waitLabel)+'</span>' : ''}${patient.allergies && showClinical ? ' · ⚠ '+esc(patient.allergies) : ''}${lastDx ? ' · last: '+esc(lastDx) : ''}</div>
       </div>
       <div style="display:flex;gap:6px;align-items:center;flex-shrink:0;flex-wrap:wrap;">
         ${can('clinicalVisit')
@@ -4625,6 +4747,31 @@ function dashboardView(){
       </div>
     </div>`;
   }).join('');
+
+
+  const longWaitCard = longWaitVisits.length ? `
+    <div class="dbx-panel long-wait-panel" style="margin-bottom:14px;border-color:var(--danger);">
+      <div class="dbx-panel-head">
+        <h2 style="color:var(--danger);">Long waits${` <span class="count">${longWaitVisits.length}</span>`}</h2>
+        <span class="faint">Over ${noShowMinutes()} min</span>
+      </div>
+      ${longWaitVisits.slice(0,8).map(({patient,visit})=>{
+        const mins = waitingMins(visit);
+        return `<div class="dbx-qrow">
+          <div class="dbx-qtoken-lg">#${visit.token!=null?visit.token:'—'}</div>
+          <div class="dbx-qtext">
+            <div class="dbx-qname">${esc(patient.name)}</div>
+            <div class="dbx-qsub"><span class="long-wait">${mins} min waiting</span> · ${esc(patient.id)}</div>
+          </div>
+          <div style="display:flex;gap:6px;">
+            ${can('clinicalVisit')
+              ? `<button class="dbx-qbtn" onclick="startTokenConsult('${patient.id}','${visit.id}')">Open</button>`
+              : `<button class="dbx-qbtn" onclick="callSpecificToken('${patient.id}','${visit.id}')">Call</button>`}
+            <button class="dbx-qbtn ghost" onclick="markNoShow('${patient.id}','${visit.id}')">No-show</button>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>` : '';
 
   const rows = shownTodaysVisits.slice(0, 10).map(({patient,visit})=>{
     const st = visitStatus(visit);
@@ -4668,15 +4815,18 @@ function dashboardView(){
   const pedDueList = pediatricPatients().map(p=>{
     const due = vaccinationDueSummary(p);
     return {p, due};
-  }).filter(x=>x.due.overdue).sort((a,b)=>b.due.overdue-a.due.overdue).slice(0,8);
+  }).filter(x=>(x.due.overdue||x.due.due)).sort((a,b)=>(b.due.overdue||0)-(a.due.overdue||0)).slice(0,12);
   const pedDueRows = pedDueList.map(({p,due})=>`
-    <div class="dbx-qrow dbx-clickable" onclick="state.pedLinkedPatientId='${p.id}';state.pedTab='immunization';go('pediatrics')">
-      <div class="dbx-avatar ${avatarColorClass(p.name)}">${esc(initialsOf(p.name))}</div>
-      <div class="dbx-qtext">
+    <div class="dbx-qrow">
+      <div class="dbx-avatar ${avatarColorClass(p.name)}" onclick="state.pedLinkedPatientId='${p.id}';state.pedTab='immunization';go('pediatrics')">${esc(initialsOf(p.name))}</div>
+      <div class="dbx-qtext" onclick="state.pedLinkedPatientId='${p.id}';state.pedTab='immunization';go('pediatrics')" style="cursor:pointer;">
         <div class="dbx-qname">${esc(p.name)} <span class="pill">${p.id}</span></div>
-        <div class="dbx-qsub">${esc(opdAgeDisplay(p))} · ${due.overdue} vaccine${due.overdue===1?'':'s'} due</div>
+        <div class="dbx-qsub">${esc(opdAgeDisplay(p))} · ${due.overdue?due.overdue+' overdue':''}${due.overdue&&due.due?' / ':''}${due.due?due.due+' due':''}</div>
       </div>
-      <span class="dbx-qstatus wait">Due</span>
+      <div style="display:flex;gap:6px;align-items:center;">
+        ${p.phone?`<button class="dbx-qbtn ghost" onclick="event.stopPropagation();remindVaccineWhatsApp('${p.id}')">${t('WhatsApp')}</button>`:''}
+        <span class="dbx-qstatus wait">${due.overdue?'Overdue':'Due'}</span>
+      </div>
     </div>`).join('');
   const pedDueCard = `
     <div class="dbx-panel">
@@ -4870,6 +5020,7 @@ function dashboardView(){
     ${backupNudgeHTML()}
     ${hero}
     ${ctaRow}
+    ${longWaitCard||''}
     ${customizeBar}
     ${orderedPanels}`;
 }
@@ -7388,7 +7539,14 @@ function newVisitView(){
       })()}
       <div class="row">
         <div class="field"><label>Follow-up date (optional)</label><input id="v-followup" type="date" value="${esc(dv.followUpDate||'')}"></div>
-        <div class="field"><label>Referred to (optional)</label><input id="v-referred-to" placeholder="e.g. City Hospital — Cardiology" value="${esc(dv.referredTo||'')}"></div>
+        <div class="field"><label>Referred to (optional)</label>
+          ${(ensureReferralDirectory().length)?`<select onchange="if(this.value){document.getElementById('v-referred-to').value=this.value;applyReferralFromDirectory(this.value);}" style="margin-bottom:6px;">
+            <option value="">From directory…</option>
+            ${referralDirectoryOptionsHTML('')}
+          </select>`:''}
+          <input id="v-referred-to" list="referral-directory-list" placeholder="e.g. City Hospital — Cardiology" value="${esc(dv.referredTo||'')}" oninput="state.draftVisit.referredTo=this.value">
+          ${referralDatalistHTML()}
+        </div>
         <div class="field"><label>Reason for referral</label><input id="v-referral-reason" placeholder="beyond OPD scope, needs specialist, etc." value="${esc(dv.referralReason||'')}"></div>
       </div>
     </div>
@@ -7573,8 +7731,11 @@ function visitPrintView(patientId, visitId){
 
         <div class="opdx-patient-band">
           <div class="opdx-patient-top">
-            <div class="opdx-patient-name">${esc(p.name)}</div>
-            <div class="opdx-patient-id">${esc(p.id)}</div>
+            <div>
+              <div class="opdx-patient-name">${esc(p.name)}</div>
+              <div class="opdx-patient-id" style="display:inline-block;margin-top:6px;">${esc(p.id)}</div>
+            </div>
+            ${patientQrImgHTML(p.id, 72)}
           </div>
           <div class="opdx-meta-grid">
             <div class="opdx-meta-item"><span class="opdx-meta-k">Age / Sex</span><span class="opdx-meta-v">${esc(opdAgeDisplay(p))}${p.sex?' · '+esc(p.sex):''}</span></div>
@@ -9322,16 +9483,31 @@ function exportAuditCSV(){
 
 function reprintLastOpd(){ reprintLast(); }
 
+function vaccineReminderText(p, due){
+  const clinic = (state.data.clinicInfo||{}).name||'Male Madeshwara Clinic';
+  const phone = (state.data.clinicInfo||{}).phone||'';
+  const parts = [];
+  if(due && due.overdue) parts.push(due.overdue + ' overdue');
+  if(due && due.due) parts.push(due.due + ' due soon');
+  const status = parts.join(', ') || 'due';
+  return `Namaste, this is a reminder from ${clinic} that ${p.name} has vaccine dose(s) ${status}. Please visit the clinic for immunization.` + (phone ? `\nClinic phone: ${phone}` : '');
+}
+function remindVaccineWhatsApp(patientId){
+  const p = state.data.patients.find(x=>x.id===patientId);
+  if(!p || !p.phone){ alert('No phone number on file.'); return; }
+  const due = vaccinationDueSummary(p);
+  shareWhatsApp(p.phone, vaccineReminderText(p, due));
+}
 async function remindAllVaccineDue(){
   const list = pediatricPatients().map(p=>{
     const due = vaccinationDueSummary(p);
     return {p, due};
-  }).filter(x=>x.due.overdue && x.p.phone);
-  if(!list.length){ alert('No children with overdue vaccines and a phone number.'); return; }
-  if(!confirm(`Open WhatsApp for ${list.length} caregiver(s)?`)) return;
-  const clinic = (state.data.clinicInfo||{}).name||'clinic';
+  }).filter(x=>(x.due.overdue||x.due.due) && x.p.phone);
+  if(!list.length){ alert('No children with due/overdue vaccines and a phone number.'); return; }
+  if(!confirm(`Open WhatsApp for ${list.length} caregiver(s)? You will confirm Send on each chat.`)) return;
   for(const {p,due} of list){
-    shareWhatsApp(p.phone, `Namaste, this is a reminder from ${clinic} that ${p.name} has ${due.overdue} vaccine dose(s) due. Please visit for immunization.`);
+    shareWhatsApp(p.phone, vaccineReminderText(p, due));
+    await new Promise(r=>setTimeout(r, 600)); // small gap so tabs/apps can open sequentially
   }
 }
 
@@ -9736,6 +9912,8 @@ ${isOwner() ? `
           }).join('')+'</tbody></table>';
       })()}
     </div>
+    ${referralDirectorySettingsHTML()}
+
     <div class="card" style="margin-bottom:18px;max-width:520px;">
       <h2 style="margin-bottom:6px;">Activity log</h2>
       <p class="muted" style="font-size:12.5px;">Who changed what, and when — patients, visits, billing, staff accounts and more.</p>
@@ -9899,6 +10077,7 @@ function render(){
   }
   app.innerHTML = shellView() + commandPaletteHTML();
   if(state.route==='certificates') applyPendingCertFields();
+  handlePatientHashRoute();
 }
 
 initSession();
