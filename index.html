@@ -276,6 +276,16 @@
     box-shadow:4px 0 28px rgba(15,26,46,0.18);position:relative;z-index:10;
   }
   .brand{display:flex;align-items:center;gap:10px;margin-bottom:26px;padding:0 6px;}
+
+  .brand-mark img, .dbx-hero-mark img, .mt-brand img, .auth-brand .brand-mark img{
+    width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block;
+  }
+  .brand-mark.has-logo, .dbx-hero-mark.has-logo{
+    background:transparent !important;padding:0;overflow:hidden;
+  }
+  .mt-brand{display:flex;align-items:center;gap:8px;}
+  .mt-brand img{width:28px;height:28px;border-radius:8px;object-fit:cover;}
+
   .brand-mark{
     width:42px;height:42px;border-radius:11px;
     background:linear-gradient(145deg, #E8B923 0%, #D4A017 50%, #C4920F 100%);
@@ -4085,6 +4095,40 @@ function letterheadCrestHTML(ci){
   const initials = source.replace(/[^A-Za-z]/g,'').slice(0,3).toUpperCase() || 'MMC';
   return `<div class="opdx-crest">${esc(initials)}</div>`;
 }
+
+/** UI brand: uploaded logo if present, else short-name text badge */
+
+function cacheClinicBranding(){
+  try{
+    const ci = (state.data && state.data.clinicInfo) || {};
+    if(ci.logoDataUrl) localStorage.setItem('mmc_logo', ci.logoDataUrl);
+    if(ci.shortName) localStorage.setItem('mmc_short', ci.shortName);
+    if(ci.name) localStorage.setItem('mmc_name', ci.name);
+  }catch(e){}
+}
+function cachedLogoUrl(){
+  try{ return localStorage.getItem('mmc_logo') || ''; }catch(e){ return ''; }
+}
+function brandMarkHTML(opts){
+  opts = opts || {};
+  const ci = (state.data && state.data.clinicInfo) || {};
+  const size = opts.size || 40;
+  const cls = opts.className || 'brand-mark';
+  const shortSrc = ci.shortName || (function(){try{return localStorage.getItem('mmc_short');}catch(e){return null;}})() || 'MMC';
+  const short = (shortSrc+'').replace(/[^A-Za-z]/g,'').slice(0,3).toUpperCase() || 'MMC';
+  const logo = ci.logoDataUrl || cachedLogoUrl();
+  if(logo){
+    return `<div class="${cls} has-logo" style="width:${size}px;height:${size}px;border-radius:${opts.radius||11}px;overflow:hidden;flex-shrink:0;">
+      <img src="${logo}" alt="${esc(short)}" width="${size}" height="${size}" style="width:100%;height:100%;object-fit:cover;display:block;">
+    </div>`;
+  }
+  return `<div class="${cls}" style="width:${size}px;height:${size}px;line-height:${size}px;text-align:center;flex-shrink:0;">${esc(short)}</div>`;
+}
+function clinicTitleHTML(){
+  const ci = (state.data && state.data.clinicInfo) || {};
+  return esc(ci.shortName || 'MMC');
+}
+
 function clinicMetaHTML(ci){
   const prefs = (ci && ci.printPrefs) || (typeof printPrefs==='function' ? printPrefs() : {});
   const parts = [];
@@ -4394,7 +4438,7 @@ function setupView(){
   <div class="center-screen">
     <div class="auth-card">
       <div class="auth-brand">
-        <div class="brand-mark">MMC</div>
+        ${brandMarkHTML({size:48})}
         <h1 style="font-size:19px;">Set up ${esc(state.data.clinicInfo.name)}</h1>
         <p class="muted" style="font-size:13px;">Create the first staff account to start using the clinic system.</p>
       </div>
@@ -4440,7 +4484,7 @@ function loginView(){
   <div class="center-screen">
     <div class="auth-card">
       <div class="auth-brand">
-        <div class="brand-mark">MMC</div>
+        ${brandMarkHTML({size:48})}
         <h1 style="font-size:19px;">${esc(state.data.clinicInfo.name)}</h1>
         <p class="muted" style="font-size:13px;">Log in to continue</p>
       </div>
@@ -4461,7 +4505,7 @@ function forgotAuthView(){
   <div class="center-screen">
     <div class="auth-card">
       <div class="auth-brand">
-        <div class="brand-mark">MMC</div>
+        ${brandMarkHTML({size:48})}
         <h1 style="font-size:19px;">Reset login</h1>
         <p class="muted" style="font-size:13px;">Enter the recovery code that was shown when your account was created (or last reset).</p>
       </div>
@@ -4482,7 +4526,7 @@ function resetAuthView(){
   <div class="center-screen">
     <div class="auth-card">
       <div class="auth-brand">
-        <div class="brand-mark">MMC</div>
+        ${brandMarkHTML({size:48})}
         <h1 style="font-size:19px;">Set new login</h1>
         <p class="muted" style="font-size:13px;">Set a new ${method==='password'?'password':'PIN'} for <strong>${esc(name)}</strong>.</p>
       </div>
@@ -4630,7 +4674,7 @@ function shellView(){
   const short = esc(((ci.shortName||'MMC')+'').slice(0,3).toUpperCase());
   const drawerNav = `
     <div class="brand" style="margin-bottom:14px;">
-      <div class="brand-mark">${short}</div>
+      ${brandMarkHTML({size:40})}
       <div class="brand-text"><div class="full">${esc(ci.shortName||'MMC')}</div><div class="sub">${esc(ci.name||'Clinic')}</div></div>
     </div>
     <div class="nav-sec-lbl">Main</div>
@@ -4665,7 +4709,7 @@ function shellView(){
       <button type="button" onclick="toggleMobileMenu(true)" aria-label="Open menu">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
       </button>
-      <div class="mt-brand">${short}</div>
+      <div class="mt-brand">${brandMarkHTML({size:28,className:'brand-mark'})}<span>${short}</span></div>
       <button type="button" onclick="openCommandPalette()" aria-label="Search">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
       </button>
@@ -4675,7 +4719,7 @@ function shellView(){
 
     <div class="sidebar">
       <div class="brand">
-        <div class="brand-mark">${short}</div>
+        ${brandMarkHTML({size:40})}
         <div class="brand-text"><div class="full">${esc(ci.shortName||'MMC')}</div><div class="sub">${esc(ci.name||'Male Madeshwara Clinic')}</div></div>
       </div>
       <div class="nav-sec-lbl">Main</div>
@@ -4912,7 +4956,7 @@ function dashboardView(){
     <div class="dbx-hero">
       <div class="dbx-hero-top">
         <div class="dbx-hero-brand">
-          <div class="dbx-hero-mark">${esc(shortName)}</div>
+          ${brandMarkHTML({size:48,className:'dbx-hero-mark'})}
           <div class="dbx-hero-clinic">${esc(ci.name || 'Male Madeshwara Clinic')}</div>
         </div>
         <button class="dbx-hero-bell" title="Appointments" onclick="go('appointments')" aria-label="Appointments">
@@ -7251,6 +7295,7 @@ function tokenDisplayView(){
   return `
     <div class="token-display-page" onclick="if(event.target.classList.contains('token-display-page')) tryTokenFullscreen()">
       <div class="td-clock">${esc(clock)}</div>
+      <div style="margin-bottom:8px;">${brandMarkHTML({size:56,className:'brand-mark'})}</div>
       <div class="td-clinic">${esc((state.data.clinicInfo||{}).name||'Clinic')}</div>
       <div class="td-label">Now serving</div>
       <div class="td-num">${now && now.visit.token!=null ? '#'+now.visit.token : '—'}</div>
@@ -7574,21 +7619,21 @@ function newVisitView(){
     <div class="visit-section">
       <div class="visit-section-title">3 · Clinical notes</div>
       <div class="field"><label>Chief complaints ${dictationBtn('v-complaints')}</label>
-        <textarea id="v-complaints" oninput="onComplaintsInput(this)" placeholder="e.g. Fever × 3 days, Cough × 2 days — shown as C/O on the OPD card">${esc(dv.complaints)}</textarea>
+        <textarea id="v-complaints" oninput="onComplaintsInput(this)" placeholder="">${esc(dv.complaints)}</textarea>
         <div class="chip-row" id="complaints-chips">${chipRowHTML(chipsFor(dv.complaints, COMPLAINT_TERMS), 'insertComplaintChip')}</div>
       </div>
-      <div class="field"><label>Examination findings ${dictationBtn('v-exam')}</label><textarea id="v-exam">${esc(dv.examination)}</textarea></div>
+      <div class="field"><label>Examination findings ${dictationBtn('v-exam')}</label><textarea id="v-exam" placeholder="">${esc(dv.examination)}</textarea></div>
       <div class="field"><label>Diagnosis ${dictationBtn('v-diagnosis')}</label>
-        <input id="v-diagnosis" value="${esc(dv.diagnosis)}" oninput="onDiagnosisInput(this)" placeholder="leave blank if not yet confirmed">
+        <input id="v-diagnosis" value="${esc(dv.diagnosis)}" oninput="onDiagnosisInput(this)" placeholder="">
         <div class="chip-row" id="diagnosis-chips">${chipRowHTML(chipsFor(dv.diagnosis, DIAGNOSIS_TERMS), 'insertDiagnosisChip')}</div>
       </div>
-      <div class="field"><label>Doctor's notes ${dictationBtn('v-notes')}</label><textarea id="v-notes">${esc(dv.notes)}</textarea></div>
+      <div class="field"><label>Doctor's notes ${dictationBtn('v-notes')}</label><textarea id="v-notes" placeholder="">${esc(dv.notes)}</textarea></div>
       ${(()=>{
         const ep = dv.patientId && state.data.patients.find(x=>x.id===dv.patientId);
         const first = ep && !(ep.visits||[]).length && !dv.editVisitId;
         if(!first) return '';
         return `<div class="field"><label>Allergies (required on first visit)</label>
-          <input id="v-allergy-ack" placeholder="e.g. Penicillin, or leave blank and mark none" value="${esc(ep.allergies||'')}">
+          <input id="v-allergy-ack" placeholder="" value="${esc(ep.allergies||'')}">
           <label style="display:flex;align-items:center;gap:8px;margin-top:6px;font-size:13px;">
             <input type="checkbox" onchange="document.getElementById('v-allergy-ack').dataset.none=this.checked?'1':'0'"> None known
           </label></div>`;
@@ -10104,7 +10149,7 @@ async function removeCustomMedicine(idx){
 
 function connectionErrorView(){
   return `<div class="center-screen"><div class="auth-card" style="text-align:center;">
-    <div class="brand-mark" style="margin:0 auto 12px auto;">MMC</div>
+    ${brandMarkHTML({size:48})}
     <h1 style="font-size:18px;">Can't reach the clinic server</h1>
     <p class="muted" style="font-size:13px;">${esc(state.loadError || 'Could not reach the clinic server. Check your connection and reload the page.')}</p>
     <p class="faint" style="margin:10px 0 14px;">On free hosting the app can sleep after idle time. The first request after wake often takes 20–60 seconds — wait a moment, then try again.</p>
