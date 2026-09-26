@@ -1876,11 +1876,25 @@ function billingTotal(b){
 // pre-login flows (first-time setup, adding an account from the login
 // screen) attribute the entry to the name just entered rather than
 // whoever happens to be logged in (nobody, at that point).
+function deviceLabel(){
+  try{
+    const stored = localStorage.getItem('mmc_device_label');
+    if(stored) return stored;
+  }catch(e){}
+  return state.deviceLabel || '';
+}
+function setDeviceLabel(v){
+  const label = String(v||'').trim().slice(0,40);
+  state.deviceLabel = label;
+  try{ localStorage.setItem('mmc_device_label', label); }catch(e){}
+}
 function logAudit(action, details, actor){
   if(!state.data.auditLog) state.data.auditLog = [];
+  const label = deviceLabel();
   state.data.auditLog.push({
     ts: new Date().toISOString(),
     staff: actor || state.session.staffName || 'System',
+    device: label || '',
     action, details: details || ''
   });
   // Keep the log from growing without bound — recent history matters most.
@@ -2273,6 +2287,154 @@ function shareWhatsApp(phone, text){
   const url = whatsappUrl(phone, text);
   if(!url){ alert('No valid phone number to open WhatsApp.'); return; }
   window.open(url, '_blank', 'noopener');
+}
+function ownerWhatsAppPhone(){
+  const ci = state.data.clinicInfo || {};
+  return ci.ownerPhone || ci.phone || '';
+}
+async function remindAllDueList(){
+  const tomorrow = (()=>{ const d=new Date(); d.setDate(d.getDate()+1); return d.toISOString().slice(0,10); })();
+  const targets = [];
+  const seen = new Set();
+  (state.data.patients||[]).forEach(p=>{
+    if(!p.phone) return;
+    (p.visits||[]).forEach(v=>{
+      if(v.followUpDate===tomorrow && !seen.has(p.id)){
+        seen.add(p.id);
+        targets.push(p);
+      }
+    });
+  });
+  if(!targets.length){ alert('No follow-ups tomorrow with a phone number.'); return; }
+  if(!confirm(`Open WhatsApp for ${targets.length} patient(s) due tomorrow?`)) return;
+  const clinic = (state.data.clinicInfo||{}).name||'clinic';
+  for(const p of targets){
+    shareWhatsApp(p.phone, `Namaste ${p.name}, reminder from ${clinic}: your follow-up is tomorrow (${fmtDate(tomorrow)}). Please visit as planned.`);
+  }
+}
+function dailyCloseWhatsAppText(){
+  const today = todayStr();
+  let visits=0, completed=0, waiting=0, tokens=0, revenue=0, collected=0, outstanding=0;
+  (state.data.patients||[]).forEach(p=>{
+    (p.visits||[]).forEach(v=>{
+      if(v.date!==today) return;
+      visits++;
+      if(v.token!=null) tokens++;
+      if(visitStatus(v)==='completed') completed++; else waiting++;
+      if(v.billing){
+        const total = billingTotal(v.billing);
+        revenue += total;
+        if(v.billing.paid) collected += total; else outstanding += total;
+      }
+    });
+  });
+  const clinic = (state.data.clinicInfo||{}).name||'MMC';
+  return `${clinic} daily close — ${fmtDate(today)}\nTokens: ${tokens}\nVisits: ${visits} (done ${completed}, open ${waiting})\nRevenue: ₹${Math.round(revenue)}\nCollected: ₹${Math.round(collected)}\nOutstanding: ₹${Math.round(outstanding)}`;
+}
+function sendDailyCloseWhatsApp(){
+  const phone = ownerWhatsAppPhone();
+  if(!phone){ alert('Set clinic phone (or owner phone) in Settings first.'); return; }
+  shareWhatsApp(phone, dailyCloseWhatsAppText());
+}
+function unfinishedTodayList(){
+  const today = todayStr();
+  const out = [];
+  (state.data.patients||[]).forEach(p=>{
+    (p.visits||[]).forEach(v=>{
+      if(v.date!==today) return;
+      const waiting = visitStatus(v)==='waiting';
+      const noDx = !(v.diagnosis||'').trim();
+      if(waiting || noDx) out.push({p,v,waiting,noDx});
+    });
+  });
+  out.sort((a,b)=>(a.v.token||9999)-(b.v.token||9999));
+  return out;
+}
+function lowStockItems(){
+  return (state.data.drugStock||[]).filter(s=>{
+    const lowAt = parseFloat(s.lowAt)||0;
+    const qty = parseFloat(s.quantity)||0;
+    return lowAt>0 && qty<=lowAt;
+  });
+}
+function feePresets(){
+  const raw = (state.data.clinicInfo||{}).feePresets;
+  if(Array.isArray(raw) && raw.length) return raw;
+  return [
+    {label:'Consultation', amount:300},
+    {label:'Dressing', amount:100},
+    {label:'Injection', amount:50}
+  ];
+}
+function applyFeePreset(kind, amount, label){
+  amount = parseFloat(amount)||0;
+  if(kind==='fee'){
+    const el = document.getElementById('bill-fee');
+    if(el) el.value = amount;
+    return;
+  }
+  const v = currentBillingVisit();
+  if(!v) return;
+  if(!v.billing) v.billing = {fee:'', charges:[], paid:false, mode:''};
+  if(!v.billing.charges) v.billing.charges = [];
+  v.billing.charges.push({label: label||'Charge', amount: String(amount)});
+  const box = document.getElementById('charge-rows');
+  if(box) box.innerHTML = chargeRowsHTML(v.billing.charges);
+}
+function findDuplicateMeds(prescriptions){
+  const seen = {};
+  const dups = [];
+  (prescriptions||[]).forEach(r=>{
+    const key = medToken(r.medicine);
+    if(!key) return;
+    if(seen[key]) dups.push(r.medicine);
+    else seen[key] = true;
+  });
+  return dups;
+}
+function speechSupported(){
+  return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+}
+function startDictation(fieldId){
+  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!Rec){ alert('Voice dictation is not supported in this browser. Use Chrome or Edge.'); return; }
+  const el = document.getElementById(fieldId);
+  if(!el) return;
+  try{
+    if(state._recog){ try{ state._recog.stop(); }catch(e){} }
+    const rec = new Rec();
+    rec.lang = state.uiLang==='kn' ? 'kn-IN' : 'en-IN';
+    rec.interimResults = false;
+    rec.continuous = false;
+    rec.onresult = ev=>{
+      const text = Array.from(ev.results).map(r=>r[0].transcript).join(' ').trim();
+      if(!text) return;
+      const cur = el.value || '';
+      el.value = cur ? (cur.replace(/\s+$/,'') + ' ' + text) : text;
+      el.dispatchEvent(new Event('input', {bubbles:true}));
+    };
+    rec.onerror = ()=>{};
+    state._recog = rec;
+    rec.start();
+  }catch(e){
+    alert('Could not start microphone.');
+  }
+}
+function dictationBtn(fieldId){
+  if(!speechSupported()) return '';
+  return `<button type="button" class="btn btn-ghost btn-sm" title="Dictate" onclick="startDictation('${fieldId}')">🎙 Dictate</button>`;
+}
+function backupNudgeHTML(){
+  if(!isOwner()) return '';
+  const lb = state.data.lastBackupAt;
+  let stale = !lb;
+  let days = null;
+  if(lb){
+    days = Math.floor((Date.now()-new Date(lb).getTime())/86400000);
+    if(days>=7) stale = true;
+  }
+  if(!stale) return '';
+  return `<div class="banner banner-info" style="margin-bottom:12px;">Admin reminder: ${lb?'last full backup was '+days+' day(s) ago':'no full backup downloaded yet'}. <button class="btn btn-sm" onclick="downloadBackup()">Download backup</button></div>`;
 }
 function patientWhatsAppText(p, extra){
   const ci = state.data.clinicInfo || {};
@@ -3284,6 +3446,35 @@ async function saveVisit(){
     const list = rxInter.map(h=>`${h.group}: ${h.meds.join(' + ')}`).join('; ');
     if(!confirm(`⚠ Possible drug overlap — ${list}.\n\nSave anyway?`)) return;
   }
+  const rxDups = findDuplicateMeds(dv.prescriptions||[]);
+  if(rxDups.length){
+    if(!confirm(`⚠ Duplicate medicine on this Rx: ${rxDups.join(', ')}.\n\nSave anyway?`)) return;
+  }
+  // First visit: allergy field must be acknowledged
+  if(dv.patientId){
+    const ep = state.data.patients.find(x=>x.id===dv.patientId);
+    const visitCount = ep ? (ep.visits||[]).length : 0;
+    const isFirst = !dv.editVisitId && visitCount===0;
+    if(isFirst){
+      const ack = document.getElementById('v-allergy-ack');
+      const known = (ep && (ep.allergies||'').trim()) || (ack && ack.value && ack.value.trim());
+      const noneKnown = ack && ack.dataset.none === '1';
+      if(!known && !noneKnown){
+        errEl.textContent = 'Record allergies on this first visit, or mark “None known”.';
+        return;
+      }
+      if(ep && !ep.allergies && noneKnown) ep.allergies = 'None known';
+      if(ep && ack && ack.value && ack.value.trim() && !ep.allergies) ep.allergies = ack.value.trim();
+    }
+  } else if(dv.newPatient){
+    const ack = document.getElementById('np-allergies');
+    const none = document.getElementById('np-allergy-none');
+    if(ack && !(ack.value||'').trim() && !(none && none.checked)){
+      errEl.textContent = 'Enter known allergies for a new patient, or tick “None known”.';
+      return;
+    }
+    if(none && none.checked && ack && !(ack.value||'').trim()) dv.newPatient.allergies = 'None known';
+  }
   // Pediatric visits: weight is mandatory for dosing safety
   if(document.getElementById('v-doctor') !== null && dv.patientId){
     const ep = state.data.patients.find(x=>x.id===dv.patientId);
@@ -3550,6 +3741,8 @@ async function saveClinicInfo(){
   if(shortEl) state.data.clinicInfo.shortName = shortEl.value.trim();
   state.data.clinicInfo.address = addrEl ? addrEl.value.trim() : state.data.clinicInfo.address;
   state.data.clinicInfo.phone = phoneEl ? phoneEl.value.trim() : state.data.clinicInfo.phone;
+  const ownEl = document.getElementById('ci-owner-phone');
+  if(ownEl) state.data.clinicInfo.ownerPhone = ownEl.value.trim();
   const nsEl = document.getElementById('ci-noshow');
   if(nsEl) state.data.clinicInfo.noShowMinutes = parseInt(nsEl.value,10) || 45;
   const regEl = document.getElementById('ci-regno');
@@ -4065,6 +4258,8 @@ const DASH_PANEL_META = [
   {id:'followups', label:'Follow-ups due'},
   {id:'reminders', label:'Call tomorrow'},
   {id:'vaccines', label:'Pediatric vaccines due'},
+  {id:'unfinished', label:"Today's unfinished"},
+  {id:'lowstock', label:'Low stock'},
   {id:'quick', label:'Quick actions'}
 ];
 const DASH_DEFAULT_ORDER = DASH_PANEL_META.map(p=>p.id);
@@ -4527,6 +4722,35 @@ function dashboardView(){
             `<button class="btn btn-accent btn-sm" onclick="go('newVisit')">+ New visit</button>`)}</div>`}
     </div>`;
 
+  const unfinished = unfinishedTodayList();
+  const unfinishedRows = unfinished.slice(0,16).map(({p,v,waiting,noDx})=>`
+    <div class="dbx-qrow dbx-clickable" onclick="${can('clinicalVisit')?`startTokenConsult('${p.id}','${v.id}')`:`go('patient',{patientId:'${p.id}'})`}">
+      <div class="dbx-qtoken">${v.token!=null?'#'+v.token:''}</div>
+      <div class="dbx-qtext">
+        <div class="dbx-qname">${esc(p.name)}</div>
+        <div class="dbx-qsub">${waiting?'Still waiting':''}${waiting&&noDx?' · ':''}${noDx?'No diagnosis yet':''}</div>
+      </div>
+      <button class="dbx-qbtn" onclick="event.stopPropagation();${can('clinicalVisit')?`startTokenConsult('${p.id}','${v.id}')`:`go('visitPrint',{patientId:'${p.id}',visitId:'${v.id}'})`}">Open</button>
+    </div>`).join('');
+  const unfinishedCard = `
+    <div class="dbx-panel">
+      <div class="dbx-panel-head"><h2>Today’s unfinished${unfinished.length?` <span class="count">${unfinished.length}</span>`:''}</h2></div>
+      ${unfinished.length ? unfinishedRows : `<div style="padding:0 4px;">${emptyState('✅','All of today’s visits look complete','Waiting or undiagnosed visits appear here until you close them.')}</div>`}
+    </div>`;
+  const lows = lowStockItems();
+  const lowRows = lows.slice(0,12).map(s=>`
+    <div class="dbx-qrow dbx-clickable" onclick="go('stock')">
+      <div class="dbx-qtext"><div class="dbx-qname">${esc(s.name)}</div>
+      <div class="dbx-qsub">${esc(s.quantity)} ${esc(s.unit)||''} · alert at ${esc(s.lowAt)}</div></div>
+      <span class="dbx-qstatus wait">Low</span>
+    </div>`).join('');
+  const lowStockCard = can('stock') ? `
+    <div class="dbx-panel">
+      <div class="dbx-panel-head"><h2>Low stock${lows.length?` <span class="count">${lows.length}</span>`:''}</h2>
+        <button class="link" onclick="go('stock')">Open stock</button></div>
+      ${lows.length ? lowRows : `<div style="padding:0 4px;">${emptyState('📦','Stock levels look fine','Items at or below their alert quantity show up here.')}</div>`}
+    </div>` : '';
+
   const panelMap = {
     cash: cashStripHTML(),
     queue: queueSection,
@@ -4535,6 +4759,8 @@ function dashboardView(){
     followups: followUpCard,
     reminders: apptRemindCard,
     vaccines: can('pediatrics') ? pedDueCard : '',
+    unfinished: unfinishedCard,
+    lowstock: lowStockCard,
     quick: quickActionsCard
   };
   const prefs = getDashboardPrefs();
@@ -4547,6 +4773,7 @@ function dashboardView(){
     </div>`;
 
   return `
+    ${backupNudgeHTML()}
     ${hero}
     ${ctaRow}
     ${customizeBar}
@@ -5126,11 +5353,35 @@ function growthRecordsCardHTML(p){
     </tr>`).join('');
   return `
     <div class="card" style="margin-bottom:18px;">
-      <h2 style="margin-bottom:10px;">Growth records</h2>
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <h2 style="margin:0;">Growth records</h2>
+        <button class="btn btn-sm" onclick="printGrowthChart('${p.id}')">🖶 Print chart</button>
+      </div>
       <table><thead><tr><th>Date</th><th>Age</th><th>Weight</th><th>Height</th><th>Head circ.</th></tr></thead><tbody>${rows}</tbody></table>
+    </div>
+    ${growthChartPrintHTML(p)}`;
+}
+function growthChartPrintHTML(p){
+  const recs = (p.growthRecords||[]).slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const ci = state.data.clinicInfo||{};
+  const body = recs.map(r=>`<tr><td>${fmtDate(r.date)}</td><td>${((r.ageMonths||0)/12).toFixed(1)}y</td>
+    <td>${r.weight||'—'}</td><td>${r.height||'—'}</td><td>${r.hc||'—'}</td></tr>`).join('');
+  return `
+    <div class="print-sheet" id="sheet-growth-${p.id}" style="display:none;">
+      <div class="letterhead">${logoImgHTML(ci)}<div class="clinic-name">${esc(ci.name||'')}</div>
+        <div class="clinic-meta">${esc(ci.address||'')}</div></div>
+      <div class="sheet-title">GROWTH CHART</div>
+      <div class="patient-strip"><span>${esc(p.name)} · ${esc(p.id)}</span><span>${esc(displayAge(p))} / ${esc(p.sex)}</span></div>
+      <table><thead><tr><th>Date</th><th>Age</th><th>Weight (kg)</th><th>Height (cm)</th><th>HC (cm)</th></tr></thead>
+      <tbody>${body||'<tr><td colspan="5">No records</td></tr>'}</tbody></table>
+      <p class="faint" style="margin-top:12px;">For parent record. Confirm values against a standard WHO/IAP chart.</p>
     </div>`;
 }
-
+function printGrowthChart(patientId){
+  const el = document.getElementById('sheet-growth-'+patientId);
+  if(el) el.style.display = 'block';
+  printSection('sheet-growth-'+patientId);
+}
 function vaccineOptionsList(){
   const set = new Set();
   IMMUNIZATION_SCHEDULE.forEach(r=> r.vaccines.split(',').forEach(v=> set.add(v.trim())));
@@ -5256,10 +5507,14 @@ function updateRxInteractionWarnings(){
   const box = document.getElementById('rx-interaction-box');
   if(!box || !state.draftVisit) return;
   const hits = findDrugInteractions(state.draftVisit.prescriptions);
-  if(!hits.length){ box.innerHTML = ''; return; }
-  box.innerHTML = hits.map(h =>
+  const dups = findDuplicateMeds(state.draftVisit.prescriptions);
+  let html = hits.map(h =>
     `<div class="rx-interact-warn">⚠ Possible overlap (${esc(h.group)}): ${h.meds.map(esc).join(' + ')}. Review before saving.</div>`
   ).join('');
+  if(dups.length){
+    html += `<div class="rx-interact-warn">⚠ Same medicine listed more than once: ${dups.map(esc).join(', ')}.</div>`;
+  }
+  box.innerHTML = html;
 }
 function noShowMinutes(){
   const n = parseInt((state.data.clinicInfo && state.data.clinicInfo.noShowMinutes) || '45', 10);
@@ -6622,7 +6877,10 @@ function dailyCloseHTML(){
       <h3 style="margin:16px 0 8px;">By doctor</h3>
       <table><thead><tr><th>Doctor</th><th>Completed</th><th>Open</th></tr></thead><tbody>${staffRows}</tbody></table>
     </div>
-    <button class="btn btn-primary" onclick="printSection('sheet-daily-close')">Print daily close</button>`;
+    <div class="row" style="gap:8px;margin-top:12px;">
+      <button class="btn btn-primary" onclick="printSection('sheet-daily-close')">Print daily close</button>
+      <button class="btn btn-accent" onclick="sendDailyCloseWhatsApp()">WhatsApp summary to owner</button>
+    </div>`;
 }
 function staffActivityTodayHTML(){
   const today = todayStr();
@@ -6684,6 +6942,7 @@ function dueListPrintHTML(){
     <div class="row" style="gap:8px;margin-top:12px;">
       <button class="btn btn-primary" onclick="printSection('sheet-due-list')">Print due list</button>
       <button class="btn" onclick="saveSheetAsPdf('sheet-due-list')">Save PDF</button>
+      <button class="btn btn-accent" onclick="remindAllDueList()">WhatsApp all follow-ups</button>
     </div>`;
 }
 
@@ -6712,7 +6971,9 @@ function newVisitView(){
           <div class="field"><label>Address *</label><input id="np-address" value="${esc(np.address||'')}"></div>
           <div class="field"><label>Phone *</label><input id="np-phone" value="${esc(np.phone)}"></div>
         </div>
-        <div class="field"><label>Known allergies</label><input id="np-allergies" value="${esc(np.allergies||'')}" placeholder="leave blank if none known"></div>
+        <div class="field"><label>Known allergies</label><input id="np-allergies" value="${esc(np.allergies||'')}" placeholder="drug / food allergies">
+          <label style="display:flex;align-items:center;gap:8px;margin-top:6px;font-size:13px;"><input type="checkbox" id="np-allergy-none"> None known</label>
+        </div>
         <div class="field"><label>Chronic illness / conditions</label><input id="np-chronic" value="${esc(np.chronicConditions||'')}" placeholder="leave blank if none known"></div>
       </div>`;
   } else {
@@ -6804,16 +7065,26 @@ function newVisitView(){
     </div>
     <div class="visit-section">
       <div class="visit-section-title">3 · Clinical notes</div>
-      <div class="field"><label>Chief complaints</label>
+      <div class="field"><label>Chief complaints ${dictationBtn('v-complaints')}</label>
         <textarea id="v-complaints" oninput="onComplaintsInput(this)" placeholder="e.g. Fever × 3 days, Cough × 2 days — shown as C/O on the OPD card">${esc(dv.complaints)}</textarea>
         <div class="chip-row" id="complaints-chips">${chipRowHTML(chipsFor(dv.complaints, COMPLAINT_TERMS), 'insertComplaintChip')}</div>
       </div>
-      <div class="field"><label>Examination findings</label><textarea id="v-exam">${esc(dv.examination)}</textarea></div>
-      <div class="field"><label>Diagnosis</label>
+      <div class="field"><label>Examination findings ${dictationBtn('v-exam')}</label><textarea id="v-exam">${esc(dv.examination)}</textarea></div>
+      <div class="field"><label>Diagnosis ${dictationBtn('v-diagnosis')}</label>
         <input id="v-diagnosis" value="${esc(dv.diagnosis)}" oninput="onDiagnosisInput(this)" placeholder="leave blank if not yet confirmed">
         <div class="chip-row" id="diagnosis-chips">${chipRowHTML(chipsFor(dv.diagnosis, DIAGNOSIS_TERMS), 'insertDiagnosisChip')}</div>
       </div>
-      <div class="field"><label>Doctor's notes</label><textarea id="v-notes">${esc(dv.notes)}</textarea></div>
+      <div class="field"><label>Doctor's notes ${dictationBtn('v-notes')}</label><textarea id="v-notes">${esc(dv.notes)}</textarea></div>
+      ${(()=>{
+        const ep = dv.patientId && state.data.patients.find(x=>x.id===dv.patientId);
+        const first = ep && !(ep.visits||[]).length && !dv.editVisitId;
+        if(!first) return '';
+        return `<div class="field"><label>Allergies (required on first visit)</label>
+          <input id="v-allergy-ack" placeholder="e.g. Penicillin, or leave blank and mark none" value="${esc(ep.allergies||'')}">
+          <label style="display:flex;align-items:center;gap:8px;margin-top:6px;font-size:13px;">
+            <input type="checkbox" onchange="document.getElementById('v-allergy-ack').dataset.none=this.checked?'1':'0'"> None known
+          </label></div>`;
+      })()}
       <div class="row">
         <div class="field"><label>Follow-up date (optional)</label><input id="v-followup" type="date" value="${esc(dv.followUpDate||'')}"></div>
         <div class="field"><label>Referred to (optional)</label><input id="v-referred-to" placeholder="e.g. City Hospital — Cardiology" value="${esc(dv.referredTo||'')}"></div>
@@ -7772,6 +8043,10 @@ function billingDetailView(patientId, visitId){
       <button class="btn btn-ghost" onclick="go('billing')">Back to billing</button>
     </div>
     <div class="card stack" style="max-width:560px;margin-bottom:16px;">
+      <div class="chip-row" style="margin-bottom:10px;">
+        ${feePresets().map(fp=>`<button type="button" class="chip" onclick="applyFeePreset('fee',${fp.amount})">${esc(fp.label)} ₹${fp.amount}</button>`).join('')}
+        ${feePresets().filter(fp=>fp.label!=='Consultation').map(fp=>`<button type="button" class="chip" onclick="applyFeePreset('charge',${fp.amount},${jsAttr(fp.label)})">+ ${esc(fp.label)} ₹${fp.amount}</button>`).join('')}
+      </div>
       <div class="field"><label>Consultation fee (₹)</label><input id="bill-fee" type="number" step="0.01" value="${esc(b.fee)}"></div>
       <div>
         <div class="rx-row-head"><h3>Additional charges</h3><button class="btn btn-sm" onclick="addChargeRow()">+ Add charge</button></div>
@@ -7882,6 +8157,28 @@ function computeReportStats(from, to){
 function setReportRange(preset){
   state.reportRange = preset;
   render();
+}
+function expenseRevenueHTML(from, to){
+  const stats = computeReportStats(from, to);
+  const expenses = (state.data.expenses||[]).filter(e=>e.date && e.date>=from && e.date<=to);
+  const expTotal = expenses.reduce((s,e)=>s+(parseFloat(e.amount)||0),0);
+  const net = stats.paidRevenue - expTotal;
+  const byCat = {};
+  expenses.forEach(e=>{
+    const c = e.category || 'Other';
+    byCat[c] = (byCat[c]||0)+(parseFloat(e.amount)||0);
+  });
+  const catRows = Object.entries(byCat).sort((a,b)=>b[1]-a[1]).map(([c,n])=>`<tr><td>${esc(c)}</td><td>₹${n.toFixed(0)}</td></tr>`).join('');
+  return `
+    <div class="card" style="margin:16px 0;">
+      <h2 style="margin-bottom:10px;">Revenue vs expenses</h2>
+      <div class="stat-grid" style="margin-bottom:12px;">
+        <div class="stat-card"><div class="stat-num">₹${stats.paidRevenue.toFixed(0)}</div><div class="stat-label">Collected</div></div>
+        <div class="stat-card"><div class="stat-num">₹${expTotal.toFixed(0)}</div><div class="stat-label">Expenses</div></div>
+        <div class="stat-card"><div class="stat-num">₹${net.toFixed(0)}</div><div class="stat-label">Net</div></div>
+      </div>
+      ${catRows?`<table><thead><tr><th>Expense category</th><th>Amount</th></tr></thead><tbody>${catRows}</tbody></table>`:'<p class="muted">No expenses in this period.</p>'}
+    </div>`;
 }
 
 /* ============================= MEDICAL CERTIFICATES ============================= */
@@ -8643,6 +8940,10 @@ function ancView(){
       <td>${a.edd?fmtDate(a.edd):'—'}</td>
       <td>G${esc(a.gravida)||'?'} P${esc(a.para)||'?'}</td>
       <td>${esc(a.risk)||'—'}</td>
+      <td>${esc(a.lastBp)||'—'}</td>
+      <td>${esc(a.lastWt)||'—'}</td>
+      <td>${esc(a.fundalHt)||'—'}</td>
+      <td>${a.nextVisit?fmtDate(a.nextVisit):'—'}</td>
       <td onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" onclick="removeAnc('${a.id}')">Remove</button></td>
     </tr>`;
   }).join('');
@@ -8659,9 +8960,15 @@ function ancView(){
         <div class="field"><label>Para</label><input id="anc-p" placeholder="P"></div>
       </div>
       <div class="field"><label>Risk / notes</label><input id="anc-risk" placeholder="e.g. Previous LSCS, anemia"></div>
+      <div class="row">
+        <div class="field"><label>BP</label><input id="anc-bp" placeholder="110/70"></div>
+        <div class="field"><label>Weight (kg)</label><input id="anc-wt" placeholder="kg"></div>
+        <div class="field"><label>Fundal height</label><input id="anc-fh" placeholder="cm / weeks"></div>
+        <div class="field"><label>Next ANC visit</label><input type="date" id="anc-next"></div>
+      </div>
       <button class="btn btn-primary btn-sm" onclick="addAncEntry()">Add</button>
     </div>
-    <div class="card">${list.length?`<table><thead><tr><th>Patient</th><th>LMP</th><th>EDD</th><th>G/P</th><th>Risk</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:emptyState('🤰','No ANC entries','Register antenatal patients for follow-up.')}</div>`;
+    <div class="card">${list.length?`<table><thead><tr><th>Patient</th><th>LMP</th><th>EDD</th><th>G/P</th><th>Risk</th><th>BP</th><th>Wt</th><th>FH</th><th>Next</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:emptyState('🤰','No ANC entries','Register antenatal patients for follow-up.')}</div>`;
 }
 function ancUpdateEdd(){
   const lmp = document.getElementById('anc-lmp').value;
@@ -8680,7 +8987,11 @@ async function addAncEntry(){
     edd: document.getElementById('anc-edd').value,
     gravida: document.getElementById('anc-g').value.trim(),
     para: document.getElementById('anc-p').value.trim(),
-    risk: document.getElementById('anc-risk').value.trim()
+    risk: document.getElementById('anc-risk').value.trim(),
+    lastBp: (document.getElementById('anc-bp')||{}).value||'',
+    lastWt: (document.getElementById('anc-wt')||{}).value||'',
+    fundalHt: (document.getElementById('anc-fh')||{}).value||'',
+    nextVisit: (document.getElementById('anc-next')||{}).value||''
   });
   await saveData(); render();
 }
@@ -8691,11 +9002,11 @@ async function removeAnc(id){
 
 function exportAuditCSV(){
   const entries = (state.data.auditLog||[]).slice().reverse();
-  const lines = [['When','Staff','Action','Details']];
+  const lines = [['When','Staff','Device','Action','Details']];
   entries.forEach(e=>{
     const d = new Date(e.ts);
     const when = isNaN(d)?(e.ts||''):d.toISOString();
-    lines.push([when, e.staff||'', e.action||'', e.details||'']);
+    lines.push([when, e.staff||'', e.device||'', e.action||'', e.details||'']);
   });
   const csv = lines.map(row=>row.map(v=>{
     const s=String(v==null?'':v);
@@ -8783,6 +9094,7 @@ function reportsView(){
       <div class="stat-card"><div class="stat-num">${stats.newPatients}</div><div class="stat-label">New patients</div></div>
     </div>
     ${cashBlock}
+    ${expenseRevenueHTML(range.from, range.to)}
     <div class="card">
       <h2 style="margin-bottom:10px;">Visits by doctor</h2>
       ${doctorRows ? `<table><thead><tr><th>Doctor</th><th>Visits</th><th>Revenue</th></tr></thead><tbody>${doctorRows}</tbody></table>` : '<p class="muted">No visits in this period.</p>'}
@@ -9019,6 +9331,9 @@ function settingsView(){
       <div style="margin-bottom:14px;">
         <button type="button" class="btn btn-sm" onclick="toggleDarkMode()">${state.darkMode?'☀ Light mode':'🌙 Dark mode'}</button>
       </div>
+      <div class="field"><label>This device label (shown in activity log)</label>
+        <input id="device-label" value="${esc(deviceLabel())}" placeholder="e.g. Front desk tablet" onchange="setDeviceLabel(this.value)">
+      </div>
       <div class="field"><label>Auto-logout after inactivity (minutes)</label>
         <select id="idle-mins" onchange="setIdleMinutes(this.value)">
           ${[5,10,15,30,60].map(m=>`<option value="${m}" ${state.idleMinutes===m?'selected':''}>${m} minutes</option>`).join('')}
@@ -9038,6 +9353,7 @@ function settingsView(){
       <div class="field"><label>Short name</label><input id="ci-short" value="${esc(ci.shortName||'')}" placeholder="MMC"></div>
       <div class="field"><label>Address (shown on printouts)</label><input id="ci-address" value="${esc(ci.address)}"></div>
       <div class="field"><label>Phone (shown on printouts)</label><input id="ci-phone" value="${esc(ci.phone)}"></div>
+      <div class="field"><label>Owner WhatsApp number (daily close summary)</label><input id="ci-owner-phone" value="${esc(ci.ownerPhone||'')}" placeholder="same as clinic phone if blank"></div>
       <div class="field"><label>Mark long wait / missed after (minutes)</label><input id="ci-noshow" type="number" min="10" max="180" value="${esc(ci.noShowMinutes||45)}"></div>
       <div class="field"><label>Clinic registration / RMP number (shown on printouts)</label><input id="ci-regno" value="${esc(ci.regNo||'')}" placeholder="e.g. KA-12345"></div>
       <button class="btn btn-primary" onclick="saveClinicInfo()">Save</button>
@@ -9196,6 +9512,7 @@ function auditLogTableHTML(){
   if(q){
     entries = entries.filter(e =>
       (e.staff||'').toLowerCase().includes(q) ||
+      (e.device||'').toLowerCase().includes(q) ||
       (e.action||'').toLowerCase().includes(q) ||
       (e.details||'').toLowerCase().includes(q)
     );
@@ -9205,7 +9522,7 @@ function auditLogTableHTML(){
   const rows = shown.map(e=>{
     const d = new Date(e.ts);
     const when = isNaN(d) ? (e.ts||'') : d.toLocaleString('en-IN',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'});
-    return `<tr><td style="white-space:nowrap;">${esc(when)}</td><td>${esc(e.staff)}</td><td>${esc(e.action)}</td><td>${esc(e.details)}</td></tr>`;
+    return `<tr><td style="white-space:nowrap;">${esc(when)}</td><td>${esc(e.staff)}${e.device?`<div class="faint">${esc(e.device)}</div>`:''}</td><td>${esc(e.action)}</td><td>${esc(e.details)}</td></tr>`;
   }).join('');
   const note = entries.length > 200 ? `<p class="faint" style="margin-top:8px;">Showing the most recent 200 of ${entries.length} matching entries.</p>` : '';
   return `<table><thead><tr><th>When</th><th>Staff</th><th>Action</th><th>Details</th></tr></thead><tbody>${rows}</tbody></table>${note}`;
