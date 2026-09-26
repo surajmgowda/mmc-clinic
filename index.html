@@ -899,14 +899,41 @@
     padding:6px 10px;border-radius:8px;font-size:12.5px;margin:6px 0 0;}
   .attach-grid{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;}
   .attach-thumb{width:88px;height:88px;object-fit:cover;border-radius:8px;border:1px solid var(--line);cursor:pointer;}
-  .token-display-page{min-height:100vh;background:#0B1526;color:#fff;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;padding:24px;text-align:center;}
-  .token-display-page .td-clinic{font-size:18px;opacity:0.7;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:12px;}
-  .token-display-page .td-label{font-size:20px;opacity:0.8;margin-bottom:8px;}
-  .token-display-page .td-num{font-family:'Source Serif 4',serif;font-size:120px;font-weight:700;line-height:1;color:#E8B923;}
-  .token-display-page .td-name{font-size:28px;margin-top:12px;}
-  .token-display-page .td-next{margin-top:28px;font-size:18px;opacity:0.85;}
-  .token-display-page .td-list{margin-top:24px;font-size:15px;opacity:0.65;max-width:480px;}
+
+  /* TV waiting room */
+  .token-display-page{min-height:100vh;background:radial-gradient(ellipse at 30% 20%,#1a3358 0%,#0B1526 55%,#070d18 100%);color:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px 24px;text-align:center;position:relative;}
+  .token-display-page .td-clock{position:absolute;top:24px;right:32px;font-size:22px;font-weight:600;opacity:0.75;font-variant-numeric:tabular-nums;}
+  .token-display-page .td-clinic{font-size:20px;opacity:0.75;letter-spacing:0.12em;text-transform:uppercase;margin-bottom:8px;}
+  .token-display-page .td-label{font-size:18px;font-weight:600;letter-spacing:0.14em;text-transform:uppercase;opacity:0.55;margin-bottom:6px;}
+  .token-display-page .td-num{font-family:'Source Serif 4',serif;font-size:clamp(80px,18vw,160px);font-weight:700;line-height:1;color:#E8B923;text-shadow:0 4px 28px rgba(232,185,35,0.25);}
+  .token-display-page .td-name{font-size:clamp(22px,4vw,36px);margin-top:10px;font-weight:600;}
+  .token-display-page .td-doc{font-size:16px;opacity:0.65;margin-top:4px;}
+  .token-display-page .td-panels{display:grid;grid-template-columns:1fr 1fr;gap:28px;width:min(920px,100%);margin-top:40px;text-align:left;}
+  .token-display-page .td-panel{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:18px;padding:20px 22px;}
+  .token-display-page .td-panel h3{margin:0 0 12px;font-size:13px;letter-spacing:0.1em;text-transform:uppercase;opacity:0.55;font-family:inherit;font-weight:700;color:#fff;}
+  .token-display-page .td-next-row{display:flex;align-items:center;gap:14px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.08);}
+  .token-display-page .td-next-row:last-child{border-bottom:none;}
+  .token-display-page .td-badge{font-family:'Source Serif 4',serif;font-size:28px;font-weight:700;color:#7FD9CC;min-width:56px;}
+  .token-display-page .td-exit{position:absolute;bottom:20px;opacity:0;transition:opacity .3s;color:#fff;border-color:rgba(255,255,255,0.3);}
+  .token-display-page:hover .td-exit{opacity:1;}
+  @media (max-width:700px){.token-display-page .td-panels{grid-template-columns:1fr;}}
+  /* EOD checklist */
+  .eod-check{display:flex;align-items:flex-start;gap:12px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;margin-bottom:8px;background:var(--surface);}
+  .eod-check.done{background:var(--teal-tint);border-color:rgba(36,150,136,0.35);}
+  .eod-check input{width:20px;height:20px;margin-top:2px;flex-shrink:0;}
+  .eod-check .eod-body{flex:1;}
+  .eod-check .eod-title{font-weight:600;font-size:14px;}
+  .eod-check .eod-sub{font-size:12.5px;color:var(--ink-soft);margin-top:2px;}
+  /* Safety override */
+  .rx-hard-stop{background:var(--danger-tint);border:1px solid var(--danger);border-radius:12px;padding:14px 16px;margin:10px 0;}
+  .rx-hard-stop strong{color:var(--danger);}
+  /* Lab batch grid */
+  .lab-batch-table input{width:100%;min-width:70px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;font-size:13px;}
+  .lab-batch-table th{white-space:nowrap;}
+  /* Attachments */
+  .attach-actions{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;}
+  .attach-card{border:1px solid var(--line);border-radius:10px;padding:8px;background:var(--surface);max-width:140px;}
+
   .long-wait{color:var(--danger);font-weight:600;}
   .missed-row{border-left:3px solid var(--accent);}
 
@@ -2983,12 +3010,13 @@ function newAppointmentView(){
     <div class="card" style="max-width:520px;">
       ${patientBlock}
       <div class="row" style="margin-top:6px;">
-        <div class="field"><label>Date *</label><input id="appt-date" type="date" value="${esc(da.date)}"></div>
-        <div class="field"><label>Time *</label><input id="appt-time" type="time" value="${esc(da.time)}"></div>
+        <div class="field"><label>Date *</label><input id="appt-date" onchange="checkApptConflictsLive()" type="date" value="${esc(da.date)}"></div>
+        <div class="field"><label>Time *</label><input id="appt-time" onchange="checkApptConflictsLive()" type="time" value="${esc(da.time)}"></div>
       </div>
       ${doctors.length ? `<div class="field"><label>Doctor (optional)</label>
-        <select id="appt-doctor"><option value="">No preference</option>${doctors.map(d=>`<option ${d.name===da.doctorName?'selected':''}>${esc(d.name)}</option>`).join('')}</select></div>` : ''}
+        <select id="appt-doctor" onchange="checkApptConflictsLive()"><option value="">No preference</option>${doctors.map(d=>`<option ${d.name===da.doctorName?'selected':''}>${esc(d.name)}</option>`).join('')}</select></div>` : ''}
       <div class="field"><label>Notes</label><input id="appt-notes" value="${esc(da.notes)}" placeholder="e.g. reason for visit"></div>
+      <div id="appt-conflict-box"></div>
       <div id="appt-error" class="error-text">${esc(state.apptError||'')}</div>
       <div class="row">
         <button class="btn btn-primary" onclick="saveAppointment()">${da.editId ? 'Save changes' : 'Book appointment'}</button>
@@ -2999,12 +3027,58 @@ function newAppointmentView(){
 
 // True if some other booked/checked-in appointment already has this doctor
 // at this exact date+time. excludeId lets a reschedule ignore itself.
+function timeToMinutes(t){
+  if(!t || !String(t).includes(':')) return null;
+  const [h,m] = String(t).split(':').map(Number);
+  if(isNaN(h)) return null;
+  return h*60 + (m||0);
+}
 function apptConflict(date, time, doctorName, excludeId){
   if(!doctorName) return null;
   return (state.data.appointments||[]).find(a=>
     a.id!==excludeId && a.date===date && a.time===time && a.doctorName===doctorName &&
     (a.status==='booked' || a.status==='checked-in')
   );
+}
+// Soft conflicts: same doctor within ±slot minutes (default 20)
+function apptSoftConflicts(date, time, doctorName, excludeId, windowMins){
+  const win = windowMins != null ? windowMins : 20;
+  const t0 = timeToMinutes(time);
+  if(!doctorName || t0==null) return [];
+  return (state.data.appointments||[]).filter(a=>{
+    if(a.id===excludeId || a.date!==date || a.doctorName!==doctorName) return false;
+    if(a.status!=='booked' && a.status!=='checked-in') return false;
+    const t1 = timeToMinutes(a.time);
+    if(t1==null) return false;
+    const diff = Math.abs(t1 - t0);
+    return diff > 0 && diff <= win;
+  });
+}
+function checkApptConflictsLive(){
+  const dateEl = document.getElementById('appt-date');
+  const timeEl = document.getElementById('appt-time');
+  const docEl = document.getElementById('appt-doctor');
+  const box = document.getElementById('appt-conflict-box');
+  if(!box || !dateEl || !timeEl) return;
+  const date = dateEl.value, time = timeEl.value;
+  const doctorName = docEl ? docEl.value : '';
+  const excludeId = state.draftAppt && state.draftAppt.editId;
+  if(!date || !time || !doctorName){ box.innerHTML = ''; return; }
+  const exact = apptConflict(date, time, doctorName, excludeId);
+  const soft = apptSoftConflicts(date, time, doctorName, excludeId, 20);
+  let html = '';
+  if(exact){
+    const label = exact.patientId ? (state.data.patients.find(p=>p.id===exact.patientId)||{}).name || exact.patientId : exact.name;
+    html += `<div class="banner banner-error" style="margin:0 0 8px;">⚠ Exact conflict: ${esc(doctorName)} already has <strong>${esc(label)}</strong> at ${esc(time)}.</div>`;
+  }
+  if(soft.length){
+    const lines = soft.map(a=>{
+      const label = a.patientId ? (state.data.patients.find(p=>p.id===a.patientId)||{}).name || a.patientId : a.name;
+      return `${esc(a.time)} — ${esc(label||'Patient')}`;
+    }).join('<br>');
+    html += `<div class="banner" style="background:var(--accent-tint);color:var(--accent-dark);margin:0;">Nearby slot (±20 min) for ${esc(doctorName)}:<br>${lines}<div class="faint" style="margin-top:4px;">You can still book — confirm when saving.</div></div>`;
+  }
+  box.innerHTML = html;
 }
 
 async function saveAppointment(){
@@ -3028,6 +3102,15 @@ async function saveAppointment(){
   if(conflict){
     const conflictLabel = conflict.patientId ? (state.data.patients.find(p=>p.id===conflict.patientId)||{}).name || conflict.patientId : conflict.name;
     if(!confirm(`${doctorName} already has an appointment with ${conflictLabel} at ${time} on ${fmtDate(date)}. Book this one anyway?`)) return;
+  } else {
+    const soft = apptSoftConflicts(date, time, doctorName, da.editId, 20);
+    if(soft.length){
+      const lines = soft.map(a=>{
+        const label = a.patientId ? (state.data.patients.find(p=>p.id===a.patientId)||{}).name || a.patientId : a.name;
+        return `• ${a.time} — ${label||'Patient'}`;
+      }).join('\n');
+      if(!confirm(`${doctorName} has nearby appointments on ${fmtDate(date)}:\n${lines}\n\nBook this ${time} slot anyway?`)) return;
+    }
   }
 
   if(!state.data.appointments) state.data.appointments = [];
@@ -3437,19 +3520,28 @@ async function saveVisit(){
   const rxAllergyConflicts = (dv.prescriptions||[])
     .map(r=>({medicine:r.medicine, hit: r.medicine ? allergyMatch(r.medicine) : null}))
     .filter(x=>x.hit);
-  if(rxAllergyConflicts.length){
-    const list = rxAllergyConflicts.map(c=>`${c.medicine} (matches listed allergy "${c.hit}")`).join('; ');
-    if(!confirm(`⚠ This prescription includes: ${list}.\n\nSave anyway?`)) return;
-  }
   const rxInter = findDrugInteractions(dv.prescriptions||[]);
-  if(rxInter.length){
-    const list = rxInter.map(h=>`${h.group}: ${h.meds.join(' + ')}`).join('; ');
-    if(!confirm(`⚠ Possible drug overlap — ${list}.\n\nSave anyway?`)) return;
-  }
   const rxDups = findDuplicateMeds(dv.prescriptions||[]);
-  if(rxDups.length){
-    if(!confirm(`⚠ Duplicate medicine on this Rx: ${rxDups.join(', ')}.\n\nSave anyway?`)) return;
+  const hasRxSafetyIssue = !!(rxAllergyConflicts.length || rxInter.length || rxDups.length);
+  if(hasRxSafetyIssue){
+    const ack = document.getElementById('rx-safety-ack');
+    const typed = document.getElementById('rx-safety-override');
+    const okBox = ack && ack.checked;
+    const okType = typed && typed.value.trim().toUpperCase() === 'OVERRIDE';
+    if(!okBox || !okType){
+      updateRxInteractionWarnings();
+      errEl.textContent = 'Safety check: tick the acknowledgement and type OVERRIDE to save with allergy/interaction risks.';
+      const panel = document.getElementById('rx-safety-ack');
+      if(panel) panel.scrollIntoView({behavior:'smooth',block:'center'});
+      return;
+    }
+    logAudit('Rx safety override', [
+      rxAllergyConflicts.length ? 'allergy:'+rxAllergyConflicts.map(x=>x.medicine).join(',') : '',
+      rxInter.length ? 'interact:'+rxInter.map(h=>h.group).join(',') : '',
+      rxDups.length ? 'dup:'+rxDups.join(',') : ''
+    ].filter(Boolean).join(' · '));
   }
+
   // First visit: allergy field must be acknowledged
   if(dv.patientId){
     const ep = state.data.patients.find(x=>x.id===dv.patientId);
@@ -4349,6 +4441,7 @@ function shellView(){
   ].filter(x => can(x[2])).map(([r,label]) => [r,label]);
   const opsItems = [
     ['billing', t('Billing'), 'billing'],
+    ['labResults', 'Lab results', 'clinicalVisit'],
     ['reports', t('Reports'), 'reports'],
     ['roster', 'Roster', 'roster'],
     ['stock', 'Stock', 'stock'],
@@ -4463,6 +4556,7 @@ function routeContent(){
     case 'roster': return rosterView();
     case 'recall': return recallView();
     case 'anc': return ancView();
+    case 'labResults': return labResultsView();
     case 'tokenDisplay': return tokenDisplayView();
     case 'dailyClose': return `<div class="page-head"><h1>Daily close</h1></div>${dailyCloseHTML()}`;
     case 'dueList': return `<div class="page-head"><h1>Tomorrow due list</h1></div>${dueListPrintHTML()}`;
@@ -5508,11 +5602,21 @@ function updateRxInteractionWarnings(){
   if(!box || !state.draftVisit) return;
   const hits = findDrugInteractions(state.draftVisit.prescriptions);
   const dups = findDuplicateMeds(state.draftVisit.prescriptions);
-  let html = hits.map(h =>
-    `<div class="rx-interact-warn">⚠ Possible overlap (${esc(h.group)}): ${h.meds.map(esc).join(' + ')}. Review before saving.</div>`
-  ).join('');
-  if(dups.length){
-    html += `<div class="rx-interact-warn">⚠ Same medicine listed more than once: ${dups.map(esc).join(', ')}.</div>`;
+  const allergyHits = (state.draftVisit.prescriptions||[])
+    .map(r=>({medicine:r.medicine, hit:r.medicine?allergyMatch(r.medicine):null}))
+    .filter(x=>x.hit);
+  let html = '';
+  if(allergyHits.length || hits.length || dups.length){
+    html += `<div class="rx-hard-stop"><strong>⚠ Safety review required before save</strong>`;
+    allergyHits.forEach(x=>{ html += `<div>Allergy: ${esc(x.medicine)} matches listed "${esc(x.hit)}"</div>`; });
+    hits.forEach(h=>{ html += `<div>Overlap (${esc(h.group)}): ${h.meds.map(esc).join(' + ')}</div>`; });
+    if(dups.length) html += `<div>Duplicate: ${dups.map(esc).join(', ')}</div>`;
+    html += `<label style="display:flex;align-items:center;gap:8px;font-size:13.5px;margin:10px 0 6px;">
+      <input type="checkbox" id="rx-safety-ack"> I have reviewed and accept clinical responsibility
+    </label>
+    <div class="field" style="margin:0;"><label>Type OVERRIDE to allow save</label>
+      <input id="rx-safety-override" placeholder="OVERRIDE" autocomplete="off" style="max-width:200px;text-transform:uppercase;">
+    </div></div>`;
   }
   box.innerHTML = html;
 }
@@ -6760,24 +6864,65 @@ function consultStickyServeHTML(){
 function visitAttachmentsHTML(dv){
   const list = (dv.attachments||[]);
   return `
-    <input type="file" id="visit-attach-input" accept="image/*,.pdf" style="display:none;" onchange="addVisitAttachment(this.files[0])">
-    <button class="btn btn-sm" onclick="document.getElementById('visit-attach-input').click()">+ Attach photo / scan</button>
-    <div class="attach-grid">
-      ${list.map((a,i)=> a.dataUrl && a.dataUrl.startsWith('data:image')
-        ? `<div><img class="attach-thumb" src="${a.dataUrl}" alt="${esc(a.name||'')}" onclick="window.open(this.src)"><div class="faint" style="font-size:11px;">${esc(a.name||'file')}</div>
-           <button class="btn btn-ghost btn-sm" onclick="removeVisitAttachment(${i})">Remove</button></div>`
-        : `<div class="card" style="padding:8px;"><div class="faint">${esc(a.name||'file')}</div>
-           <button class="btn btn-ghost btn-sm" onclick="removeVisitAttachment(${i})">Remove</button></div>`
-      ).join('')}
+    <div class="visit-section">
+      <div class="visit-section-title">Photos / attachments</div>
+      <p class="faint" style="margin-bottom:8px;">Phone camera photos (rash, wound, report) or PDF scan — compressed automatically. Max ~6 per visit.</p>
+      <div class="attach-actions">
+        <input type="file" id="visit-attach-input" accept="image/*,.pdf" style="display:none;" onchange="addVisitAttachment(this.files[0])">
+        <input type="file" id="visit-camera-input" accept="image/*" capture="environment" style="display:none;" onchange="addVisitAttachment(this.files[0])">
+        <button type="button" class="btn btn-sm" onclick="document.getElementById('visit-camera-input').click()">📷 Take photo</button>
+        <button type="button" class="btn btn-sm" onclick="document.getElementById('visit-attach-input').click()">+ Attach file / gallery</button>
+      </div>
+      <div class="attach-grid">
+        ${list.map((a,i)=> `
+          <div class="attach-card">
+            ${a.dataUrl && a.dataUrl.startsWith('data:image')
+              ? `<img class="attach-thumb" src="${a.dataUrl}" alt="${esc(a.name||'')}" onclick="window.open(this.src)">`
+              : `<div class="pill">PDF / file</div>`}
+            <div class="faint" style="font-size:11px;margin-top:4px;">${esc(a.caption||a.name||'file')}</div>
+            <input placeholder="Caption" value="${esc(a.caption||'')}" style="width:100%;font-size:12px;margin-top:4px;padding:4px 6px;border:1px solid var(--line);border-radius:6px;"
+              onchange="state.draftVisit.attachments[${i}].caption=this.value">
+            <button type="button" class="btn btn-ghost btn-sm" onclick="removeVisitAttachment(${i})">Remove</button>
+          </div>`).join('') || '<span class="faint">No attachments yet</span>'}
+      </div>
     </div>`;
 }
-function addVisitAttachment(file){
+function compressImageDataUrl(dataUrl, maxSide, quality){
+  return new Promise((resolve)=>{
+    const img = new Image();
+    img.onload = ()=>{
+      let w = img.width, h = img.height;
+      const max = maxSide || 1280;
+      if(w > max || h > max){
+        if(w > h){ h = Math.round(h * max / w); w = max; }
+        else { w = Math.round(w * max / h); h = max; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', quality || 0.72));
+    };
+    img.onerror = ()=> resolve(dataUrl);
+    img.src = dataUrl;
+  });
+}
+async function addVisitAttachment(file){
   if(!file || !state.draftVisit) return;
-  if(file.size > 800*1024){ alert('Keep attachments under 800KB so clinic data stays manageable.'); return; }
+  if(!state.draftVisit.attachments) state.draftVisit.attachments = [];
+  if(state.draftVisit.attachments.length >= 6){ alert('Maximum 6 attachments per visit.'); return; }
   const reader = new FileReader();
-  reader.onload = ()=>{
-    if(!state.draftVisit.attachments) state.draftVisit.attachments = [];
-    state.draftVisit.attachments.push({name:file.name, dataUrl:reader.result, at:new Date().toISOString()});
+  reader.onload = async ()=>{
+    let dataUrl = reader.result;
+    let name = file.name || 'attachment';
+    if(file.type && file.type.startsWith('image/')){
+      try{ dataUrl = await compressImageDataUrl(dataUrl, 1280, 0.72); name = name.replace(/\.[^.]+$/, '') + '.jpg'; }catch(e){}
+    } else if(file.size > 900*1024){
+      alert('Keep non-image files under 900KB.'); return;
+    }
+    // Rough size check on data URL
+    if(dataUrl.length > 1.2e6){ alert('Attachment still too large after compress — try a smaller photo.'); return; }
+    state.draftVisit.attachments.push({name, caption:'', dataUrl, at:new Date().toISOString()});
     render();
   };
   reader.readAsDataURL(file);
@@ -6820,22 +6965,123 @@ function missedTokenEntries(){
     return age >= minsLimit;
   });
 }
+
+function pendingLabEntries(){
+  const rows = [];
+  (state.data.patients||[]).forEach(p=>{
+    (p.visits||[]).forEach(v=>{
+      (v.investigations||[]).forEach((inv, idx)=>{
+        if(!inv || !inv.test) return;
+        const hasResult = (inv.result||'').trim() || (inv.components && Object.values(inv.components).some(x=>String(x||'').trim()));
+        if(!hasResult) rows.push({patient:p, visit:v, inv, invIdx:idx});
+      });
+    });
+  });
+  // Recent first
+  rows.sort((a,b)=> (b.visit.date||'').localeCompare(a.visit.date||'') || (b.visit.time||'').localeCompare(a.visit.time||''));
+  return rows;
+}
+function labResultsView(){
+  const pending = pendingLabEntries();
+  const filter = (state.labFilter||'pending');
+  const show = filter==='pending' ? pending.slice(0,80) : pending; // pending only for now
+  const rows = show.map(({patient:p, visit:v, inv, invIdx}, i)=>{
+    return `<tr>
+      <td><strong>${esc(p.name)}</strong><div class="faint">${esc(p.id)} · ${fmtDate(v.date)}</div></td>
+      <td>${esc(inv.test)}</td>
+      <td><input data-lab-batch="${p.id}|${v.id}|${invIdx}" placeholder="Result / value" style="min-width:140px;"></td>
+      <td><input data-lab-batch-notes="${p.id}|${v.id}|${invIdx}" placeholder="Notes" style="min-width:100px;"></td>
+      <td><button class="btn btn-sm" onclick="go('visitPrint',{patientId:'${p.id}',visitId:'${v.id}'})">Full panel</button></td>
+    </tr>`;
+  }).join('') || `<tr><td colspan="5" class="faint">No pending lab results — open a visit and add investigations, or enter results on Visit summary.</td></tr>`;
+  return `
+    <div class="page-head">
+      <div><h1>Lab results entry</h1><p class="muted">${pending.length} test(s) awaiting results</p></div>
+      <button class="btn btn-ghost" onclick="go('dashboard')">Back</button>
+    </div>
+    <div class="card">
+      <p class="faint" style="margin-bottom:12px;">Quick grid for free-text results. For structured panels (CBC, LFT…), open <strong>Full panel</strong> on the visit. Saving writes the result onto each investigation line.</p>
+      <div style="overflow-x:auto;">
+        <table class="lab-batch-table"><thead><tr><th>Patient</th><th>Test</th><th>Result</th><th>Notes</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table>
+      </div>
+      <button class="btn btn-primary" style="margin-top:14px;" onclick="saveLabBatchResults()">Save entered results</button>
+      <span id="lab-batch-msg" class="faint" style="margin-left:10px;"></span>
+    </div>`;
+}
+async function saveLabBatchResults(){
+  let n = 0;
+  document.querySelectorAll('[data-lab-batch]').forEach(el=>{
+    const val = el.value.trim();
+    if(!val) return;
+    const [pid, vid, idxStr] = el.getAttribute('data-lab-batch').split('|');
+    const p = state.data.patients.find(x=>x.id===pid);
+    const v = p && (p.visits||[]).find(x=>x.id===vid);
+    const idx = Number(idxStr);
+    if(!v || !v.investigations || !v.investigations[idx]) return;
+    const notesEl = document.querySelector(`[data-lab-batch-notes="${pid}|${vid}|${idxStr}"]`);
+    const notes = notesEl ? notesEl.value.trim() : '';
+    v.investigations[idx].result = notes ? (val + (val.includes(notes)?'':' | '+notes)) : val;
+    n++;
+  });
+  if(!n){ const m=document.getElementById('lab-batch-msg'); if(m) m.textContent='Nothing to save — enter at least one result.'; return; }
+  logAudit('Batch lab results', n+' result(s) entered');
+  const ok = await saveData();
+  const m=document.getElementById('lab-batch-msg');
+  if(m) m.textContent = ok ? ('Saved '+n+' result(s) ✓') : 'Could not save';
+  if(ok) render();
+}
+
 function tokenDisplayView(){
   const now = nowServingEntry();
   const next = nextWaitingEntry();
-  const waiting = waitingTokenQueue().filter(({visit:v})=>tokenQueueStatus(v)==='waiting').slice(0,8);
+  const waiting = waitingTokenQueue().filter(({visit:v})=>tokenQueueStatus(v)==='waiting').slice(0,10);
+  const nextList = next ? [next, ...waiting.filter(x=>!next || x.visit.id!==next.visit.id)].slice(0,6) : waiting.slice(0,6);
+  const clock = new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
   // Auto-refresh while this screen is open
-  setTimeout(()=>{ if(state.route==='tokenDisplay') render(); }, 8000);
+  setTimeout(()=>{ if(state.route==='tokenDisplay') render(); }, 5000);
+  try{ document.documentElement.requestFullscreen && state.tokenFsRequested; }catch(e){}
   return `
-    <div class="token-display-page">
+    <div class="token-display-page" onclick="if(event.target.classList.contains('token-display-page')) tryTokenFullscreen()">
+      <div class="td-clock">${esc(clock)}</div>
       <div class="td-clinic">${esc((state.data.clinicInfo||{}).name||'Clinic')}</div>
       <div class="td-label">Now serving</div>
       <div class="td-num">${now && now.visit.token!=null ? '#'+now.visit.token : '—'}</div>
-      <div class="td-name">${now ? esc(now.patient.name) : ''}</div>
-      <div class="td-next">Up next: ${next && next.visit.token!=null ? '#'+next.visit.token+' · '+esc(next.patient.name) : '—'}</div>
-      <div class="td-list">${waiting.length ? 'Waiting: '+waiting.map(x=>'#'+x.visit.token).join(' · ') : 'Queue empty'}</div>
-      <button class="btn btn-ghost" style="margin-top:28px;color:#fff;border-color:rgba(255,255,255,0.3);" onclick="go('dashboard')">Exit display</button>
+      <div class="td-name">${now ? esc(now.patient.name) : (waiting.length?'—':'No patients waiting')}</div>
+      ${now && (now.visit.doctorName||now.visit.assignedDoctor) ? `<div class="td-doc">${esc(now.visit.doctorName||now.visit.assignedDoctor)}</div>` : ''}
+      <div class="td-panels">
+        <div class="td-panel">
+          <h3>Up next</h3>
+          ${nextList.length ? nextList.map(({patient,visit})=>`
+            <div class="td-next-row">
+              <div class="td-badge">#${visit.token!=null?visit.token:'—'}</div>
+              <div>
+                <div style="font-size:18px;font-weight:600;">${esc(patient.name)}</div>
+                <div style="font-size:13px;opacity:0.55;">${esc(visit.doctorName||visit.assignedDoctor||'')}</div>
+              </div>
+            </div>`).join('') : `<div style="opacity:0.5;">Queue empty</div>`}
+        </div>
+        <div class="td-panel">
+          <h3>Waiting (${waiting.length})</h3>
+          <div style="font-size:22px;line-height:1.6;letter-spacing:0.04em;">
+            ${waiting.length ? waiting.map(x=>'#'+x.visit.token).join('  ·  ') : '—'}
+          </div>
+          <p style="margin-top:16px;font-size:13px;opacity:0.45;">Please listen for your token number</p>
+        </div>
+      </div>
+      <button class="btn btn-ghost td-exit" onclick="exitTokenDisplay()">Exit display</button>
     </div>`;
+}
+function tryTokenFullscreen(){
+  try{
+    if(!document.fullscreenElement && document.documentElement.requestFullscreen){
+      document.documentElement.requestFullscreen().catch(()=>{});
+    }
+  }catch(e){}
+}
+function exitTokenDisplay(){
+  try{ if(document.fullscreenElement) document.exitFullscreen(); }catch(e){}
+  go('dashboard');
 }
 function dailyCloseHTML(){
   const today = todayStr();
@@ -6860,7 +7106,44 @@ function dailyCloseHTML(){
   });
   const fmt = n => '₹'+(Math.round(n*100)/100).toLocaleString('en-IN');
   const staffRows = Object.keys(byStaff).map(k=>`<tr><td>${esc(k)}</td><td>${byStaff[k].completed}</td><td>${byStaff[k].waiting}</td></tr>`).join('') || '<tr><td colspan="3" class="faint">No visits today</td></tr>';
+  const tomorrow = (()=>{ const d=new Date(); d.setDate(d.getDate()+1); return d.toISOString().slice(0,10); })();
+  const tomorrowAppts = (state.data.appointments||[]).filter(a=>a.date===tomorrow && (a.status==='booked'||!a.status)).length;
+  const pendingLabs = typeof pendingLabEntries==='function' ? pendingLabEntries().length : 0;
+  const lb = state.data.lastBackupAt;
+  const backupDays = lb ? Math.floor((Date.now()-new Date(lb).getTime())/86400000) : 999;
+  const checks = state.eodChecks || {};
+  const item = (key, title, sub, actionHtml) => {
+    const done = !!checks[key];
+    return `<div class="eod-check ${done?'done':''}">
+      <input type="checkbox" ${done?'checked':''} onchange="toggleEodCheck('${key}', this.checked)">
+      <div class="eod-body">
+        <div class="eod-title">${title}</div>
+        <div class="eod-sub">${sub}</div>
+        ${actionHtml||''}
+      </div>
+    </div>`;
+  };
+  const checklist = `
+    <div class="card" style="margin-bottom:16px;max-width:640px;">
+      <h2 style="margin-bottom:8px;">End-of-day checklist</h2>
+      <p class="faint" style="margin-bottom:12px;">Tick each item before leaving. Progress is kept on this device for today.</p>
+      ${item('cash', 'Cash & billing reconciled', `Collected ${fmt(collected)} · Outstanding ${fmt(outstanding)} · Revenue ${fmt(revenue)}`,
+        `<button class="btn btn-sm" style="margin-top:6px;" onclick="go('billing')">Open billing</button>`)}
+      ${item('waiting', 'Waiting queue cleared', waiting ? `${waiting} patient(s) still marked waiting` : 'No one left waiting',
+        waiting?`<button class="btn btn-sm" style="margin-top:6px;" onclick="go('dashboard')">View queue</button>`:'')}
+      ${item('labs', 'Lab results caught up', pendingLabs ? `${pendingLabs} result(s) still pending` : 'No pending lab lines',
+        pendingLabs?`<button class="btn btn-sm" style="margin-top:6px;" onclick="go('labResults')">Lab entry grid</button>`:'')}
+      ${item('tomorrow', 'Tomorrow’s list reviewed', `${tomorrowAppts} appointment(s) booked for ${fmtDate(tomorrow)}`,
+        `<button class="btn btn-sm" style="margin-top:6px;" onclick="go('dueList')">Due list</button>
+         <button class="btn btn-sm" style="margin-top:6px;" onclick="go('appointments')">Appointments</button>`)}
+      ${item('backup', 'Backup considered', backupDays>=999 ? 'No full backup on record yet' : `Last backup ${backupDays} day(s) ago`,
+        isOwner()?`<button class="btn btn-sm" style="margin-top:6px;" onclick="downloadBackup()">Download backup</button>`:'')}
+      ${item('ownerWa', 'Owner summary sent', 'WhatsApp daily totals to clinic owner',
+        `<button class="btn btn-sm btn-accent" style="margin-top:6px;" onclick="sendDailyCloseWhatsApp(); toggleEodCheck('ownerWa', true);">WhatsApp owner</button>`)}
+      <p class="faint" style="margin-top:10px;">${Object.keys(checks).filter(k=>checks[k]).length} / 6 items done</p>
+    </div>`;
   return `
+    ${checklist}
     <div class="print-sheet" id="sheet-daily-close" style="max-width:640px;">
       <div class="letterhead">${logoImgHTML(state.data.clinicInfo||{})}<div class="clinic-name">${esc((state.data.clinicInfo||{}).name||'')}</div></div>
       <div class="sheet-title">Daily close — ${fmtDate(today)}</div>
@@ -6882,6 +7165,24 @@ function dailyCloseHTML(){
       <button class="btn btn-accent" onclick="sendDailyCloseWhatsApp()">WhatsApp summary to owner</button>
     </div>`;
 }
+function toggleEodCheck(key, on){
+  if(!state.eodChecks) state.eodChecks = {};
+  const day = todayStr();
+  if(state.eodCheckDay !== day){ state.eodChecks = {}; state.eodCheckDay = day; }
+  state.eodChecks[key] = !!on;
+  try{ localStorage.setItem('mmc_eod_'+day, JSON.stringify(state.eodChecks)); }catch(e){}
+  render();
+}
+function loadEodChecks(){
+  const day = todayStr();
+  if(state.eodCheckDay === day && state.eodChecks) return;
+  state.eodCheckDay = day;
+  try{
+    const raw = localStorage.getItem('mmc_eod_'+day);
+    state.eodChecks = raw ? JSON.parse(raw) : {};
+  }catch(e){ state.eodChecks = {}; }
+}
+
 function staffActivityTodayHTML(){
   const today = todayStr();
   const entries = (state.data.auditLog||[]).filter(e => (e.ts||'').slice(0,10)===today || (e.ts&&new Date(e.ts).toISOString().slice(0,10)===today));
