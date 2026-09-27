@@ -771,7 +771,7 @@
   .opdx-vital-lbl{display:block;font-size:9.5px;font-weight:700;color:#8A94A6;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px;}
   .opdx-vital-val{font-family:'Source Serif 4',serif;font-size:16px;font-weight:700;color:#132038;line-height:1.2;}
   .opdx-vital-unit{font-size:9.5px;color:#8A94A6;font-weight:500;}
-  .opdx-rx-symbol{font-family:'Source Serif 4',serif;font-size:28px;font-weight:700;color:#1B4F6E;line-height:1;margin:4px 0 8px;}
+  .opdx-rx-symbol{font-family:'Public Sans',-apple-system,sans-serif;font-size:15px;font-weight:700;color:#132038;letter-spacing:0.02em;line-height:1.2;margin:8px 22px 4px;}
   .opdx-advice-box{margin:12px 22px 0;padding:12px 14px;background:#E5F5F3;border:1px solid rgba(36,150,136,0.25);border-radius:10px;font-size:13px;color:#152033;}
   .opdx-advice-box .opdx-c-title{margin-bottom:4px;color:#1B6E63;}
   .opdx-receipt-total{font-family:'Source Serif 4',serif;font-size:22px;font-weight:700;color:#132038;}
@@ -990,10 +990,6 @@
   .cash-strip .cash-val{font-family:'Source Serif 4',serif;font-size:20px;font-weight:700;color:var(--primary-dark);}
   .cash-strip .cash-lbl{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
   .wa-btn{display:inline-flex;align-items:center;gap:5px;}
-  .boot-spinner{width:34px;height:34px;margin:16px auto 0;border-radius:50%;border:3px solid var(--line);border-top-color:var(--primary);animation:boot-spin 0.8s linear infinite;}
-  @keyframes boot-spin{to{transform:rotate(360deg);}}
-  .boot-progress{width:100%;max-width:220px;height:4px;margin:16px auto 0;background:var(--line);border-radius:2px;overflow:hidden;}
-  .boot-progress > div{height:100%;background:var(--primary);border-radius:2px;transition:width 0.4s linear;}
 
 </style>
 </head>
@@ -1020,7 +1016,6 @@
 
 let state = {
   loading: true,
-  pageLoadStartedAt: Date.now(), // first-visit clock, separate from retryStartedAt (set on manual retry)
   loadError: null, // set when the initial fetch of clinic data fails
   saveError: null,
   data: null,
@@ -1498,47 +1493,7 @@ function tokenBoardHTML(){
       ${now && can('clinicalVisit') ? `<button class="btn btn-primary" onclick="startTokenConsult('${now.patient.id}','${now.visit.id}')">Open consult — ${esc(now.patient.name)}</button>` : ''}
       ${now ? `<button class="btn btn-ghost btn-sm" onclick="printTokenSlip('${now.patient.id}','${now.visit.id}')">Reprint token</button>` : ''}
       ${(state.data.lastPrinted&&state.data.lastPrinted.patientId) ? `<button class="btn btn-ghost btn-sm" onclick="reprintLast()">Reprint last document</button>` : ''}
-      <button class="btn btn-ghost btn-sm" onclick="go('waitingBoard')">Open waiting-room display</button>
     </div>`;
-}
-
-// ---- Waiting-room display ----
-// A no-chrome, large-text version of the token queue meant to be left open
-// full-screen on a TV/tablet in the waiting area so patients can see their
-// own turn without asking staff. Requires being logged in like the rest of
-// the app (no new unauthenticated endpoint) — open it once on a shared
-// device and leave the tab running; it refreshes itself every 10s.
-let _waitingBoardTickScheduled = false;
-function scheduleWaitingBoardTick(){
-  if(_waitingBoardTickScheduled) return;
-  _waitingBoardTickScheduled = true;
-  setTimeout(async ()=>{
-    _waitingBoardTickScheduled = false;
-    if(state.route==='waitingBoard' && state.session.staffName){
-      await loadData(); // loadData() re-renders when it finishes
-    }
-  }, 10000);
-}
-function waitingBoardView(){
-  const now = nowServingEntry();
-  const next = nextWaitingEntry();
-  const waiting = waitingTokenQueue().filter(({visit:v})=>tokenQueueStatus(v)==='waiting');
-  const clinic = (state.data.clinicInfo||{}).name || 'Clinic';
-  scheduleWaitingBoardTick();
-  return `<div style="min-height:100vh;background:var(--bg);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;">
-    <button class="btn btn-ghost btn-sm" style="position:fixed;top:14px;right:14px;" onclick="go('dashboard')">Exit display</button>
-    <div style="font-size:18px;color:var(--ink-soft);margin-bottom:24px;">${esc(clinic)}</div>
-    <div style="background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:40px 60px;margin-bottom:28px;min-width:280px;">
-      <div style="font-size:20px;color:var(--ink-soft);letter-spacing:1px;">NOW SERVING</div>
-      <div style="font-size:120px;font-weight:800;color:var(--primary-dark,var(--primary));line-height:1.1;">${now && now.visit.token!=null ? '#'+now.visit.token : '—'}</div>
-      <div style="font-size:26px;">${now ? esc(now.patient.name) : 'No patient called'}</div>
-    </div>
-    <div style="background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px 40px;min-width:220px;">
-      <div style="font-size:15px;color:var(--ink-soft);letter-spacing:1px;">UP NEXT</div>
-      <div style="font-size:48px;font-weight:700;">${next && next.visit.token!=null ? '#'+next.visit.token : '—'}</div>
-      <div style="font-size:16px;color:var(--ink-soft);margin-top:4px;">${waiting.length} waiting</div>
-    </div>
-  </div>`;
 }
 
 
@@ -2310,6 +2265,8 @@ async function loadStaffListForLogin(){
         const json = await res.json();
         state.data = defaultData();
   bootClinicGuards();
+      bootClinicGuards();
+        bootClinicGuards();
         state.data.staff = json.staff || [];
         ensureStaffAuthMethods();
         state.loadError = null;
@@ -2329,6 +2286,7 @@ async function loadStaffListForLogin(){
     if(cached && Array.isArray(cached) && cached.length){
       state.data = defaultData();
   bootClinicGuards();
+      bootClinicGuards();
       state.data.staff = cached;
       state.loadError = null;
       state.loginError = 'Using a cached staff list — the server may still be waking up. Log in, or tap Try again if login fails.';
@@ -2565,28 +2523,6 @@ function remindApptWhatsApp(apptId){
     if(p){ phone = phone || p.phone || ''; name = name || p.name || ''; }
   }
   shareWhatsApp(phone, appointmentWhatsAppText({name, date:a.date, time:a.time, doctorName:a.doctorName}));
-}
-// Bulk version of remindApptWhatsApp — same "open WhatsApp, no Business API"
-// approach as remindAllDueList: WhatsApp's own click-to-chat links can't be
-// fired silently from the server, so this opens one wa.me tab per patient
-// with tomorrow's appointment, in one confirmed batch instead of clicking
-// each "WhatsApp" button on the dashboard one at a time.
-async function remindAllApptsTomorrow(){
-  const tomorrow = tomorrowStr();
-  const targets = appointmentsForDate(tomorrow).filter(a=>(a.status==='booked' || !a.status)).map(a=>{
-    let phone = a.phone || '';
-    let name = a.name || '';
-    if(a.patientId){
-      const p = state.data.patients.find(x=>x.id===a.patientId);
-      if(p){ phone = phone || p.phone || ''; name = name || p.name || ''; }
-    }
-    return {a, phone, name};
-  }).filter(x=>x.phone);
-  if(!targets.length){ alert('No appointments tomorrow with a phone number.'); return; }
-  if(!confirm(`Open WhatsApp for ${targets.length} appointment(s) tomorrow?`)) return;
-  for(const {a, phone, name} of targets){
-    shareWhatsApp(phone, appointmentWhatsAppText({name, date:a.date, time:a.time, doctorName:a.doctorName}));
-  }
 }
 function appointmentWhatsAppText(a){
   const ci = state.data.clinicInfo || {};
@@ -3442,6 +3378,103 @@ async function checkInAppointment(id){
   }
 }
 
+
+/* ============================= SYSTEMIC EXAM + CO-MORBIDITIES ============================= */
+const SYSTEMIC_NORMAL = {
+  cvs: 'S1 S2 normal, no murmur',
+  rs: 'Bilateral air entry normal',
+  pa: 'Soft, non-tender',
+  cns: 'Conscious, oriented'
+};
+function emptySystemicExam(){ return {cvs:'', rs:'', pa:'', cns:''}; }
+function parseSystemicExam(examObj, examText){
+  const out = emptySystemicExam();
+  if(examObj && typeof examObj === 'object'){
+    out.cvs = examObj.cvs || '';
+    out.rs = examObj.rs || '';
+    out.pa = examObj.pa || examObj.abdomen || '';
+    out.cns = examObj.cns || '';
+  }
+  if((out.cvs||out.rs||out.pa||out.cns)) return out;
+  const text = examText || '';
+  if(!text) return out;
+  // Recover structured fields from older free-text examination
+  const grab = (label) => {
+    const re = new RegExp(label+'\\s*[:\\-]\\s*([^\\n]+)', 'i');
+    const m = text.match(re);
+    return m ? m[1].trim() : '';
+  };
+  out.cvs = grab('CVS');
+  out.rs = grab('RS');
+  out.pa = grab('P\\/A') || grab('PA') || grab('Abdomen');
+  out.cns = grab('CNS');
+  if(!out.cvs && !out.rs && !out.pa && !out.cns){
+    // keep as generic note in CVS so nothing is lost
+    out.cvs = text;
+  }
+  return out;
+}
+function formatSystemicExam(se){
+  if(!se) return '';
+  const lines = [];
+  if(se.cvs) lines.push('CVS: '+se.cvs);
+  if(se.rs) lines.push('RS: '+se.rs);
+  if(se.pa) lines.push('P/A: '+se.pa);
+  if(se.cns) lines.push('CNS: '+se.cns);
+  return lines.join('\n');
+}
+function readSystemicExamFromForm(){
+  const g = id => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
+  return { cvs:g('v-sx-cvs'), rs:g('v-sx-rs'), pa:g('v-sx-pa'), cns:g('v-sx-cns') };
+}
+function markSystemicAllNormal(){
+  const se = SYSTEMIC_NORMAL;
+  ['cvs','rs','pa','cns'].forEach(k=>{
+    const el = document.getElementById('v-sx-'+k);
+    if(el) el.value = se[k];
+  });
+  if(state.draftVisit){
+    state.draftVisit.systemicExam = {...se};
+    state.draftVisit.examination = formatSystemicExam(se);
+  }
+}
+function systemicExamFormHTML(se){
+  se = se || emptySystemicExam();
+  const row = (id, label, val) => `
+    <div class="field">
+      <label>${label}</label>
+      <input id="${id}" value="${esc(val||'')}" oninput="if(state.draftVisit){ if(!state.draftVisit.systemicExam) state.draftVisit.systemicExam=emptySystemicExam(); state.draftVisit.systemicExam.${id.replace('v-sx-','')}=this.value; }">
+    </div>`;
+  return `
+    <div class="field" style="margin-bottom:8px;">
+      <div class="row" style="justify-content:space-between;align-items:center;gap:8px;">
+        <label style="margin:0;">Systemic examination</label>
+        <button type="button" class="btn btn-sm" onclick="markSystemicAllNormal()">Mark all normal</button>
+      </div>
+    </div>
+    ${row('v-sx-cvs','CVS', se.cvs)}
+    ${row('v-sx-rs','RS', se.rs)}
+    ${row('v-sx-pa','P/A', se.pa)}
+    ${row('v-sx-cns','CNS', se.cns)}`;
+}
+function systemicExamPrintHTML(v){
+  const se = parseSystemicExam(v.systemicExam, v.examination);
+  const rows = [
+    se.cvs ? `<div><strong>CVS</strong> — ${esc(se.cvs)}</div>` : '',
+    se.rs ? `<div><strong>RS</strong> — ${esc(se.rs)}</div>` : '',
+    se.pa ? `<div><strong>P/A</strong> — ${esc(se.pa)}</div>` : '',
+    se.cns ? `<div><strong>CNS</strong> — ${esc(se.cns)}</div>` : ''
+  ].filter(Boolean).join('');
+  if(rows) return rows;
+  if(v.examination) return esc(v.examination);
+  return '—';
+}
+function comorbiditiesPrintHTML(p, v){
+  const text = (v && v.comorbidities) ? v.comorbidities : (p && p.chronicConditions) || '';
+  if(!text) return '';
+  return `<div class="opdx-c-block"><div class="opdx-c-icon">M</div><div class="opdx-c-body"><div class="opdx-c-title">Co-morbidities</div><div class="opdx-c-text">${esc(text)}</div></div></div>`;
+}
+
 /* ============================= NEW VISIT (draft) ============================= */
 function initDraftVisit(patientId, existingVisit){
   if(existingVisit){
@@ -3452,6 +3485,8 @@ function initDraftVisit(patientId, existingVisit){
       doctorName: existingVisit.doctorName || state.session.staffName || '',
       vitals: { bp:'', pulse:'', temp:'', weight:'', height:'', ...(existingVisit.vitals||{}) },
       complaints: existingVisit.complaints||'', examination: existingVisit.examination||'',
+      systemicExam: parseSystemicExam(existingVisit.systemicExam, existingVisit.examination),
+      comorbidities: existingVisit.comorbidities || '',
       diagnosis: existingVisit.diagnosis||'', notes: existingVisit.notes||'',
       followUpDate: existingVisit.followUpDate||'',
       assignedDoctor: existingVisit.assignedDoctor||'',
@@ -3469,7 +3504,7 @@ function initDraftVisit(patientId, existingVisit){
       editingVisitId: null,
       doctorName: state.session.staffName || '',
       vitals: {bp:'',pulse:'',temp:'',weight:'',height:''},
-      complaints:'', examination:'', diagnosis:'', notes:'', followUpDate:'', assignedDoctor:'',
+      complaints:'', examination:'', systemicExam: emptySystemicExam(), comorbidities:'', diagnosis:'', notes:'', followUpDate:'', assignedDoctor:'',
       referredTo:'', referralReason:'',
       attachments: [],
       prescriptions: [{medicine:'',dosage:'',frequency:'',duration:'',instructions:''}],
@@ -3518,7 +3553,7 @@ function snapshotVisitFormFields(){
     patientId: dv.patientId, newPatient: dv.newPatient, editingVisitId: dv.editingVisitId,
     doctorName: val('v-doctor'),
     vitals: { bp: val('v-bp'), pulse: val('v-pulse'), temp: val('v-temp'), weight: val('v-weight'), height: val('v-height') },
-    complaints: val('v-complaints'), examination: val('v-exam'),
+    complaints: val('v-complaints'), examination: formatSystemicExam(readSystemicExamFromForm()) || val('v-exam'), systemicExam: readSystemicExamFromForm(), comorbidities: val('v-comorbid'),
     diagnosis: val('v-diagnosis'), notes: val('v-notes'), followUpDate: val('v-followup'),
     referredTo: val('v-referred-to'), referralReason: val('v-referral-reason'),
     prescriptions: prescriptions.length ? prescriptions : undefined,
@@ -3590,6 +3625,8 @@ function restoreVisitDraftIfAny(){
   dv.vitals = Object.assign({}, dv.vitals, snap.vitals||{});
   if(snap.complaints) dv.complaints = snap.complaints;
   if(snap.examination) dv.examination = snap.examination;
+  if(snap.systemicExam) dv.systemicExam = snap.systemicExam;
+  if(snap.comorbidities) dv.comorbidities = snap.comorbidities;
   if(snap.diagnosis) dv.diagnosis = snap.diagnosis;
   if(snap.notes) dv.notes = snap.notes;
   if(snap.followUpDate) dv.followUpDate = snap.followUpDate;
@@ -3722,7 +3759,19 @@ async function saveVisit(){
   if(document.getElementById('v-doctor') !== null){
     dv.doctorName = val('v-doctor');
     dv.complaints = val('v-complaints');
-    dv.examination = val('v-exam');
+    if(document.getElementById('v-sx-cvs')){
+      dv.systemicExam = readSystemicExamFromForm();
+      dv.examination = formatSystemicExam(dv.systemicExam);
+    } else {
+      dv.examination = val('v-exam');
+    }
+    if(document.getElementById('v-comorbid')){
+      dv.comorbidities = val('v-comorbid');
+      if(dv.patientId && dv.comorbidities){
+        const ep = state.data.patients.find(x=>x.id===dv.patientId);
+        if(ep) ep.chronicConditions = dv.comorbidities;
+      }
+    }
     dv.diagnosis = val('v-diagnosis');
     dv.notes = val('v-notes');
     dv.followUpDate = val('v-followup');
@@ -3882,6 +3931,8 @@ async function saveVisit(){
     visit.vitals = dv.vitals;
     visit.complaints = dv.complaints;
     visit.examination = dv.examination;
+    if(dv.systemicExam) visit.systemicExam = dv.systemicExam;
+    if(dv.comorbidities!=null) visit.comorbidities = dv.comorbidities;
     visit.diagnosis = dv.diagnosis;
     visit.notes = dv.notes;
     visit.followUpDate = dv.followUpDate;
@@ -3901,7 +3952,7 @@ async function saveVisit(){
     visit = {
       id: newVisitId(), token: nextTokenNumber(), date: todayStr(), time: nowTimeStr(),
       doctorName: dv.doctorName, vitals: dv.vitals,
-      complaints: dv.complaints, examination: dv.examination, diagnosis: dv.diagnosis, notes: dv.notes,
+      complaints: dv.complaints, examination: dv.examination, systemicExam: dv.systemicExam||emptySystemicExam(), comorbidities: dv.comorbidities||'', diagnosis: dv.diagnosis, notes: dv.notes,
       followUpDate: dv.followUpDate, assignedDoctor: dv.assignedDoctor||'',
       referredTo: dv.referredTo||'', referralReason: dv.referralReason||'',
       prescriptions, investigations, status,
@@ -4240,7 +4291,7 @@ function rxCardHTML(prescriptions){
   const prefs = typeof printPrefs==='function' ? printPrefs() : {};
   const showQty = prefs.showQtyOnRx !== false;
   return `<div class="opdx-rx-card">
-    <div class="opdx-rx-head"><span class="opdx-rx-head-title">℞  ${esc(typeof printLabel==='function'?printLabel('Prescription','ಪ್ರಿಸ್ಕ್ರಿಪ್ಷನ್'):'Prescription')}</span></div>
+    <div class="opdx-rx-head"><span class="opdx-rx-head-title">Rx · ${esc(typeof printLabel==='function'?printLabel('Prescription','ಪ್ರಿಸ್ಕ್ರಿಪ್ಷನ್'):'Prescription')}</span></div>
     <div class="opdx-rx-body">
       ${prescriptions.map((r,i)=>{
         const days = daysLabel(r.duration);
@@ -4519,46 +4570,15 @@ async function doReset(){
 
 /* ============================= VIEWS ============================= */
 function loadingView(){
-  const startedAt = state.retryStartedAt || state.pageLoadStartedAt || Date.now();
-  const elapsed = Date.now() - startedAt;
-  const WAKE_THRESHOLD = 3000;   // below this, could just be a normal fast load — don't alarm anyone
-  const WAKE_EXPECTED_MAX = 60000; // typical free-tier cold start tops out around here
-  let title, sub, showBar = false, barPct = 0;
-  if(elapsed < WAKE_THRESHOLD){
-    title = 'Loading…';
-    sub = 'Fetching clinic records…';
-  } else if(elapsed < WAKE_EXPECTED_MAX){
-    title = 'Waking up the clinic server…';
-    sub = `Free hosting sleeps after a few idle minutes and can take 20–60 seconds to start (${Math.round(elapsed/1000)}s so far). Please wait — this page opens automatically once it's ready.`;
-    showBar = true;
-    barPct = Math.min(100, Math.round((elapsed / WAKE_EXPECTED_MAX) * 100));
-  } else {
-    title = 'Still waking up…';
-    sub = `This is taking longer than usual (${Math.round(elapsed/1000)}s). Keep this tab open — it should still come through. If nothing happens past 2 minutes, check your connection and reload.`;
-    showBar = true;
-    barPct = 100;
-  }
-  scheduleLoadingTick();
+  const waking = state.retryStartedAt && (Date.now() - state.retryStartedAt < 90000);
   return `<div class="center-screen"><div class="auth-card" style="text-align:center;">
     ${typeof brandMarkHTML==='function'?brandMarkHTML({size:48}):'<div class="brand-mark">MMC</div>'}
-    <div class="boot-spinner" aria-hidden="true"></div>
-    <h1 style="font-size:18px;margin-top:14px;">${title}</h1>
-    <p class="muted" style="font-size:13px;margin-top:8px;">${sub}</p>
-    ${showBar ? `<div class="boot-progress" aria-hidden="true"><div style="width:${barPct}%;"></div></div>` : ''}
+    <h1 style="font-size:18px;">${waking ? 'Connecting to clinic…' : 'Loading…'}</h1>
+    <p class="muted" style="font-size:13px;margin-top:8px;">${waking
+      ? 'Free hosting often needs 20–60 seconds to wake. Please wait — this page will open when ready.'
+      : 'Fetching clinic records…'}</p>
     <div class="faint" style="margin-top:14px;">Do not close this tab</div>
   </div></div>`;
-}
-// Re-renders the loading screen periodically so the elapsed-time message and
-// progress bar keep updating while we wait on a slow/cold server response.
-// Stops on its own once state.loading flips false (data arrived or failed).
-let _loadingTickScheduled = false;
-function scheduleLoadingTick(){
-  if(_loadingTickScheduled) return;
-  _loadingTickScheduled = true;
-  setTimeout(()=>{
-    _loadingTickScheduled = false;
-    if(state.loading) render();
-  }, 1500);
 }
 
 
@@ -4698,7 +4718,6 @@ const DASH_PANEL_META = [
   {id:'vaccines', label:'Pediatric vaccines due'},
   {id:'unfinished', label:"Today's unfinished"},
   {id:'lowstock', label:'Low stock'},
-  {id:'expiringstock', label:'Expiring stock'},
   {id:'quick', label:'Quick actions'}
 ];
 const DASH_DEFAULT_ORDER = DASH_PANEL_META.map(p=>p.id);
@@ -5175,8 +5194,7 @@ function dashboardView(){
   }).join('');
   const apptRemindCard = `
     <div class="dbx-panel">
-      <div class="dbx-panel-head"><h2>${t('Call tomorrow')}${tomorrowAppts.length?` <span class="count">${tomorrowAppts.length}</span>`:''}</h2>
-        ${tomorrowAppts.length?`<button class="link" onclick="remindAllApptsTomorrow()">Remind all</button>`:''}</div>
+      <div class="dbx-panel-head"><h2>${t('Call tomorrow')}${tomorrowAppts.length?` <span class="count">${tomorrowAppts.length}</span>`:''}</h2></div>
       ${tomorrowAppts.length ? apptRemindRows
         : `<div style="padding:0 4px;">${emptyState('📅', 'No appointments tomorrow', 'Booked appointments for tomorrow appear here so you can send reminders.')}</div>`}
     </div>`;
@@ -5232,20 +5250,6 @@ function dashboardView(){
       ${lows.length ? lowRows : `<div style="padding:0 4px;">${emptyState('📦','Stock levels look fine','Items at or below their alert quantity show up here.')}</div>`}
     </div>` : '';
 
-  const expiring = expiringStockItems();
-  const expiringRows = expiring.slice(0,12).map(s=>`
-    <div class="dbx-qrow dbx-clickable" onclick="go('stock')">
-      <div class="dbx-qtext"><div class="dbx-qname">${esc(s.name)}</div>
-      <div class="dbx-qsub">${s.expired?'Expired':'Expires'} ${fmtDate(s.expiryDate)}</div></div>
-      <span class="dbx-qstatus wait">${s.expired?'Expired':'Soon'}</span>
-    </div>`).join('');
-  const expiringStockCard = can('stock') ? `
-    <div class="dbx-panel">
-      <div class="dbx-panel-head"><h2>Expiring stock${expiring.length?` <span class="count">${expiring.length}</span>`:''}</h2>
-        <button class="link" onclick="go('stock')">Open stock</button></div>
-      ${expiring.length ? expiringRows : `<div style="padding:0 4px;">${emptyState('⏳','Nothing expiring soon','Items expiring within 30 days, or already expired, show up here.')}</div>`}
-    </div>` : '';
-
   const panelMap = {
     cash: cashStripHTML(),
     queue: queueSection,
@@ -5256,7 +5260,6 @@ function dashboardView(){
     vaccines: can('pediatrics') ? pedDueCard : '',
     unfinished: unfinishedCard,
     lowstock: lowStockCard,
-    expiringstock: expiringStockCard,
     quick: quickActionsCard
   };
   const prefs = getDashboardPrefs();
@@ -5484,7 +5487,7 @@ function newPatientView(){
       <div class="field"><label>Aadhaar number (optional)</label><input id="reg-aadhaar" type="text" inputmode="numeric" maxlength="12" placeholder="12-digit number — leave blank if not needed">
         <div class="faint" style="margin-top:4px;">Optional. This is sensitive personal data — only collect it if the clinic genuinely needs it, and only the last 4 digits are shown after saving.</div></div>
       <div class="field"><label>Known allergies</label><input id="reg-allergies" type="text" placeholder="e.g. Penicillin, Sulfa — leave blank if none known"></div>
-      <div class="field"><label>Chronic illness / conditions</label><input id="reg-chronic" type="text" placeholder="e.g. Diabetes, Hypertension — leave blank if none known"></div>
+      <div class="field"><label>Co-morbidities</label><input id="reg-chronic" type="text" placeholder="e.g. T2DM × 5 years on tab Metformin 500mg 1-0-0"></div>
       <div id="reg-error" class="error-text"></div>
       <div id="reg-dupe-warning"></div>
       <div class="row" style="margin-top:6px;">
@@ -5588,7 +5591,8 @@ function referralLetterHTML(p, v, ci){
           ${v.diagnosis?`<div class="opdx-c-block dx"><div class="opdx-c-icon">D</div><div class="opdx-c-body"><div class="opdx-c-title">Clinical diagnosis</div><div class="opdx-c-text">${esc(v.diagnosis)}</div></div></div>`:''}
           ${v.referralReason?`<div class="opdx-c-block"><div class="opdx-c-icon">R</div><div class="opdx-c-body"><div class="opdx-c-title">Reason for referral</div><div class="opdx-c-text">${esc(v.referralReason)}</div></div></div>`:''}
           ${v.complaints?`<div class="opdx-c-block"><div class="opdx-c-icon">C</div><div class="opdx-c-body"><div class="opdx-c-title">Chief complaints</div><div class="opdx-c-text">${esc(formatComplaintsForOpd(v.complaints))}</div></div></div>`:''}
-          ${v.examination?`<div class="opdx-c-block"><div class="opdx-c-icon">E</div><div class="opdx-c-body"><div class="opdx-c-title">Examination</div><div class="opdx-c-text">${esc(v.examination)}</div></div></div>`:''}
+          ${(v.systemicExam||v.examination)?`<div class="opdx-c-block"><div class="opdx-c-icon">E</div><div class="opdx-c-body"><div class="opdx-c-title">Systemic examination</div><div class="opdx-c-text">${systemicExamPrintHTML(v)}</div></div></div>`:''}
+          ${comorbiditiesPrintHTML(p, v)}
         </div>
         <div style="padding:8px 22px 4px;font-size:13.5px;color:#152033;line-height:1.55;">Kindly assess and advise. Thank you for your care of this patient.</div>
         <div class="opdx-foot">
@@ -5661,7 +5665,7 @@ function patientView(patientId){
       <div class="faint" style="margin-top:4px;">Sensitive personal data — shown masked (last 4 digits) outside this edit form.</div></div>
     ${can('viewClinical') ? `
     <div class="field"><label>Known allergies</label><input id="ep-allergies" value="${esc(p.allergies)}" placeholder="e.g. Penicillin, Sulfa — leave blank if none known"></div>
-    <div class="field"><label>Chronic illness / conditions</label><input id="ep-chronic" value="${esc(p.chronicConditions||'')}" placeholder="e.g. Diabetes, Hypertension — leave blank if none known"></div>
+    <div class="field"><label>Co-morbidities</label><input id="ep-chronic" value="${esc(p.chronicConditions||'')}" placeholder="e.g. T2DM × 5 years on tab Metformin 500mg 1-0-0"></div>
     <div class="field"><label>Past surgeries</label><textarea id="ep-surgeries" placeholder="e.g. Appendectomy (2019), C-section (2021) — leave blank if none">${esc(p.pastSurgeries||'')}</textarea></div>
     <div class="field"><label>Family history</label><textarea id="ep-family-history" placeholder="e.g. Father — diabetes; Mother — hypertension — leave blank if none known">${esc(p.familyHistory||'')}</textarea></div>
     ` : `<p class="faint">Clinical history fields are only editable by authorised clinical staff.</p>
@@ -5688,7 +5692,7 @@ function patientView(patientId){
     <div style="margin-top:8px;"><span class="faint">Emergency contact</span><div>${esc(p.emergencyContactName)||'<span class="faint">—</span>'}${p.emergencyContactPhone?' · '+esc(p.emergencyContactPhone):''}</div></div>` : ''}
     ${p.aadhaar ? `<div style="margin-top:8px;"><span class="faint">Aadhaar</span><div>${esc(maskAadhaar(p.aadhaar))}</div></div>` : ''}
     ${can('viewClinical') && p.allergies ? `<div class="banner" style="background:var(--danger-tint);color:var(--danger);margin-top:10px;"><strong>⚠ Allergies:</strong> ${esc(p.allergies)}</div>` : ''}
-    ${can('viewClinical') && p.chronicConditions ? `<div class="banner" style="background:var(--accent-tint);color:var(--accent);margin-top:10px;"><strong>Chronic illness / conditions:</strong> ${esc(p.chronicConditions)}</div>` : ''}
+    ${can('viewClinical') && p.chronicConditions ? `<div class="banner" style="background:var(--accent-tint);color:var(--accent);margin-top:10px;"><strong>Co-morbidities:</strong> ${esc(p.chronicConditions)}</div>` : ''}
     ${can('viewClinical') && p.pastSurgeries ? `<div style="margin-top:10px;"><span class="faint">Past surgeries</span><div>${esc(p.pastSurgeries)}</div></div>` : ''}
     ${can('viewClinical') && p.familyHistory ? `<div style="margin-top:10px;"><span class="faint">Family history</span><div>${esc(p.familyHistory)}</div></div>` : ''}
     ${!can('viewClinical') ? `<p class="faint" style="margin-top:10px;">Clinical history (allergies, chronic conditions, surgeries) is visible only to authorised clinical staff.</p>` : ''}
@@ -7433,7 +7437,7 @@ function visitPatientDemoHTML(p){
         </div>
         ${can('viewClinical')?`
         <div class="field"><label>Known allergies</label><input id="vd-allergies" value="${esc(p.allergies||'')}"></div>
-        <div class="field"><label>Chronic illness / conditions</label><input id="vd-chronic" value="${esc(p.chronicConditions||'')}"></div>
+        <div class="field"><label>Co-morbidities</label><input id="vd-chronic" value="${esc(p.chronicConditions||'')}"></div>
         `:''}
         <div id="vd-error" class="error-text"></div>
         <div class="row" style="margin-top:8px;gap:8px;">
@@ -7961,7 +7965,7 @@ function newVisitView(){
         <div class="field"><label>Known allergies</label><input id="np-allergies" value="${esc(np.allergies||'')}" placeholder="drug / food allergies">
           <label style="display:flex;align-items:center;gap:8px;margin-top:6px;font-size:13px;"><input type="checkbox" id="np-allergy-none"> None known</label>
         </div>
-        <div class="field"><label>Chronic illness / conditions</label><input id="np-chronic" value="${esc(np.chronicConditions||'')}" placeholder="leave blank if none known"></div>
+        <div class="field"><label>Co-morbidities</label><input id="np-chronic" value="${esc(np.chronicConditions||'')}" placeholder="leave blank if none known"></div>
       </div>`;
   } else {
     patientBlock = `
@@ -8015,7 +8019,7 @@ function newVisitView(){
   const allergyBanner = (allergyPatient && allergyPatient.allergies)
     ? `<div class="banner" style="background:var(--danger-tint);color:var(--danger);"><strong>⚠ Known allergies:</strong> ${esc(allergyPatient.allergies)}</div>` : '';
   const chronicBanner = (allergyPatient && allergyPatient.chronicConditions)
-    ? `<div class="banner" style="background:var(--accent-tint);color:var(--accent);margin-top:6px;"><strong>Chronic illness / conditions:</strong> ${esc(allergyPatient.chronicConditions)}</div>` : '';
+    ? `<div class="banner" style="background:var(--accent-tint);color:var(--accent);margin-top:6px;"><strong>Co-morbidities:</strong> ${esc(allergyPatient.chronicConditions)}</div>` : '';
   const pedNote = (allergyPatient && isPediatricPatient(allergyPatient))
     ? `<div class="banner banner-info"><strong>Pediatric patient</strong> — ${esc(opdAgeDisplay(allergyPatient))}. Dose suggestions appear under each medicine when weight is on file. <button class="btn btn-ghost btn-sm" onclick="state.pedLinkedPatientId='${allergyPatient.id}';go('pediatrics')">Pediatrics tools</button></div>` : '';
 
@@ -8053,11 +8057,15 @@ function newVisitView(){
     </div>
     <div class="visit-section">
       <div class="visit-section-title">3 · Clinical notes</div>
+      <div class="field"><label>Co-morbidities</label>
+        <textarea id="v-comorbid" rows="2">${esc(dv.comorbidities || (allergyPatient && allergyPatient.chronicConditions) || '')}</textarea>
+        <p class="faint" style="margin-top:4px;">Include years and current treatment, e.g. T2DM × 5 years on tab Metformin 500mg 1-0-0</p>
+      </div>
       <div class="field"><label>Chief complaints ${dictationBtn('v-complaints')}</label>
         <textarea id="v-complaints" oninput="onComplaintsInput(this)" placeholder="">${esc(dv.complaints)}</textarea>
         <div class="chip-row" id="complaints-chips">${chipRowHTML(chipsFor(dv.complaints, COMPLAINT_TERMS), 'insertComplaintChip')}</div>
       </div>
-      <div class="field"><label>Examination findings ${dictationBtn('v-exam')}</label><textarea id="v-exam" placeholder="">${esc(dv.examination)}</textarea></div>
+      ${systemicExamFormHTML(dv.systemicExam || parseSystemicExam(null, dv.examination))}
       <div class="field"><label>Diagnosis ${dictationBtn('v-diagnosis')}</label>
         <input id="v-diagnosis" value="${esc(dv.diagnosis)}" oninput="onDiagnosisInput(this)" placeholder="">
         <div class="chip-row" id="diagnosis-chips">${chipRowHTML(chipsFor(dv.diagnosis, DIAGNOSIS_TERMS), 'insertDiagnosisChip')}</div>
@@ -8233,7 +8241,7 @@ function visitPrintView(patientId, visitId){
 
         ${v.diagnosis ? `<div class="opdx-clinical"><div class="opdx-c-block dx"><div class="opdx-c-icon">D</div><div class="opdx-c-body"><div class="opdx-c-title">Diagnosis</div><div class="opdx-c-text">${esc(v.diagnosis)}</div></div></div></div>` : ''}
 
-        <div style="padding:4px 22px 0;"><div class="opdx-rx-symbol">℞</div></div>
+        <div style="padding:4px 22px 0;"><div class="opdx-rx-symbol">Rx</div></div>
         ${rxCardHTML(rxList)}
         ${v.notes ? `<div class="opdx-advice-box"><div class="opdx-c-title">Advice</div>${esc(v.notes)}</div>` : ''}
         ${v.followUpDate ? `<div class="opdx-followup-band"><span class="opdx-followup-k">Follow-up</span><span class="opdx-followup-v">${fmtDate(v.followUpDate)}</span></div>` : ''}
@@ -8283,9 +8291,8 @@ function visitPrintView(patientId, visitId){
           </div>
         </div>
 
-        ${(p.allergies || p.chronicConditions) ? `<div class="opdx-alert-row">
-          ${p.allergies?`<span class="opdx-alert-chip">⚠ Allergy — ${esc(p.allergies)}</span>`:''}
-          ${p.chronicConditions?`<span class="opdx-alert-chip chronic">${esc(p.chronicConditions)}</span>`:''}
+        ${p.allergies ? `<div class="opdx-alert-row">
+          <span class="opdx-alert-chip">⚠ Allergy — ${esc(p.allergies)}</span>
         </div>` : ''}
 
         ${(()=>{
@@ -8302,8 +8309,9 @@ function visitPrintView(patientId, visitId){
         })()}
 
         <div class="opdx-clinical">
+          ${comorbiditiesPrintHTML(p, v)}
           <div class="opdx-c-block"><div class="opdx-c-icon">C</div><div class="opdx-c-body"><div class="opdx-c-title">Chief complaints</div><div class="opdx-c-text">${complaintsHtmlX}</div></div></div>
-          <div class="opdx-c-block"><div class="opdx-c-icon">E</div><div class="opdx-c-body"><div class="opdx-c-title">Examination</div><div class="opdx-c-text">${esc(v.examination)||'—'}</div></div></div>
+          <div class="opdx-c-block"><div class="opdx-c-icon">E</div><div class="opdx-c-body"><div class="opdx-c-title">Systemic examination</div><div class="opdx-c-text">${systemicExamPrintHTML(v)}</div></div></div>
           <div class="opdx-c-block dx"><div class="opdx-c-icon">D</div><div class="opdx-c-body"><div class="opdx-c-title">Diagnosis</div><div class="opdx-c-text">${esc(v.diagnosis)||'—'}</div></div></div>
           ${v.notes ? `<div class="opdx-c-block"><div class="opdx-c-icon">N</div><div class="opdx-c-body"><div class="opdx-c-title">Notes</div><div class="opdx-c-text">${esc(v.notes)}</div></div></div>` : ''}
           ${v.referredTo ? `<div class="opdx-c-block"><div class="opdx-c-icon">R</div><div class="opdx-c-body"><div class="opdx-c-title">Referred to</div><div class="opdx-c-text">${esc(v.referredTo)}${v.referralReason?' — '+esc(v.referralReason):''}</div></div></div>` : ''}
@@ -9781,28 +9789,16 @@ async function removeExpense(id){
   await saveData(); render();
 }
 
-function expiringStockItems(){
-  const today = todayStr();
-  const in30 = (()=>{ const d=new Date(); d.setDate(d.getDate()+30); return d.toISOString().slice(0,10); })();
-  return (state.data.drugStock||[]).filter(s=> s.expiryDate && s.expiryDate <= in30)
-    .sort((a,b)=> (a.expiryDate||'').localeCompare(b.expiryDate||''))
-    .map(s=> ({...s, expired: s.expiryDate < today}));
-}
 function stockView(){
   const q = (state.stockFilter||'').toLowerCase();
   let list = state.data.drugStock||[];
   if(q) list = list.filter(s=>(s.name||'').toLowerCase().includes(q));
-  const today = todayStr();
-  const in30 = (()=>{ const d=new Date(); d.setDate(d.getDate()+30); return d.toISOString().slice(0,10); })();
   const rows = list.map(s=>{
     const low = (parseFloat(s.lowAt)||0) > 0 && (parseFloat(s.quantity)||0) <= (parseFloat(s.lowAt)||0);
-    const expired = s.expiryDate && s.expiryDate < today;
-    const expiringSoon = s.expiryDate && !expired && s.expiryDate <= in30;
     return `<tr>
-      <td><strong>${esc(s.name)}</strong>${low?' <span class="pill" style="background:var(--danger-tint);color:var(--danger);">Low</span>':''}${expired?' <span class="pill" style="background:var(--danger-tint);color:var(--danger);">Expired</span>':expiringSoon?' <span class="pill" style="background:var(--warn-tint,#fff3cd);color:var(--warn,#946200);">Expiring soon</span>':''}</td>
+      <td><strong>${esc(s.name)}</strong>${low?' <span class="pill" style="background:var(--danger-tint);color:var(--danger);">Low</span>':''}</td>
       <td>${esc(s.quantity)} ${esc(s.unit)||''}</td>
       <td>${esc(s.lowAt)||'—'}</td>
-      <td>${s.expiryDate?fmtDate(s.expiryDate):'—'}</td>
       <td>${esc(s.notes)||'—'}</td>
       <td style="white-space:nowrap;">
         <button class="btn btn-sm" onclick="adjustStock('${s.id}',1)">+</button>
@@ -9813,20 +9809,19 @@ function stockView(){
   }).join('');
   return `
     <div class="page-head"><div><h1>Drug stock</h1><p class="muted">Simple inventory for medicines you keep at the clinic</p></div></div>
-    <div class="card" style="margin-bottom:16px;max-width:640px;">
+    <div class="card" style="margin-bottom:16px;max-width:560px;">
       <h3 style="margin-bottom:10px;">Add item</h3>
       <div class="row">
         <div class="field" style="flex:2;"><label>Name</label><input id="st-name" placeholder="e.g. Tab. Paracetamol 500mg"></div>
         <div class="field"><label>Qty</label><input id="st-qty" type="number" min="0" value="0"></div>
         <div class="field"><label>Unit</label><input id="st-unit" placeholder="strips / bottles"></div>
         <div class="field"><label>Low at</label><input id="st-low" type="number" min="0" placeholder="Alert qty"></div>
-        <div class="field"><label>Expiry date</label><input id="st-exp" type="date"></div>
       </div>
       <button class="btn btn-primary btn-sm" onclick="addStockItem()">Add</button>
     </div>
     <div class="card">
       <div class="search-wrap" style="margin-bottom:12px;"><input placeholder="Filter stock…" value="${esc(state.stockFilter||'')}" oninput="state.stockFilter=this.value;render()"></div>
-      ${list.length?`<table><thead><tr><th>Medicine</th><th>Quantity</th><th>Low at</th><th>Expiry</th><th>Notes</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:emptyState('📦','No stock items','Add medicines you dispense or keep on the shelf.')}
+      ${list.length?`<table><thead><tr><th>Medicine</th><th>Quantity</th><th>Low at</th><th>Notes</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:emptyState('📦','No stock items','Add medicines you dispense or keep on the shelf.')}
     </div>`;
 }
 async function addStockItem(){
@@ -9834,10 +9829,9 @@ async function addStockItem(){
   const quantity = parseFloat(document.getElementById('st-qty').value)||0;
   const unit = document.getElementById('st-unit').value.trim();
   const lowAt = parseFloat(document.getElementById('st-low').value)||0;
-  const expiryDate = document.getElementById('st-exp').value || '';
   if(!name) return;
   if(!state.data.drugStock) state.data.drugStock = [];
-  state.data.drugStock.push({id:'stk-'+Date.now(), name, quantity, unit, lowAt, expiryDate, notes:''});
+  state.data.drugStock.push({id:'stk-'+Date.now(), name, quantity, unit, lowAt, notes:''});
   await saveData(); render();
 }
 async function adjustStock(id, delta){
@@ -10648,7 +10642,6 @@ function render(){
     app.innerHTML = state.data.staff.length===0 ? setupView() : loginView();
     return;
   }
-  if(state.route==='waitingBoard'){ app.innerHTML = waitingBoardView(); return; }
   app.innerHTML = shellView() + commandPaletteHTML();
   if(state.route==='certificates') applyPendingCertFields();
   handlePatientHashRoute();
