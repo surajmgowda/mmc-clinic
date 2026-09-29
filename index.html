@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=5">
 <title>MMC — Male Madeshwara Clinic</title>
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#1A2744">
@@ -46,8 +46,10 @@
   }
   *,*::before,*::after{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
+  html{overflow-x:hidden;}
   body{
     background:var(--bg);
+    overflow-x:hidden;
     color:var(--ink);
     font-family:'Public Sans',-apple-system,BlinkMacSystemFont,sans-serif;
     font-size:14.5px;
@@ -60,7 +62,7 @@
   h3{font-size:15px;}
   p{margin:0 0 10px 0;}
   a{color:var(--primary-mid);}
-  button{font-family:inherit;cursor:pointer;}
+  button{font-family:inherit;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:rgba(27,79,110,0.12);}
   input,select,textarea{font-family:inherit;font-size:14px;}
   :focus-visible{outline:2px solid var(--accent);outline-offset:1px;}
 
@@ -157,7 +159,8 @@
   .visit-sticky-bar{
     position:sticky;bottom:0;z-index:8;display:flex;gap:10px;flex-wrap:wrap;align-items:center;
     padding:12px 16px;margin:18px -8px -8px;background:rgba(255,255,255,0.92);
-    backdrop-filter:blur(8px);border-top:1px solid var(--line);border-radius:0 0 var(--radius-lg) var(--radius-lg);
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    border-top:1px solid var(--line);border-radius:0 0 var(--radius-lg) var(--radius-lg);
     box-shadow:0 -6px 20px rgba(19,32,56,0.06);
   }
   html.dark .visit-sticky-bar{background:rgba(26,35,50,0.94);}
@@ -224,23 +227,99 @@
     .shell > .sidebar{display:flex !important;}
   }
   @media (max-width:820px){
-    .shell{flex-direction:column;}
+    .shell{flex-direction:column;min-height:100dvh;}
     .shell > .sidebar{display:none !important;}
-    .mobile-topbar{display:flex !important;}
+    .mobile-topbar{
+      display:flex !important;
+      padding-top:max(10px, env(safe-area-inset-top));
+      padding-left:max(14px, env(safe-area-inset-left));
+      padding-right:max(14px, env(safe-area-inset-right));
+    }
     .mobile-bottom-nav{display:flex !important;}
     .mobile-drawer-backdrop.open{display:block !important;}
     .mobile-drawer.open{display:flex !important;}
-    .main{padding:14px 14px 96px !important;max-width:100%;}
+    .main{
+      padding:14px 14px calc(100px + env(safe-area-inset-bottom)) !important;
+      max-width:100%;
+      width:100%;
+      overflow-x:hidden;
+    }
+    .page-head{flex-direction:column;align-items:flex-start !important;gap:10px;}
     .page-head h1{font-size:22px;}
+    .page-head .row{width:100%;}
     .week-grid{grid-template-columns:repeat(2,1fr);}
     .dbx-two-col{grid-template-columns:1fr !important;}
     .dbx-cta-row{flex-direction:column;}
     .dbx-cta-primary,.dbx-cta-secondary{width:100%;justify-content:center;}
-    .dbx-qrow{padding:12px 10px;}
+    .dbx-qrow{
+      padding:12px 10px;flex-wrap:wrap;align-items:flex-start;
+      gap:8px;
+    }
+    .dbx-qrow > div[style*="display:flex"]{width:100%;justify-content:flex-start;}
+    .dbx-qtext{min-width:0;flex:1 1 120px;}
+    .dbx-qsub{white-space:normal;overflow:visible;text-overflow:unset;}
+    .token-board{grid-template-columns:1fr !important;gap:10px;}
+    .token-actions{flex-direction:column;}
+    .token-actions .btn{width:100%;}
+    .consult-sticky-serve{top:0;border-radius:0;margin-left:-14px;margin-right:-14px;width:calc(100% + 28px);}
+    .visit-sticky-bar{
+      bottom:calc(64px + env(safe-area-inset-bottom));
+      margin-left:-14px;margin-right:-14px;width:calc(100% + 28px);
+      padding:12px 14px calc(12px + env(safe-area-inset-bottom));
+      flex-direction:column;align-items:stretch;
+    }
+    .visit-sticky-bar .btn{width:100%;}
+    .visit-section{padding:14px;}
+    .card{padding:14px 16px;}
+    /* Prevent iOS zoom on focus — inputs must be ≥16px */
+    .field input,.field select,.field textarea,
+    input,select,textarea{font-size:16px !important;}
+    .btn{min-height:44px;padding:10px 14px;}
+    .btn-sm{min-height:40px;padding:8px 12px;}
+    .dbx-qbtn{min-height:40px;padding:8px 12px;}
+    .mobile-bottom-nav button{min-height:48px;padding:8px 2px;}
+    .mobile-drawer{padding-top:max(18px, env(safe-area-inset-top));
+      padding-bottom:max(24px, env(safe-area-inset-bottom));
+      -webkit-overflow-scrolling:touch;}
+    body.drawer-open{overflow:hidden;touch-action:none;position:fixed;width:100%;}
+    table{font-size:13px;}
+    .table-scroll, .card > table, .card .table-wrap{display:block;width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+    .print-sheet,.opdx-card{max-width:100% !important;margin-left:0 !important;margin-right:0 !important;}
+    .opdx-card{border-radius:8px;}
+    .rx-row .row,.row{gap:10px;}
+    .row > .field{min-width:min(100%, 140px);flex:1 1 calc(50% - 10px);}
+    .visit-section .row > .field{min-width:min(100%, 120px);}
+    .attach-thumb{width:72px;height:72px;}
+    .cmd-panel{max-width:100%;border-radius:12px 12px 0 0;margin-top:auto;}
+    .cmd-backdrop{align-items:flex-end;}
+    .token-display-page{padding:24px 16px;min-height:100dvh;}
+    .token-display-page .td-clock{top:12px;right:14px;font-size:16px;}
+    .inv-check-grid{grid-template-columns:1fr 1fr !important;}
+    .lab-param-grid{grid-template-columns:1fr !important;}
+    .clinical-summary{grid-template-columns:1fr;}
+    .dash-customize-bar{flex-direction:column;align-items:stretch;}
+    .eod-check{flex-direction:row;align-items:flex-start;}
+    .auth-card{margin:16px;max-width:100%;}
+    .center-screen{padding:16px;align-items:flex-start;padding-top:max(24px, env(safe-area-inset-top));}
   }
   @media (max-width:520px){
     .week-grid{grid-template-columns:1fr;}
     .dbx-stat-grid{grid-template-columns:1fr 1fr;}
+    .dbx-hero-stats{grid-template-columns:1fr 1fr;}
+    .inv-check-grid{grid-template-columns:1fr !important;}
+    .stat-num{font-size:24px;}
+    h1,.page-head h1{font-size:20px !important;}
+  }
+  /* Landscape phones */
+  @media (max-width:900px) and (orientation:landscape){
+    .mobile-bottom-nav{padding-bottom:4px;}
+    .main{padding-bottom:80px !important;}
+  }
+  /* Prefer hover only on real pointer devices */
+  @media (hover:none){
+    .btn:hover{background:inherit;border-color:inherit;}
+    .btn-primary:hover{background:var(--primary);border-color:var(--primary);}
+    tr.clickable:hover{background:transparent;}
   }
 
 
@@ -7633,7 +7712,7 @@ function visitAttachmentsHTML(dv){
       <div class="visit-section-title">Photos / attachments</div>
       <p class="faint" style="margin-bottom:8px;">Phone camera photos (rash, wound, report) or PDF scan — compressed automatically. Max ~6 per visit.</p>
       <div class="attach-actions">
-        <input type="file" id="visit-attach-input" accept="image/*,.pdf" style="display:none;" onchange="addVisitAttachment(this.files[0])">
+        <input type="file" id="visit-attach-input" accept="image/*,.pdf" capture="environment" style="display:none;" onchange="addVisitAttachment(this.files[0])">
         <input type="file" id="visit-camera-input" accept="image/*" capture="environment" style="display:none;" onchange="addVisitAttachment(this.files[0])">
         <button type="button" class="btn btn-sm" onclick="document.getElementById('visit-camera-input').click()">📷 Take photo</button>
         <button type="button" class="btn btn-sm" onclick="document.getElementById('visit-attach-input').click()">+ Attach file / gallery</button>
@@ -10819,6 +10898,24 @@ initSession();
 // gets its own fresh floor.
 let _historyBaselineSet = false;
 let _lastRenderedRoute = null;
+
+function syncDrawerBodyClass(){
+  try{
+    if(state.mobileMenuOpen){
+      if(!document.body.classList.contains('drawer-open')){
+        state._scrollLockY = window.scrollY || 0;
+        document.body.classList.add('drawer-open');
+        document.body.style.top = '-'+(state._scrollLockY||0)+'px';
+      }
+    } else if(document.body.classList.contains('drawer-open')){
+      document.body.classList.remove('drawer-open');
+      document.body.style.top = '';
+      const y = state._scrollLockY || 0;
+      requestAnimationFrame(()=>{ try{ window.scrollTo(0, y); }catch(e){} });
+    }
+  }catch(e){}
+}
+
 function render(){
   applyDarkMode();
   if(typeof loadEodChecks==='function') loadEodChecks();
@@ -10841,6 +10938,7 @@ function render(){
   _lastRenderedRoute = state.route;
   if(state.route==='waitingBoard'){ app.innerHTML = waitingBoardView(); return; }
   app.innerHTML = shellView() + commandPaletteHTML();
+  syncDrawerBodyClass();
   if(routeChanged){
     // Re-trigger the CSS animation on every genuine screen change (not on
     // background refreshes/ticks that re-render the same route in place).
