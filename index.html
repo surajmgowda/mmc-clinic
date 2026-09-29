@@ -1136,6 +1136,7 @@ function jsAttr(str){
 // path per route/purpose, colored via currentColor so it follows the
 // surrounding text/nav-item color automatically.
 const NAV_ICONS = {
+  dailyClose: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
   dashboard: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>',
   appointments: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>',
   patients: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
@@ -4743,6 +4744,7 @@ function onResetAuthMethodChange(){
 const DASH_PANEL_META = [
   {id:'cash', label:'Cash strip'},
   {id:'queue', label:'Waiting queue'},
+  {id:'eod', label:'End of day'},
   {id:'stats', label:'Stat cards'},
   {id:'todayVisits', label:"Today's visits"},
   {id:'followups', label:'Follow-ups due'},
@@ -4847,6 +4849,7 @@ function shellView(){
     ['billing', t('Billing'), 'billing'],
     ['labResults', 'Lab results', 'clinicalVisit'],
     ['reports', t('Reports'), 'reports'],
+    ['dailyClose', 'End of day', 'reports'],
     ['roster', 'Roster', 'roster'],
     ['stock', 'Stock', 'stock'],
     ['expenses', 'Expenses', 'expenses']
@@ -4963,7 +4966,7 @@ function routeContent(){
     case 'anc': return ancView();
     case 'labResults': return labResultsView();
     case 'tokenDisplay': return tokenDisplayView();
-    case 'dailyClose': return `<div class="page-head"><h1>Daily close</h1></div>${dailyCloseHTML()}`;
+    case 'dailyClose': return `<div class="page-head"><div><h1>End of day</h1><p class="muted">Checklist, daily numbers, print & WhatsApp</p></div></div>${dailyCloseHTML()}`;
     case 'dueList': return `<div class="page-head"><h1>Tomorrow due list</h1></div>${dueListPrintHTML()}`;
     default: return dashboardView();
   }
@@ -5301,6 +5304,7 @@ function dashboardView(){
   const panelMap = {
     cash: cashStripHTML(),
     queue: queueSection,
+    eod: eodDashboardCardHTML(),
     stats: statsGrid,
     todayVisits: todayVisitsPanel,
     followups: followUpCard,
@@ -7845,6 +7849,54 @@ function exitTokenDisplay(){
   try{ if(document.fullscreenElement) document.exitFullscreen(); }catch(e){}
   go('dashboard');
 }
+
+function eodChecklistKeys(){
+  return ['cash','waiting','labs','tomorrow','backup','ownerWa','stock'];
+}
+function eodProgressSummary(){
+  loadEodChecks();
+  const checks = state.eodChecks || {};
+  const keys = eodChecklistKeys().filter(k => k !== 'stock' || can('stock'));
+  const done = keys.filter(k => !!checks[k]).length;
+  return { done, total: keys.length, closed: !!checks.dayClosed, by: checks.dayClosedBy||'', at: checks.dayClosedAt||'' };
+}
+function eodDashboardCardHTML(){
+  const p = eodProgressSummary();
+  const hour = new Date().getHours();
+  const evening = hour >= 17;
+  if(p.closed){
+    return `<div class="dbx-panel">
+      <div class="dbx-panel-head"><h2>End of day</h2>
+        <button class="link" onclick="go('dailyClose')">Open</button></div>
+      <div style="padding:4px 8px 12px;">
+        <div class="banner" style="background:var(--teal-tint);color:var(--teal);margin:0;">
+          <strong>Day closed</strong>${p.at?' · '+esc(p.at):''}${p.by?' · '+esc(p.by):''}
+        </div>
+      </div>
+    </div>`;
+  }
+  const pct = p.total ? Math.round(100*p.done/p.total) : 0;
+  const nudge = evening && p.done < p.total
+    ? `<p class="faint" style="margin:8px 0 0;color:var(--accent-dark);">Evening — finish checklist before leaving.</p>` : '';
+  return `<div class="dbx-panel">
+    <div class="dbx-panel-head"><h2>End of day</h2>
+      <button class="link" onclick="go('dailyClose')">Open checklist</button></div>
+    <div style="padding:4px 12px 14px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+        <div>
+          <div style="font-size:22px;font-weight:700;color:var(--primary-dark);">${p.done} / ${p.total}</div>
+          <div class="faint">checklist items done</div>
+        </div>
+        <button class="btn btn-sm ${evening?'btn-accent':'btn-primary'}" onclick="go('dailyClose')">Continue checklist</button>
+      </div>
+      <div style="margin-top:10px;height:8px;background:var(--line);border-radius:99px;overflow:hidden;">
+        <div style="height:100%;width:${pct}%;background:var(--teal);border-radius:99px;"></div>
+      </div>
+      ${nudge}
+    </div>
+  </div>`;
+}
+
 function dailyCloseHTML(){
   const today = todayStr();
   let visits=0, completed=0, waiting=0, tokens=0, revenue=0, collected=0, outstanding=0;
@@ -7886,24 +7938,30 @@ function dailyCloseHTML(){
       </div>
     </div>`;
   };
+  const lowStockN = (typeof lowStockItems==='function' ? lowStockItems() : []).length;
+  const keys = eodChecklistKeys().filter(k => k !== 'stock' || can('stock'));
+  const doneN = keys.filter(k => !!checks[k]).length;
   const checklist = `
     <div class="card" style="margin-bottom:16px;max-width:640px;">
       <h2 style="margin-bottom:8px;">End-of-day checklist</h2>
-      <p class="faint" style="margin-bottom:12px;">Tick each item before leaving. Progress is kept on this device for today.</p>
+      <p class="faint" style="margin-bottom:12px;">Tick each item before leaving. Progress stays on this device for today (not shared across phones).</p>
       ${item('cash', 'Cash & billing reconciled', `Collected ${fmt(collected)} · Outstanding ${fmt(outstanding)} · Revenue ${fmt(revenue)}`,
         `<button class="btn btn-sm" style="margin-top:6px;" onclick="go('billing')">Open billing</button>`)}
-      ${item('waiting', 'Waiting queue cleared', waiting ? `${waiting} patient(s) still marked waiting` : 'No one left waiting',
+      ${item('waiting', 'Waiting queue cleared', waiting ? `${waiting} patient(s) still marked waiting` : 'No one left waiting — safe to tick',
         waiting?`<button class="btn btn-sm" style="margin-top:6px;" onclick="go('dashboard')">View queue</button>`:'')}
-      ${item('labs', 'Lab results caught up', pendingLabs ? `${pendingLabs} result(s) still pending` : 'No pending lab lines',
+      ${item('labs', 'Lab results caught up', pendingLabs ? `${pendingLabs} result(s) still pending` : 'No pending lab lines — safe to tick',
         pendingLabs?`<button class="btn btn-sm" style="margin-top:6px;" onclick="go('labResults')">Lab entry grid</button>`:'')}
-      ${item('tomorrow', 'Tomorrow’s list reviewed', `${tomorrowAppts} appointment(s) booked for ${fmtDate(tomorrow)}`,
+      ${item('tomorrow', 'Tomorrow’s list reviewed', `${tomorrowAppts} appointment(s) for ${fmtDate(tomorrow)} · open due list`,
         `<button class="btn btn-sm" style="margin-top:6px;" onclick="go('dueList')">Due list</button>
          <button class="btn btn-sm" style="margin-top:6px;" onclick="go('appointments')">Appointments</button>`)}
+      ${can('stock') ? item('stock', 'Stock checked', lowStockN ? `${lowStockN} item(s) at or below alert` : 'No low-stock alerts',
+        `<button class="btn btn-sm" style="margin-top:6px;" onclick="go('stock')">Open stock</button>`) : ''}
       ${item('backup', 'Backup considered', backupDays>=999 ? 'No full backup on record yet' : `Last backup ${backupDays} day(s) ago`,
-        isOwner()?`<button class="btn btn-sm" style="margin-top:6px;" onclick="downloadBackup()">Download backup</button>`:'')}
+        isOwner()?`<button class="btn btn-sm" style="margin-top:6px;" onclick="downloadBackup(); toggleEodCheck('backup', true);">Download backup</button>`
+          :'<span class="faint">Ask admin if a backup is due</span>')}
       ${item('ownerWa', 'Owner summary sent', 'WhatsApp daily totals to clinic owner',
         `<button class="btn btn-sm btn-accent" style="margin-top:6px;" onclick="sendDailyCloseWhatsApp(); toggleEodCheck('ownerWa', true);">WhatsApp owner</button>`)}
-      <p class="faint" style="margin-top:10px;">${Object.keys(checks).filter(k=>checks[k]).length} / 6 items done</p>
+      <p class="faint" style="margin-top:10px;">${doneN} / ${keys.length} items done</p>
       ${checks.dayClosed ? `
         <div class="banner" style="background:var(--teal-tint);color:var(--teal);margin-top:12px;">
           <strong>Day closed</strong>${checks.dayClosedAt ? ' · '+esc(checks.dayClosedAt) : ''}
