@@ -3065,31 +3065,55 @@ function tomorrowStr(){
 // log out automatically after a stretch of no keyboard/mouse/touch activity.
 let idleTimer = null;
 function idleTimeoutMs(){
-  const m = state.idleMinutes || 15;
+  const m = state.idleMinutes;
+  if(!m || m <= 0) return 0;
   return Math.max(5, m) * 60 * 1000;
 }
 function setIdleMinutes(mins){
-  state.idleMinutes = Math.max(5, parseInt(mins,10) || 15);
+  const n = parseInt(mins,10);
+  state.idleMinutes = (isNaN(n) || n <= 0) ? 0 : Math.max(5, n);
   try{ localStorage.setItem('mmc_idle_min', String(state.idleMinutes)); }catch(e){}
   resetIdleTimer();
   render();
 }
-function resetIdleTimer(){
+let idleWarnTimer = null;
+function clearIdleTimers(){
   if(idleTimer){ clearTimeout(idleTimer); idleTimer = null; }
+  if(idleWarnTimer){ clearTimeout(idleWarnTimer); idleWarnTimer = null; }
+  const w = document.getElementById('idle-warn-banner');
+  if(w) w.remove();
+}
+function showIdleWarning(){
+  if(document.getElementById('idle-warn-banner')) return;
+  const el = document.createElement('div');
+  el.id = 'idle-warn-banner';
+  el.setAttribute('role','alert');
+  el.style.cssText = 'position:fixed;bottom:calc(16px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);z-index:9999;max-width:min(420px,92vw);padding:12px 16px;border-radius:12px;background:#132038;color:#fff;box-shadow:0 8px 28px rgba(0,0,0,0.25);font-size:14px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;';
+  el.innerHTML = '<span style="flex:1;">Still there? You will be logged out in about 1 minute for security.</span><button type="button" class="btn btn-sm btn-accent" id="idle-stay-btn">I\'m here</button>';
+  document.body.appendChild(el);
+  const btn = document.getElementById('idle-stay-btn');
+  if(btn) btn.onclick = ()=>{ resetIdleTimer(); };
+}
+function resetIdleTimer(){
+  clearIdleTimers();
   if(!state.session.staffName) return;
+  const total = idleTimeoutMs();
+  // 0 minutes = disabled
+  if((state.idleMinutes||0) <= 0) return;
+  const warnAt = Math.max(total - 60*1000, total * 0.85);
+  idleWarnTimer = setTimeout(()=>{ showIdleWarning(); }, warnAt);
   idleTimer = setTimeout(()=>{
     if(state.session.staffName){
+      clearIdleTimers();
       logout();
-      state.loginError = 'Logged out after ' + (state.idleMinutes||15) + ' minutes of inactivity.';
+      state.loginError = 'Logged out after ' + (state.idleMinutes||15) + ' minutes of inactivity (shared-PC safety).';
       render();
     }
-  }, idleTimeoutMs());
+  }, total);
 }
-['mousedown','mousemove','keydown','touchstart','scroll'].forEach(evt=>{
+['mousedown','mousemove','keydown','touchstart','scroll','pointerdown'].forEach(evt=>{
   document.addEventListener(evt, resetIdleTimer, {passive:true});
 });
-// Coming back to this tab counts as activity too — switching tabs to check
-// something else and returning a minute later shouldn't cost the session.
 document.addEventListener('visibilitychange', ()=>{
   if(document.visibilityState === 'visible') resetIdleTimer();
 });
@@ -3256,6 +3280,12 @@ async function saveEditPatient(patientId){
   p.name = name; p.dob = dob||''; p.age = age; p.sex = sex; p.phone = phone; p.address = address; p.allergies = allergies; p.chronicConditions = chronicConditions;
   p.bloodGroup = bloodGroup; p.emergencyContactName = emergencyContactName; p.emergencyContactPhone = emergencyContactPhone;
   p.aadhaar = aadhaar.replace(/\s/g,''); p.pastSurgeries = pastSurgeries; p.familyHistory = familyHistory;
+  if(can('viewClinical')){
+    const pr = document.getElementById('ep-pregnant');
+    const bf = document.getElementById('ep-breastfeeding');
+    if(pr) p.pregnant = pr.value || '';
+    if(bf) p.breastfeeding = bf.value || '';
+  }
   if(p.detailsRedacted){ p.detailsRedacted = false; p.redactedAt = ''; }
   logAudit('Edited patient', `${name} (${p.id})`);
   state.ui.editingPatient = false;
@@ -4404,11 +4434,15 @@ function rxCardHTML(prescriptions){
 function allergyChipsHTML(p){
   if(!p) return '';
   const prefs = typeof printPrefs==='function' ? printPrefs() : {};
-  if(prefs.alwaysShowAllergyOnRx === false && !p.allergies && !p.chronicConditions) return '';
-  if(!p.allergies && !p.chronicConditions) return '';
+  if(prefs.alwaysShowAllergyOnRx === false && !p.allergies && !p.chronicConditions && !p.pregnant && !p.breastfeeding) return '';
+  if(!p.allergies && !p.chronicConditions && !(p.pregnant==='yes'||p.pregnant==='possible') && p.breastfeeding!=='yes') return '';
   return `<div class="opdx-alert-row">
     ${p.allergies?`<span class="opdx-alert-chip">⚠ Allergy — ${esc(p.allergies)}</span>`:''}
     ${p.chronicConditions?`<span class="opdx-alert-chip chronic">${esc(p.chronicConditions)}</span>`:''}
+    ${(p.pregnant==='yes'||p.pregnant==='possible')?`<span class="opdx-alert-chip chronic">🤰 ${p.pregnant==='possible'?'Possibly pregnant':'Pregnant'}</span>`:''}
+    ${p.breastfeeding==='yes'?`<span class="opdx-alert-chip chronic">Breastfeeding</span>`:''}
+    ${(p.pregnant==='yes'||p.pregnant==='possible')?`<span class="opdx-alert-chip chronic">🤰 ${p.pregnant==='possible'?'Possibly pregnant':'Pregnant'}</span>`:''}
+    ${p.breastfeeding==='yes'?`<span class="opdx-alert-chip chronic">Breastfeeding</span>`:''}
   </div>`;
 }
 
@@ -4425,6 +4459,74 @@ function csvEscape(s){
   if(/[",\n]/.test(t)) return '"'+t.replace(/"/g,'""')+'"';
   return t;
 }
+
+function exportPatientJSON(patientId){
+  const p = state.data.patients.find(x=>x.id===patientId);
+  if(!p) return;
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    clinic: (state.data.clinicInfo||{}).name || '',
+    patient: JSON.parse(JSON.stringify(p))
+  };
+  // strip nothing if clinical - include all stored fields for full record copy
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (p.id||'patient') + '_' + (p.name||'record').replace(/[^\w\-]+/g,'_').slice(0,40) + '.json';
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href), 2000);
+  try{ logAudit('Exported patient JSON', `${p.name} (${p.id})`); }catch(e){}
+}
+function exportPatientPrintable(patientId){
+  const p = state.data.patients.find(x=>x.id===patientId);
+  if(!p) return;
+  const ci = state.data.clinicInfo || {};
+  const visits = (p.visits||[]).slice().sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
+  const visitBlocks = visits.map(v=>{
+    const rx = (v.prescriptions||[]).filter(r=>r.medicine).map(r=>esc(r.medicine)+(r.dosage?' '+esc(r.dosage):'')+(r.frequency?' · '+esc(r.frequency):'')+(r.duration?' × '+esc(r.duration)+'d':'')).join('; ') || '—';
+    const inv = (v.investigations||[]).filter(r=>r.test).map(r=>esc(r.test)).join(', ') || '—';
+    return `<div style="margin:12px 0;padding:10px 0;border-top:1px solid #ddd;">
+      <strong>${fmtDate(v.date)}</strong>${v.time?' · '+esc(v.time):''}${v.doctorName?' · '+esc(v.doctorName):''}<br>
+      ${can('viewClinical')?`<span style="color:#555;">Dx:</span> ${esc(v.diagnosis)||'—'}<br>
+      <span style="color:#555;">C/O:</span> ${esc(v.complaints)||'—'}<br>
+      <span style="color:#555;">Rx:</span> ${rx}<br>
+      <span style="color:#555;">Labs:</span> ${inv}`:'<span style="color:#555;">Visit recorded (clinical details restricted for this role)</span>'}
+    </div>`;
+  }).join('') || '<p>No visits.</p>';
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${esc(p.name)} — ${esc(p.id)}</title>
+    <style>body{font-family:system-ui,sans-serif;max-width:720px;margin:24px auto;padding:0 16px;color:#132038;font-size:14px;line-height:1.45;}
+    h1{font-size:20px;margin:0 0 4px;} h2{font-size:15px;margin:20px 0 8px;border-bottom:1px solid #ccc;padding-bottom:4px;}
+    .meta{color:#5A6578;font-size:13px;} .pill{display:inline-block;background:#E7F2F7;padding:2px 8px;border-radius:99px;font-size:12px;}
+    @media print{body{margin:0;}}</style></head><body>
+    <div class="meta">${esc(ci.name||'')}${ci.address?' · '+esc(ci.address):''}${ci.phone?' · '+esc(ci.phone):''}</div>
+    <h1>${esc(p.name)} <span class="pill">${esc(p.id)}</span></h1>
+    <p class="meta">Exported ${fmtDate(todayStr())} · Age ${esc(displayAge(p))} · ${esc(p.sex||'')}</p>
+    <h2>Demographics</h2>
+    <p>Phone: ${esc(p.phone)||'—'}<br>Address: ${esc(p.address)||'—'}<br>
+    ${p.dob?'DOB: '+fmtDate(p.dob)+'<br>':''}
+    ${p.bloodGroup?'Blood group: '+esc(p.bloodGroup)+'<br>':''}
+    ${p.emergencyContactName||p.emergencyContactPhone?'Emergency: '+esc(p.emergencyContactName||'')+' '+esc(p.emergencyContactPhone||'')+'<br>':''}
+    </p>
+    ${can('viewClinical')?`<h2>Clinical flags</h2>
+    <p>Allergies: ${esc(p.allergies)||'—'}<br>
+    Chronic: ${esc(p.chronicConditions)||'—'}<br>
+    Pregnancy: ${p.pregnant==='yes'?'Yes':p.pregnant==='possible'?'Possible':'No'} · Breastfeeding: ${p.breastfeeding==='yes'?'Yes':'No'}<br>
+    Past surgeries: ${esc(p.pastSurgeries)||'—'}<br>
+    Family history: ${esc(p.familyHistory)||'—'}
+    </p>`:''}
+    <h2>Visit history (${visits.length})</h2>
+    ${visitBlocks}
+    <p class="meta" style="margin-top:28px;">Generated by clinic software · Not a formal legal extract unless stamped by the clinic.</p>
+    <script>window.onload=function(){window.print();}<\/script>
+    </body></html>`;
+  const w = window.open('', '_blank');
+  if(!w){ alert('Pop-up blocked. Allow pop-ups to export / print the patient file.'); return; }
+  w.document.write(html);
+  w.document.close();
+  try{ logAudit('Exported patient printable', `${p.name} (${p.id})`); }catch(e){}
+}
+
+
 function exportPatientsCSV(){
   if(!isOwner()){ alert('Only the clinic admin can export patient data.'); return; }
   const rows = [['ID','Name','DOB','Age','Sex','Phone','Address','Allergies','Registered']];
@@ -5797,6 +5899,21 @@ function patientView(patientId){
     <div class="field"><label>Known allergies</label><input id="ep-allergies" value="${esc(p.allergies)}" placeholder="e.g. Penicillin, Sulfa — leave blank if none known"></div>
     <div class="field"><label>Past surgeries</label><textarea id="ep-surgeries" placeholder="e.g. Appendectomy (2019), C-section (2021) — leave blank if none">${esc(p.pastSurgeries||'')}</textarea></div>
     <div class="field"><label>Family history</label><textarea id="ep-family-history" placeholder="e.g. Father — diabetes; Mother — hypertension — leave blank if none known">${esc(p.familyHistory||'')}</textarea></div>
+    <div class="row">
+      <div class="field"><label>Pregnancy</label>
+        <select id="ep-pregnant">
+          <option value="" ${!p.pregnant?'selected':''}>Not applicable / No</option>
+          <option value="yes" ${p.pregnant==='yes'?'selected':''}>Pregnant</option>
+          <option value="possible" ${p.pregnant==='possible'?'selected':''}>Possibly pregnant</option>
+        </select>
+      </div>
+      <div class="field"><label>Breastfeeding</label>
+        <select id="ep-breastfeeding">
+          <option value="" ${!p.breastfeeding?'selected':''}>No</option>
+          <option value="yes" ${p.breastfeeding==='yes'?'selected':''}>Yes — breastfeeding</option>
+        </select>
+      </div>
+    </div>
     ` : `<p class="faint">Clinical history fields are only editable by authorised clinical staff.</p>
     <input type="hidden" id="ep-allergies" value="${esc(p.allergies||'')}">
     <input type="hidden" id="ep-surgeries" value="${esc(p.pastSurgeries||'')}">
@@ -5820,6 +5937,8 @@ function patientView(patientId){
     <div style="margin-top:8px;"><span class="faint">Emergency contact</span><div>${esc(p.emergencyContactName)||'<span class="faint">—</span>'}${p.emergencyContactPhone?' · '+esc(p.emergencyContactPhone):''}</div></div>` : ''}
     ${p.aadhaar ? `<div style="margin-top:8px;"><span class="faint">Aadhaar</span><div>${esc(maskAadhaar(p.aadhaar))}</div></div>` : ''}
     ${can('viewClinical') && p.allergies ? `<div class="banner" style="background:var(--danger-tint);color:var(--danger);margin-top:10px;"><strong>⚠ Allergies:</strong> ${esc(p.allergies)}</div>` : ''}
+    ${can('viewClinical') && (p.pregnant==='yes'||p.pregnant==='possible') ? `<div class="banner" style="background:var(--accent-tint);color:var(--accent-dark);margin-top:10px;"><strong>🤰 ${p.pregnant==='possible'?'Possibly pregnant':'Pregnant'}</strong> — check drug safety before prescribing.</div>` : ''}
+    ${can('viewClinical') && p.breastfeeding==='yes' ? `<div class="banner" style="background:var(--teal-tint);color:var(--teal);margin-top:10px;"><strong>Breastfeeding</strong> — prefer lactation-safe medicines.</div>` : ''}
     ${can('viewClinical') && p.pastSurgeries ? `<div style="margin-top:10px;"><span class="faint">Past surgeries</span><div>${esc(p.pastSurgeries)}</div></div>` : ''}
     ${can('viewClinical') && p.familyHistory ? `<div style="margin-top:10px;"><span class="faint">Family history</span><div>${esc(p.familyHistory)}</div></div>` : ''}
     ${!can('viewClinical') ? `<p class="faint" style="margin-top:10px;">Clinical history (allergies, chronic conditions, surgeries) is visible only to authorised clinical staff.</p>` : ''}
@@ -5877,6 +5996,8 @@ function patientView(patientId){
         ${can('certificates')?`<button class="btn" onclick="state.certPatientId='${p.id}';state.certType='sick';go('certificates')">Certificate</button>`:''}
         ${p.phone?`<button class="btn wa-btn" onclick="shareWhatsApp(${jsAttr(p.phone)}, patientWhatsAppText(state.data.patients.find(x=>x.id===${jsAttr(p.id)})))">${t('WhatsApp')}</button>`:''}
         <button class="btn btn-ghost btn-sm" type="button" onclick="copyPatientLink('${p.id}')">Copy link</button>
+        <button class="btn btn-sm" type="button" onclick="exportPatientJSON('${p.id}')">Export JSON</button>
+        <button class="btn btn-sm" type="button" onclick="exportPatientPrintable('${p.id}')">Print / PDF file</button>
         <span id="copy-link-msg" class="faint"></span>
       </div>
     </div>
@@ -7626,6 +7747,21 @@ function visitPatientDemoHTML(p){
         </div>
         ${can('viewClinical')?`
         <div class="field"><label>Known allergies</label><input id="vd-allergies" value="${esc(p.allergies||'')}"></div>
+        <div class="row">
+          <div class="field"><label>Pregnancy</label>
+            <select id="vd-pregnant">
+              <option value="" ${!p.pregnant?'selected':''}>Not applicable / No</option>
+              <option value="yes" ${p.pregnant==='yes'?'selected':''}>Pregnant</option>
+              <option value="possible" ${p.pregnant==='possible'?'selected':''}>Possibly pregnant</option>
+            </select>
+          </div>
+          <div class="field"><label>Breastfeeding</label>
+            <select id="vd-breastfeeding">
+              <option value="" ${!p.breastfeeding?'selected':''}>No</option>
+              <option value="yes" ${p.breastfeeding==='yes'?'selected':''}>Yes — breastfeeding</option>
+            </select>
+          </div>
+        </div>
         <p class="faint">Co-morbidities are managed on the patient's profile page.</p>
         `:''}
         <div id="vd-error" class="error-text"></div>
@@ -7651,6 +7787,7 @@ function visitPatientDemoHTML(p){
       </div>
       <div style="margin-top:8px;"><span class="faint">Address</span><div>${esc(p.address)||'—'}</div></div>
       ${(p.emergencyContactName||p.emergencyContactPhone)?`<div style="margin-top:6px;"><span class="faint">Emergency contact</span><div>${esc(p.emergencyContactName)||'—'} ${p.emergencyContactPhone?'· '+esc(p.emergencyContactPhone):''}</div></div>`:''}
+      ${(p.pregnant==='yes'||p.pregnant==='possible'||p.breastfeeding==='yes')?`<div style="margin-top:8px;">${p.pregnant==='yes'||p.pregnant==='possible'?`<span class="pill" style="background:var(--accent-tint);color:var(--accent-dark);">🤰 ${p.pregnant==='possible'?'Possibly pregnant':'Pregnant'}</span> `:''}${p.breastfeeding==='yes'?`<span class="pill" style="background:var(--teal-tint);color:var(--teal);">Breastfeeding</span>`:''}</div>`:''}
     </div>`;
 }
 async function saveVisitDemographics(patientId){
@@ -7682,6 +7819,10 @@ async function saveVisitDemographics(patientId){
   if(emP) p.emergencyContactPhone = emP.value.trim();
   const al = document.getElementById('vd-allergies');
   if(al && can('viewClinical')) p.allergies = al.value.trim();
+  const pr = document.getElementById('vd-pregnant');
+  const bf = document.getElementById('vd-breastfeeding');
+  if(pr && can('viewClinical')) p.pregnant = pr.value || '';
+  if(bf && can('viewClinical')) p.breastfeeding = bf.value || '';
   logAudit('Edited demographics during visit', `${p.name} (${p.id})`);
   state.ui.editingVisitDemo = false;
   await saveData();
@@ -8276,6 +8417,8 @@ function newVisitView(){
     ${dv.editingVisitId ? `<div class="banner banner-info">Continuing a visit checked in earlier — patient details are already filled in.</div>` : ''}
     ${allergyBanner}
     ${chronicBanner}
+    ${allergyPatient && (allergyPatient.pregnant==='yes'||allergyPatient.pregnant==='possible') ? `<div class="banner" style="background:var(--accent-tint);color:var(--accent-dark);margin-top:6px;"><strong>🤰 ${allergyPatient.pregnant==='possible'?'Possibly pregnant':'Pregnant'}</strong> — review medicines for pregnancy safety.</div>` : ''}
+    ${allergyPatient && allergyPatient.breastfeeding==='yes' ? `<div class="banner" style="background:var(--teal-tint);color:var(--teal);margin-top:6px;"><strong>Breastfeeding</strong> — prefer lactation-safe medicines.</div>` : ''}
     ${pedNote}
     <div class="visit-section">
       <div class="visit-section-title">1 · Patient</div>
@@ -8539,9 +8682,11 @@ function visitPrintView(patientId, visitId){
           </div>
         </div>
 
-        ${(p.allergies || p.chronicConditions) ? `<div class="opdx-alert-row">
+        ${(p.allergies || p.chronicConditions || p.pregnant==='yes' || p.pregnant==='possible' || p.breastfeeding==='yes') ? `<div class="opdx-alert-row">
           ${p.allergies?`<span class="opdx-alert-chip">⚠ Allergy — ${esc(p.allergies)}</span>`:''}
           ${p.chronicConditions?`<span class="opdx-alert-chip chronic">${esc(p.chronicConditions)}</span>`:''}
+          ${(p.pregnant==='yes'||p.pregnant==='possible')?`<span class="opdx-alert-chip chronic">🤰 ${p.pregnant==='possible'?'Possibly pregnant':'Pregnant'}</span>`:''}
+          ${p.breastfeeding==='yes'?`<span class="opdx-alert-chip chronic">Breastfeeding</span>`:''}
         </div>` : ''}
 
         ${(()=>{
@@ -9324,7 +9469,8 @@ function billingDetailView(patientId, visitId){
       </div>
       <div class="row">
         <button class="btn btn-primary" onclick="saveBilling('${p.id}','${v.id}')">Save</button>
-        <button class="btn btn-accent" onclick="printSection('sheet-receipt')">Print receipt</button>
+        <button class="btn btn-accent" onclick="saveBillingAndPrintReceipt('${p.id}','${v.id}')">Save &amp; print receipt</button>
+        <button class="btn" onclick="printSection('sheet-receipt')">Print receipt</button>
       </div>
       <div id="billing-saved-msg" class="faint"></div>
     </div>
@@ -10420,11 +10566,13 @@ function exportReportCSV(){
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
-async function saveBilling(patientId, visitId){
+async function saveBilling(patientId, visitId, opts){
+  opts = opts || {};
   const p = state.data.patients.find(p=>p.id===patientId);
   const v = p && (p.visits||[]).find(v=>v.id===visitId);
   if(!v) return;
   if(!v.billing) v.billing = { fee:'', charges:[], paid:false, mode:'' };
+  const wasPaid = !!v.billing.paid;
   syncChargesFromDOM(v);
   v.billing.fee = document.getElementById('bill-fee').value.trim();
   v.billing.paid = document.getElementById('bill-paid').value === 'true';
@@ -10433,6 +10581,17 @@ async function saveBilling(patientId, visitId){
   const ok = await saveData();
   const msg = document.getElementById('billing-saved-msg');
   if(msg) msg.textContent = ok ? 'Saved ✓' : 'Could not save — try again';
+  if(ok && v.billing.paid && (!wasPaid || opts.forceReceipt)){
+    render();
+    setTimeout(()=>{
+      if(document.getElementById('sheet-receipt')){
+        if(confirm('Payment saved. Print receipt now?')) printSection('sheet-receipt');
+      }
+    }, 200);
+  }
+}
+async function saveBillingAndPrintReceipt(patientId, visitId){
+  await saveBilling(patientId, visitId, {forceReceipt:true});
 }
 
 
@@ -10620,11 +10779,13 @@ function settingsView(){
       <div class="field"><label>This device label (shown in activity log)</label>
         <input id="device-label" value="${esc(deviceLabel())}" placeholder="e.g. Front desk tablet" onchange="setDeviceLabel(this.value)">
       </div>
-      <div class="field"><label>Auto-logout after inactivity (minutes)</label>
+      <div class="field"><label>Auto-logout after inactivity (shared PC safety)</label>
         <select id="idle-mins" onchange="setIdleMinutes(this.value)">
+          <option value="0" ${!state.idleMinutes||state.idleMinutes<=0?'selected':''}>Off</option>
           ${[5,10,15,30,60].map(m=>`<option value="${m}" ${state.idleMinutes===m?'selected':''}>${m} minutes</option>`).join('')}
         </select>
       </div>
+      <p class="faint">Logs out this browser after no mouse/keyboard/touch. A 1-minute warning appears first. Stored on this device only.</p>
       <p class="faint">Press Ctrl+K (⌘K on Mac) anytime for ${t('Quick search')}.</p>
     </div>
     <div class="card" style="margin-bottom:18px;max-width:520px;">
