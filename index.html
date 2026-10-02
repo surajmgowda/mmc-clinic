@@ -4725,35 +4725,30 @@ function rxCardHTML(prescriptions){
       ${prescriptions.map((r,i)=>{
         const days = daysLabel(r.duration);
         const freqShown = formatFrequencyDisplay(r.frequency);
-        // Prefer explicit "amount each time" typed by doctor
-        let doseShown = (r.amountEach||'').trim();
-        if(!doseShown){
-          doseShown = (r.dosage||'').trim();
-          if(isSyrupMedicine(r.medicine)){
-            const ml = extractDoseMl(r.dosage, r.medicine);
-            if(ml) doseShown = ml + ' ml';
-          }
-        }
-        const qty = showQty ? computeQuantityLabel(r.medicine, r.frequency, r.duration, r.amountEach || r.dosage) : '';
-        // Avoid repeating "Take X ml each time" when amountEach already shown
-        const qtyLine = (qty && !(r.amountEach||'').trim() && qty.toLowerCase().startsWith('take '))
-          ? qty
-          : (qty && !qty.toLowerCase().startsWith('take ') ? qty : '');
-        const strengthNote = (r.amountEach && r.dosage && r.dosage !== r.amountEach)
-          ? `<div class="opdx-rx-sub" style="font-size:11.5px;">${esc(r.dosage)}</div>` : '';
-        const subParts = [
-          doseShown ? `<span class="opdx-rx-dose">${esc(doseShown)}</span>` : '',
+        const strength = (r.dosage||'').trim(); // e.g. 125mg/5ml — bottle strength
+        const amountEach = (r.amountEach||'').trim(); // doctor-typed: 5 ml, 2.5 ml, 1 tablet
+        // Line 1 under medicine: strength · frequency · days (never invent ml from strength)
+        const scheduleParts = [
+          strength ? `<span class="opdx-rx-dose">${esc(strength)}</span>` : '',
           freqShown ? `<span class="opdx-rx-freq">${esc(freqShown)}</span>` : '',
           days ? esc('× '+days) : '',
           r.instructions ? esc(r.instructions) : ''
         ].filter(Boolean).join(' · ');
+        // "Take … each time" ONLY when doctor filled Amount each time
+        const takeLine = amountEach
+          ? `<div class="opdx-rx-sub"><span class="opdx-rx-dose">Take ${esc(amountEach)} each time</span></div>`
+          : '';
+        // Tablet total quantity only (no auto syrup ml)
+        const qty = showQty ? computeQuantityLabel(r.medicine, r.frequency, r.duration, amountEach || strength) : '';
+        const qtyLine = (qty && !String(qty).toLowerCase().startsWith('take '))
+          ? `<div class="opdx-rx-sub">${esc(qty)}</div>` : '';
         return `<div class="opdx-rx-item">
           <span class="opdx-rx-num">${i+1}</span>
           <span>
             <span class="opdx-rx-med">${esc(r.medicine)}</span>
-            ${subParts?`<div class="opdx-rx-sub">${subParts}</div>`:''}
-            ${strengthNote}
-            ${qtyLine?`<div class="opdx-rx-sub">${esc(qtyLine)}</div>`:''}
+            ${scheduleParts?`<div class="opdx-rx-sub">${scheduleParts}</div>`:''}
+            ${takeLine}
+            ${qtyLine}
           </span>
         </div>`;
       }).join('')}
@@ -7980,13 +7975,11 @@ function isSyrupMedicine(medicine){
 // Only tablets/capsules get a "how many to buy" total — syrups, injections
 // and IV fluids don't map to a simple per-dose count the same way.
 function computeQuantityLabel(medicine, freq, duration, dosage){
+  // Syrups: do not invent "Take X ml each time" — doctor uses Amount each time field.
+  if(isSyrupMedicine(medicine)) return '';
   const m = (medicine||'').trim().toLowerCase();
   const days = parseInt(duration,10);
   const perDay = parseFrequencyPerDay(freq);
-  if(isSyrupMedicine(medicine)){
-    const ml = extractDoseMl(dosage, medicine);
-    return ml ? 'Take ' + ml + ' ml each time' : '';
-  }
   let unit = null;
   if(m.startsWith('tab.')) unit = 'tablet';
   else if(m.startsWith('cap.')) unit = 'capsule';
@@ -8022,13 +8015,9 @@ function pickDosage(i, val){
   const row = document.querySelector(`[data-rx-idx="${i}"]`);
   row.querySelector('[data-f="dosage"]').value = val;
   state.draftVisit.prescriptions[i].dosage = val;
-  // If selection is clearly a volume (e.g. 5 ml), prefill "amount each time" when empty
-  const amtEl = row.querySelector('[data-f="amountEach"]');
-  if(amtEl && !(amtEl.value||'').trim()){
-    const ml = extractDoseMl(val, state.draftVisit.prescriptions[i].medicine);
-    if(ml){ amtEl.value = ml + ' ml'; state.draftVisit.prescriptions[i].amountEach = ml + ' ml'; }
-    else if(/\d/.test(val) && /tab|cap|drop/i.test(val)){ amtEl.value = val; state.draftVisit.prescriptions[i].amountEach = val; }
-  }
+  // Do NOT copy strength (e.g. 125mg/5ml) into amount each time —
+  // the "5ml" in strength is concentration, not the dose. Doctor types amount separately.
+
 }
 function pickFrequency(i, val){
   if(!val) return;
