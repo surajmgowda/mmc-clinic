@@ -1115,6 +1115,10 @@ let state = {
   loginError: '',
   loginMode: 'login', // 'login' | 'forgot' | 'reset'
   loginAuthMethod: 'pin', // 'pin' | 'password'
+  otp: {
+    patient: { phone:'', code:'', sent:false, verified:false, verifyToken:'', displayOtp:'', expiresAt:0, error:'', sending:false },
+    staff: { phone:'', code:'', sent:false, verified:false, verifyToken:'', displayOtp:'', expiresAt:0, error:'', sending:false }
+  },
   pendingRecoveryStaff: null,
   pendingRecoveryToken: null,
   loginInProgress: false,
@@ -2609,6 +2613,169 @@ function setUiLang(lang){
   render();
 }
 
+
+/* ============================= OTP (phone verification) ============================= */
+function normalizePhone10(phone){
+  const d = String(phone||'').replace(/\D/g,'');
+  return d.length >= 10 ? d.slice(-10) : d;
+}
+function otpSlot(kind){
+  if(!state.otp) state.otp = { patient:{}, staff:{} };
+  if(!state.otp[kind]) state.otp[kind] = { phone:'', code:'', sent:false, verified:false, verifyToken:'', displayOtp:'', expiresAt:0, error:'', sending:false };
+  return state.otp[kind];
+}
+function resetOtp(kind){
+  state.otp = state.otp || {};
+  state.otp[kind] = { phone:'', code:'', sent:false, verified:false, verifyToken:'', displayOtp:'', expiresAt:0, error:'', sending:false };
+}
+async function requestOtp(kind, phoneRaw){
+  const slot = otpSlot(kind);
+  const phone = normalizePhone10(phoneRaw);
+  slot.error = '';
+  if(phone.length < 10){
+    slot.error = 'Enter a valid 10-digit mobile number first.';
+    render();
+    return;
+  }
+  if(slot.sending) return;
+  slot.sending = true;
+  slot.verified = false;
+  slot.verifyToken = '';
+  slot.displayOtp = '';
+  render();
+  try{
+    const purpose = kind === 'staff' ? 'staff_reg' : 'patient_reg';
+    const res = await fetch('/api/otp/request', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ phone, purpose })
+    });
+    const json = await res.json().catch(()=>({}));
+    if(res.status === 401){
+      slot.error = 'Session expired — log in again.';
+      slot.sending = false;
+      render();
+      return;
+    }
+    if(res.status === 429){
+      slot.error = json.message || 'Wait a moment before requesting another code.';
+      slot.sending = false;
+      render();
+      return;
+    }
+    if(!res.ok){
+      slot.error = json.error || json.message || 'Could not send OTP.';
+      slot.sending = false;
+      render();
+      return;
+    }
+    slot.phone = phone;
+    slot.sent = true;
+    slot.displayOtp = json.otp || '';
+    slot.expiresAt = Date.now() + ((json.expiresInSec || 300) * 1000);
+    slot.smsSent = !!json.smsSent;
+    slot.smsConfigured = !!json.smsConfigured;
+    slot.smsError = json.smsError || '';
+    slot.sending = false;
+    slot.code = '';
+    render();
+  }catch(e){
+    slot.error = 'Network error — try again.';
+    slot.sending = false;
+    render();
+  }
+}
+async function verifyOtp(kind){
+  const slot = otpSlot(kind);
+  const phone = normalizePhone10(slot.phone || (kind==='staff'
+    ? ((document.getElementById('st-phone')||{}).value||'')
+    : ((document.getElementById('reg-phone')||{}).value||'')));
+  const code = (document.getElementById(kind==='staff'?'st-otp':'reg-otp')||{}).value || slot.code || '';
+  slot.error = '';
+  if(phone.length < 10){ slot.error = 'Enter mobile number first.'; render(); return false; }
+  if(!/^\d{4,8}$/.test(String(code).trim())){ slot.error = 'Enter the 6-digit OTP.'; render(); return false; }
+  try{
+    const purpose = kind === 'staff' ? 'staff_reg' : 'patient_reg';
+    const res = await fetch('/api/otp/verify', {
+      method:'POST', credentials:'same-origin',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ phone, purpose, code: String(code).trim() })
+    });
+    const json = await res.json().catch(()=>({}));
+    if(!res.ok){
+      slot.error = json.message || json.error || 'Incorrect or expired OTP.';
+      slot.verified = false;
+      slot.verifyToken = '';
+      render();
+      return false;
+    }
+    slot.verified = true;
+    slot.verifyToken = json.verifyToken || 'ok';
+    slot.phone = phone;
+    slot.error = '';
+    render();
+    return true;
+  }catch(e){
+    slot.error = 'Network error — try again.';
+    render();
+    return false;
+  }
+}
+function shareOtpWhatsApp(kind){
+  const slot = otpSlot(kind);
+  const phone = slot.phone || normalizePhone10((document.getElementById(kind==='staff'?'st-phone':'reg-phone')||{}).value||'');
+  if(!slot.displayOtp || phone.length < 10){
+    alert('Request an OTP first.');
+    return;
+  }
+  const clinic = (state.data.clinicInfo && state.data.clinicInfo.name) || 'Clinic';
+  const text = kind === 'staff'
+    ? `${clinic}: Your verification code for staff account setup is ${slot.displayOtp}. Valid for 5 minutes. Do not share with others.`
+    : `${clinic}: Your verification code is ${slot.displayOtp}. Valid for 5 minutes. Share this only with clinic staff if you are registering in person.`;
+  shareWhatsApp(phone, text);
+}
+function otpVerifyBlockHTML(kind){
+  const slot = otpSlot(kind);
+  const phoneId = kind === 'staff' ? 'st-phone' : 'reg-phone';
+  const otpId = kind === 'staff' ? 'st-otp' : 'reg-otp';
+  const label = kind === 'staff' ? 'Staff mobile (for OTP)' : 'Phone *';
+  const smsNote = !slot.sent ? ''
+    : slot.smsSent
+      ? `<div class="banner banner-info" style="margin-top:8px;">SMS sent to ******${esc((slot.phone||'').slice(-4))}.</div>`
+      : slot.smsConfigured
+        ? `<div class="banner" style="margin-top:8px;background:var(--danger-tint);color:var(--danger);">SMS could not be sent${slot.smsError?': '+esc(slot.smsError):''}. Use WhatsApp or the code below.</div>`
+        : `<div class="faint" style="margin-top:8px;">SMS gateway not configured — use WhatsApp or read the code at the desk. Admin can add SMS under Settings.</div>`;
+  return `
+    <div class="card" style="margin:12px 0;padding:12px;background:var(--bg-soft,var(--bg));border:1px solid var(--line);">
+      <div style="font-weight:600;margin-bottom:8px;">📱 Phone verification (OTP)</div>
+      <p class="faint" style="margin:0 0 10px;">Confirms the mobile number. Tries <strong>SMS</strong> first (if configured); otherwise use <strong>WhatsApp</strong> or read the code at the desk.</p>
+      ${kind === 'staff' ? `<div class="field"><label>${label}</label>
+        <input id="${phoneId}" type="tel" inputmode="numeric" placeholder="10-digit mobile"
+          value="${esc(slot.phone||'')}"
+          oninput="otpSlot('staff').verified=false;otpSlot('staff').sent=false;otpSlot('staff').displayOtp='';">
+      </div>` : ''}
+      <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end;">
+        <button type="button" class="btn btn-sm" ${slot.sending?'disabled':''}
+          onclick="requestOtp('${kind}', document.getElementById('${phoneId}').value)">${slot.sending?'Sending…':(slot.sent?'Resend OTP':'Send OTP')}</button>
+        ${slot.displayOtp ? `<button type="button" class="btn btn-sm wa-btn" onclick="shareOtpWhatsApp('${kind}')">WhatsApp code</button>` : ''}
+      </div>
+      ${smsNote}
+      ${slot.displayOtp ? `<div class="banner banner-info" style="margin-top:10px;">Code for this number: <strong style="letter-spacing:0.12em;font-size:18px;">${esc(slot.displayOtp)}</strong>
+        <span class="faint"> · valid ~5 min · WhatsApp or desk if SMS not available</span></div>` : ''}
+      ${slot.sent ? `
+      <div class="row" style="margin-top:10px;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+        <div class="field" style="flex:1;min-width:140px;"><label>Enter OTP</label>
+          <input id="${otpId}" type="text" inputmode="numeric" maxlength="6" placeholder="6-digit code" value="${esc(slot.code||'')}"
+            oninput="otpSlot('${kind}').code=this.value;otpSlot('${kind}').verified=false;">
+        </div>
+        <button type="button" class="btn btn-primary btn-sm" onclick="verifyOtp('${kind}')">Verify</button>
+      </div>` : ''}
+      ${slot.verified ? `<div style="margin-top:8px;color:var(--teal);font-weight:600;">✓ Phone verified</div>` : ''}
+      ${slot.error ? `<div class="error-text" style="margin-top:8px;">${esc(slot.error)}</div>` : ''}
+    </div>`;
+}
+
+
 /* ============================= WHATSAPP SHARE (wa.me — no Business API) ============================= */
 function digitsPhone(phone){
   let d = normPhone(phone);
@@ -3314,6 +3481,11 @@ async function saveNewPatient(){
   if(!name || (!dob && !age) || !sex || !phone || !address){
     err.textContent = 'Name, date of birth (or age), sex, phone and address are all required.'; return;
   }
+  const otpP = otpSlot('patient');
+  const phone10 = normalizePhone10(phone);
+  if(!otpP.verified || normalizePhone10(otpP.phone) !== phone10){
+    err.textContent = 'Verify the mobile number with OTP before registering.'; return;
+  }
   if(aadhaar && !/^\d{12}$/.test(aadhaar.replace(/\s/g,''))){
     err.textContent = 'Aadhaar number should be 12 digits, or left blank.'; return;
   }
@@ -3332,10 +3504,13 @@ async function saveNewPatient(){
     pastSurgeries: '', familyHistory: '',
     registeredDate: todayStr(), visits: [], growthRecords: [], vaccinations: [], certificates: []
   };
+  patient.phoneVerified = true;
+  patient.phoneVerifiedAt = new Date().toISOString();
   state.data.patients.push(patient);
-  logAudit('Registered patient', `${patient.name} (${patient.id})`);
+  logAudit('Registered patient', `${patient.name} (${patient.id}) · phone OTP verified`);
   const ok = await saveData();
   if(!ok){ err.textContent = state.saveError; render(); return; }
+  resetOtp('patient');
   go('patient', {patientId: patient.id});
 }
 
@@ -4384,6 +4559,17 @@ async function saveClinicInfo(){
   if(nsEl) state.data.clinicInfo.noShowMinutes = parseInt(nsEl.value,10) || 45;
   const regEl = document.getElementById('ci-regno');
   if(regEl) state.data.clinicInfo.regNo = regEl.value.trim();
+  // SMS gateway (OTP delivery when WhatsApp is not used)
+  if(isOwner()){
+    const sms = state.data.clinicInfo.sms || {};
+    const prov = document.getElementById('ci-sms-provider');
+    const key = document.getElementById('ci-sms-key');
+    const sender = document.getElementById('ci-sms-sender');
+    if(prov) sms.provider = prov.value.trim();
+    if(key && key.value.trim()) sms.apiKey = key.value.trim(); // leave unchanged if blank (masked)
+    if(sender) sms.sender = sender.value.trim();
+    state.data.clinicInfo.sms = sms;
+  }
   logAudit('Updated clinic info', state.data.clinicInfo.name);
   await saveData();
   render();
@@ -4722,6 +4908,7 @@ async function addStaff(){
   const pin = ((document.getElementById('st-pin')||{}).value || '').trim();
   const password = (document.getElementById('st-password')||{}).value || '';
   const qualification = (document.getElementById('st-qualification')||{}).value.trim() || '';
+  const phone = ((document.getElementById('st-phone')||{}).value || '').trim();
   const err = document.getElementById('st-error');
   if(!name){ err.textContent = 'Enter a name.'; return; }
   if(authMethod === 'pin'){
@@ -4730,18 +4917,28 @@ async function addStaff(){
     if(password.length < 6){ err.textContent = 'Password must be at least 6 characters.'; return; }
   }
   if(state.data.staff.some(s=>s.name===name)){ err.textContent = 'That name is already registered.'; return; }
+  const otpS = otpSlot('staff');
+  const phone10 = normalizePhone10(phone || otpS.phone);
+  if(phone10.length < 10){ err.textContent = 'Enter staff mobile number for OTP.'; return; }
+  if(!otpS.verified || normalizePhone10(otpS.phone) !== phone10){
+    err.textContent = 'Verify the staff mobile number with OTP before creating the account.'; return;
+  }
   const recoveryCode = generateRecoveryCode();
   const record = {
     name, role, authMethod,
     qualification,
+    phone: phone10,
+    phoneVerified: true,
+    phoneVerifiedAt: new Date().toISOString(),
     owner: false,
     recoveryHash: await hashSecret(recoveryCode.replace(/-/g,'').toUpperCase())
   };
   if(authMethod === 'pin') record.pin = await hashPin(pin);
   else record.password = await hashSecret(password);
   state.data.staff.push(record);
-  logAudit('Added staff account', `${name} (${role}) · ${authMethod}${qualification?' · '+qualification:''}`);
+  logAudit('Added staff account', `${name} (${role}) · ${authMethod}${qualification?' · '+qualification:''} · phone OTP verified`);
   await saveData();
+  resetOtp('staff');
   alert(`Account created for ${name}.\n\nRecovery code (give this to them once — it will not be shown again):\n\n${recoveryCode}`);
   render();
 }
@@ -5849,9 +6046,11 @@ function newPatientView(){
       <p class="faint" style="margin:-8px 0 12px;">Enter a date of birth when known — it keeps age accurate automatically. Otherwise, enter an approximate age.</p>
       <div class="field"><label>Address *</label><textarea id="reg-address"></textarea></div>
       <div class="row">
-        <div class="field"><label>Phone *</label><input id="reg-phone" type="text" oninput="state.regDupeAcknowledged=false"></div>
+        <div class="field"><label>Phone *</label><input id="reg-phone" type="text" inputmode="numeric" placeholder="10-digit mobile"
+          oninput="state.regDupeAcknowledged=false;otpSlot('patient').verified=false;otpSlot('patient').sent=false;otpSlot('patient').displayOtp='';"></div>
         <div class="field"><label>Blood group</label><select id="reg-blood-group"><option value="">Not recorded</option>${BLOOD_GROUPS.map(b=>`<option>${b}</option>`).join('')}</select></div>
       </div>
+      ${otpVerifyBlockHTML('patient')}
       <div class="row">
         <div class="field"><label>Emergency contact name</label><input id="reg-emergency-name" type="text" placeholder="e.g. spouse, parent"></div>
         <div class="field"><label>Emergency contact phone</label><input id="reg-emergency-phone" type="text"></div>
@@ -11033,6 +11232,25 @@ function settingsView(){
       <div class="field"><label>Owner WhatsApp number (daily close summary)</label><input id="ci-owner-phone" value="${esc(ci.ownerPhone||'')}" placeholder="same as clinic phone if blank"></div>
       <div class="field"><label>Mark long wait / missed after (minutes)</label><input id="ci-noshow" type="number" min="10" max="180" value="${esc(ci.noShowMinutes||45)}"></div>
       <div class="field"><label>Clinic registration / RMP number (shown on printouts)</label><input id="ci-regno" value="${esc(ci.regNo||'')}" placeholder="e.g. KA-12345"></div>
+      <hr style="border:none;border-top:1px solid var(--line);margin:16px 0;">
+      <h3 style="margin:0 0 8px;font-size:15px;">SMS for OTP</h3>
+      <p class="faint" style="margin:0 0 10px;">If WhatsApp is not available, OTP can be sent by SMS. Needs a paid gateway account (Fast2SMS, MSG91, Textlocal, or Twilio). You can also set <code>SMS_PROVIDER</code> + <code>SMS_API_KEY</code> on the server instead of saving the key here.</p>
+      <div class="field"><label>SMS provider</label>
+        <select id="ci-sms-provider">
+          <option value="" ${!(ci.sms&&ci.sms.provider)?'selected':''}>Off (WhatsApp / desk only)</option>
+          <option value="fast2sms" ${(ci.sms&&ci.sms.provider)==='fast2sms'?'selected':''}>Fast2SMS (India)</option>
+          <option value="msg91" ${(ci.sms&&ci.sms.provider)==='msg91'?'selected':''}>MSG91 (India)</option>
+          <option value="textlocal" ${(ci.sms&&ci.sms.provider)==='textlocal'?'selected':''}>Textlocal (India)</option>
+          <option value="twilio" ${(ci.sms&&ci.sms.provider)==='twilio'?'selected':''}>Twilio</option>
+        </select>
+      </div>
+      <div class="field"><label>API key</label>
+        <input id="ci-sms-key" type="password" autocomplete="new-password" placeholder="${(ci.sms&&ci.sms.apiKey)?'Saved — type to replace':'Paste API key'}">
+      </div>
+      <div class="field"><label>Sender ID / From number</label>
+        <input id="ci-sms-sender" value="${esc((ci.sms&&ci.sms.sender)||'')}" placeholder="e.g. CLINIC or +91… for Twilio">
+      </div>
+      <p class="faint">Fast2SMS: use “Quick SMS” API key. Twilio: API key format <code>accountSid:authToken</code>.</p>
       <button class="btn btn-primary" onclick="saveClinicInfo()">Save</button>
       ` : `
       <p class="faint" style="margin-bottom:10px;">Only the clinic admin can change name, address, phone or logo.</p>
@@ -11157,6 +11375,7 @@ ${isOwner() ? `
         <div class="field"><label>Role</label><select id="st-role"><option>Doctor</option><option>Receptionist</option><option>Staff</option></select></div>
         <div class="field"><label>Qualification / course</label><input id="st-qualification" placeholder="e.g. M.B.B.S."></div>
       </div>
+      ${otpVerifyBlockHTML('staff')}
       <div class="field"><label>Login type</label>
         <select id="st-auth-method" onchange="onStaffAuthMethodChange()">
           <option value="pin">4-digit PIN</option>

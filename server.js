@@ -383,6 +383,273 @@ app.get('/api/session', (req, res) => {
 // requiring a session first — no PINs, no patient data, nothing sensitive.
 // Still sits behind basicAuthMiddleware (the site-wide gate), same as
 // everything else.
+
+// ---- OTP for phone verification (patient / staff registration) ----
+// In-memory store: fine for a single clinic instance. Codes expire in 5 min.
+// Delivery: SMS (if gateway configured) and/or WhatsApp / desk display.
+const otpStore = new Map(); // key -> { hash, exp, attempts, purpose }
+const OTP_TTL_MS = 5 * 60 * 1000;
+const OTP_MAX_ATTEMPTS = 5;
+
+function getSmsConfig(clinicData) {
+  // Prefer environment variables (never stored in DB). Fall back to clinicInfo.sms for single-clinic installs.
+  const env = {
+    provider: (process.env.SMS_PROVIDER || '').toLowerCase().trim(),
+    apiKey: process.env.SMS_API_KEY || '',
+    sender: process.env.SMS_SENDER || process.env.SMS_SENDER_ID || '',
+    entityId: process.env.SMS_ENTITY_ID || '',
+    templateId: process.env.SMS_TEMPLATE_ID || ''
+  };
+  const fromClinic = (clinicData && clinicData.clinicInfo && clinicData.clinicInfo.sms) || {};
+  const provider = env.provider || String(fromClinic.provider || '').toLowerCase().trim();
+  const apiKey = env.apiKey || fromClinic.apiKey || '';
+  const sender = env.sender || fromClinic.sender || '';
+  const entityId = env.entityId || fromClinic.entityId || '';
+  const templateId = env.templateId || fromClinic.templateId || '';
+  const enabled = !!(provider && apiKey && provider !== 'none' && provider !== 'off');
+  return { enabled, provider, apiKey, sender, entityId, templateId };
+}
+
+async function sendSmsViaGateway(cfg, phone10, message) {
+  if (!cfg || !cfg.enabled) return { sent: false, reason: 'not_configured' };
+  const numbers = phone10; // 10-digit India
+  const provider = cfg.provider;
+
+  try {
+    if (provider === 'fast2sms') {
+      // https://docs.fast2sms.com/#quick-sms
+      const url = 'https://www.fast2sms.com/dev/bulkV2';
+      const body = {
+        route: 'q',
+        message: String(message).slice(0, 200),
+        language: 'english',
+        flash: 0,
+        numbers: numbers
+      };
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: {
+          authorization: cfg.apiKey,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j.return === false) {
+        return { sent: false, reason: j.message || j.msg || ('fast2sms HTTP ' + r.status) };
+      }
+      return { sent: true, provider: 'fast2sms' };
+    }
+
+    if (provider === 'msg91') {
+      // Simple MSG91 send SMS API (authkey in header)
+      const sender = cfg.sender || 'CLINIC';
+      const url = 'https://control.msg91.com/api/v5/flow/';
+      // Fallback to older sendhttp if no template flow configured
+      const simpleUrl = 'https://api.msg91.com/api/sendhttp.php?' + new URLSearchParams({
+        authkey: cfg.apiKey,
+        mobiles: '91' + numbers,
+        message: String(message).slice(0, 200),
+        sender: sender,
+        route: '4',
+        country: '91'
+      }).toString();
+      const r = await fetch(simpleUrl);
+      const text = await r.text();
+      // MSG91 returns type string / request id on success
+      if (!r.ok) return { sent: false, reason: 'msg91 HTTP ' + r.status };
+      if (/error|invalid/i.test(text) && !/^\d+$/.test(text.trim())) {
+        return { sent: false, reason: text.slice(0, 120) };
+      }
+      return { sent: true, provider: 'msg91' };
+    }
+
+    if (provider === 'textlocal') {
+      const params = new URLSearchParams({
+        apikey: cfg.apiKey,
+        numbers: '91' + numbers,
+        message: String(message).slice(0, 200),
+        sender: cfg.sender || 'TXTLCL'
+      });
+      const r = await fetch('https://api.textlocal.in/send/?' + params.toString());
+      const j = await r.json().catch(() => ({}));
+      if (j.status !== 'success') {
+        return { sent: false, reason: (j.errors && j.errors[0] && j.errors[0].message) || 'textlocal failed' };
+      }
+      return { sent: true, provider: 'textlocal' };
+    }
+
+    if (provider === 'twilio') {
+      // SMS_API_KEY format: accountSid:authToken
+      const [sid, token] = String(cfg.apiKey).split(':');
+      if (!sid || !token || !cfg.sender) {
+        return { sent: false, reason: 'Twilio needs API key as accountSid:authToken and sender number' };
+      }
+      const to = '+91' + numbers;
+      const body = new URLSearchParams({ To: to, From: cfg.sender, Body: String(message).slice(0, 300) });
+      const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+        method: 'POST',
+        headers: {
+          Authorization: 'Basic ' + Buffer.from(sid + ':' + token).toString('base64'),
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: body.toString()
+      });
+      if (!r.ok) {
+        const t = await r.text();
+        return { sent: false, reason: t.slice(0, 120) };
+      }
+      return { sent: true, provider: 'twilio' };
+    }
+
+    return { sent: false, reason: 'unknown_provider:' + provider };
+  } catch (e) {
+    return { sent: false, reason: (e && e.message) || 'sms_error' };
+  }
+}
+
+function normalizePhoneDigits(phone) {
+  const d = String(phone || '').replace(/\D/g, '');
+  if (d.length >= 10) return d.slice(-10);
+  return d;
+}
+function otpKey(purpose, phone) {
+  return String(purpose || 'generic') + ':' + normalizePhoneDigits(phone);
+}
+function generateOtpCode() {
+  // 6-digit, never leading-zero issues for display
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+function purgeExpiredOtps() {
+  const now = Date.now();
+  for (const [k, v] of otpStore.entries()) {
+    if (!v || v.exp < now) otpStore.delete(k);
+  }
+}
+
+// Request an OTP. Requires a logged-in staff session (desk registration).
+app.post('/api/otp/request', requireSession, async (req, res) => {
+  try {
+    purgeExpiredOtps();
+    const purpose = String((req.body || {}).purpose || '').trim();
+    const phone = normalizePhoneDigits((req.body || {}).phone);
+    const allowed = ['patient_reg', 'staff_reg', 'setup'];
+    if (!allowed.includes(purpose)) {
+      return res.status(400).json({ error: 'invalid purpose' });
+    }
+    if (phone.length < 10) {
+      return res.status(400).json({ error: 'Enter a valid 10-digit mobile number' });
+    }
+    // Simple rate limit per phone+purpose
+    const key = otpKey(purpose, phone);
+    const existing = otpStore.get(key);
+    if (existing && existing.exp > Date.now() && (Date.now() - (existing.created || 0)) < 30000) {
+      return res.status(429).json({
+        error: 'wait',
+        message: 'Wait a few seconds before requesting another code.',
+        retryAfterMs: 30000 - (Date.now() - (existing.created || 0))
+      });
+    }
+    const code = generateOtpCode();
+    otpStore.set(key, {
+      hash: hashSecretSalted(code),
+      exp: Date.now() + OTP_TTL_MS,
+      attempts: 0,
+      purpose,
+      created: Date.now(),
+      by: (req.staffSession && req.staffSession.name) || ''
+    });
+
+    // Load clinic data for SMS config (and clinic name in message)
+    let clinicData = null;
+    try {
+      const { rows } = await pool.query('SELECT data FROM clinic_store WHERE id = 1');
+      if (rows.length) clinicData = rows[0].data;
+    } catch (e) { /* ignore */ }
+    const clinicName = (clinicData && clinicData.clinicInfo && clinicData.clinicInfo.name) || 'Clinic';
+    const smsCfg = getSmsConfig(clinicData);
+    const message = clinicName + ': Your verification code is ' + code + '. Valid for 5 minutes. Do not share.';
+    let smsResult = { sent: false, reason: 'not_configured' };
+    if (smsCfg.enabled) {
+      smsResult = await sendSmsViaGateway(smsCfg, phone, message);
+    }
+
+    // Always return code to authenticated staff for WhatsApp / desk fallback.
+    res.json({
+      ok: true,
+      phone,
+      purpose,
+      expiresInSec: Math.floor(OTP_TTL_MS / 1000),
+      otp: code,
+      smsSent: !!smsResult.sent,
+      smsProvider: smsResult.provider || smsCfg.provider || null,
+      smsError: smsResult.sent ? null : (smsResult.reason || null),
+      smsConfigured: !!smsCfg.enabled
+    });
+  } catch (e) {
+    console.error('POST /api/otp/request failed:', e);
+    res.status(500).json({ error: 'server error' });
+  }
+});
+
+app.post('/api/otp/verify', requireSession, async (req, res) => {
+  try {
+    purgeExpiredOtps();
+    const purpose = String((req.body || {}).purpose || '').trim();
+    const phone = normalizePhoneDigits((req.body || {}).phone);
+    const code = String((req.body || {}).code || '').replace(/\s/g, '');
+    if (!purpose || phone.length < 10 || !/^\d{4,8}$/.test(code)) {
+      return res.status(400).json({ error: 'invalid request' });
+    }
+    const key = otpKey(purpose, phone);
+    const rec = otpStore.get(key);
+    if (!rec || rec.exp < Date.now()) {
+      otpStore.delete(key);
+      return res.status(401).json({ error: 'expired', message: 'Code expired or not found. Request a new one.' });
+    }
+    rec.attempts = (rec.attempts || 0) + 1;
+    if (rec.attempts > OTP_MAX_ATTEMPTS) {
+      otpStore.delete(key);
+      return res.status(429).json({ error: 'too_many', message: 'Too many attempts. Request a new code.' });
+    }
+    const ok = verifySecret(code, rec.hash);
+    if (!ok) {
+      return res.status(401).json({ error: 'invalid', message: 'Incorrect code. Try again.' });
+    }
+    // One-time use
+    otpStore.delete(key);
+    // Issue a short-lived verification token the client must present when saving
+    const token = signSession({
+      otpVerified: true,
+      phone,
+      purpose,
+      exp: Date.now() + 15 * 60 * 1000
+    });
+    res.json({ ok: true, verifyToken: token, phone, purpose });
+  } catch (e) {
+    console.error('POST /api/otp/verify failed:', e);
+    res.status(500).json({ error: 'server error' });
+  }
+});
+
+
+
+app.get('/api/otp/sms-status', requireSession, async (req, res) => {
+  try {
+    const { rows } = await pool.query('SELECT data FROM clinic_store WHERE id = 1');
+    const clinicData = rows.length ? rows[0].data : null;
+    const cfg = getSmsConfig(clinicData);
+    res.json({
+      configured: !!cfg.enabled,
+      provider: cfg.enabled ? cfg.provider : (cfg.provider || null),
+      sender: cfg.sender ? (cfg.sender.slice(0, 2) + '***') : null,
+      source: process.env.SMS_API_KEY ? 'environment' : (cfg.enabled ? 'clinic_settings' : 'none')
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'server error' });
+  }
+});
+
 app.get('/api/staff-list', async (req, res) => {
   try {
     const { rows } = await pool.query('SELECT data FROM clinic_store WHERE id = 1');
