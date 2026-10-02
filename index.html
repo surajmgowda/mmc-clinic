@@ -2254,41 +2254,26 @@ async function doLogin(){
   }
   const name = resolveStaffName(rawName) || rawName;
   state.loginSelectedName = rawName;
-  // Prefer explicit toggle; else detect from staff record when known
-  let method = state.loginAuthMethod || 'pin';
+  // Account method is detected server-side; client sends one credential for either PIN or password
+  let method = 'pin';
   if((state.data.staff||[]).some(s=>s.name===name)) method = staffAuthMethod(name);
   state.loginAuthMethod = method;
-  const pinEl = document.getElementById('login-pin');
-  const passEl = document.getElementById('login-password');
-  const pin = pinEl ? pinEl.value.trim() : '';
-  const password = passEl ? passEl.value : '';
+  const secretEl = document.getElementById('login-secret') || document.getElementById('login-pin') || document.getElementById('login-password');
+  const secret = secretEl ? String(secretEl.value || '') : '';
   const lock = pinLockStatus(name);
   if(lock.locked){
     state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil(lock.remainingMs/1000)}s.`;
     render();
     return;
   }
-  if(method === 'pin' && !/^\d{4}$/.test(pin)){
-    state.loginError = 'Enter your 4-digit PIN.';
-    render();
-    return;
-  }
-  if(method === 'password' && !password){
-    state.loginError = 'Enter your password.';
+  if(!secret){
+    state.loginError = 'Enter your PIN or password.';
     render();
     return;
   }
   const totpCode = ((document.getElementById('login-totp')||{}).value||'').replace(/\s/g,'');
-  // Send the credential under the account method; also include the other key
-  // as a fallback so the server can verify against the stored secret.
-  const body = { staffName: name };
-  if(method === 'password'){
-    body.password = password || pin;
-    if(pin && !password) body.pin = pin;
-  } else {
-    body.pin = pin || password;
-    if(password && !pin) body.password = password;
-  }
+  // Send as both so server matches the account's real method (PIN or password)
+  const body = { staffName: name, pin: secret, password: secret };
   if(totpCode) body.totpCode = totpCode;
   const btn = document.querySelector('.auth-card .btn-primary');
   if(btn){ btn.disabled = true; btn.textContent = 'Signing in…'; }
@@ -2341,8 +2326,7 @@ async function doLogin(){
           state.loginError = `Too many incorrect attempts. Try again in ${Math.ceil((rec.lockedUntil-Date.now())/1000)}s.`;
         } else {
           const left = PIN_LOCK_THRESHOLD - rec.fails;
-          const what = method === 'password' ? 'password' : 'PIN';
-          state.loginError = `Incorrect username or ${what}. Check the spelling of your username and try again.${left<=2 ? ` (${left} attempt${left===1?'':'s'} left before a cooldown)` : ''}`;
+          state.loginError = `Incorrect username or PIN/password. Check and try again.${left<=2 ? ` (${left} attempt${left===1?'':'s'} left before a cooldown)` : ''}`;
         }
         state.loginInProgress = false;
         render();
@@ -2628,27 +2612,33 @@ function resetOtp(kind){
   state.otp = state.otp || {};
   state.otp[kind] = { phone:'', code:'', sent:false, verified:false, verifyToken:'', displayOtp:'', expiresAt:0, error:'', sending:false };
 }
-async function requestOtp(kind, phoneRaw){
+async function requestOtp(kind, phoneRaw, opts){
+  opts = opts || {};
   const slot = otpSlot(kind);
   const phone = normalizePhone10(phoneRaw);
   slot.error = '';
   if(phone.length < 10){
-    slot.error = 'Enter a valid 10-digit mobile number first.';
-    render();
+    if(!opts.silent) slot.error = 'Enter a valid 10-digit mobile number first.';
+    if(!opts.silent) render();
     return;
   }
+  // Avoid re-sending for the same number while still valid / just sent
   if(slot.sending) return;
+  if(slot.sent && slot.phone === phone && slot.expiresAt && Date.now() < slot.expiresAt - 60000 && !opts.force){
+    return; // already sent recently for this number
+  }
   slot.sending = true;
   slot.verified = false;
   slot.verifyToken = '';
-  slot.displayOtp = '';
+  slot.displayOtp = ''; // never show on screen
   render();
   try{
     const purpose = kind === 'staff' ? 'staff_reg' : 'patient_reg';
+    const channel = opts.channel === 'whatsapp' ? 'whatsapp' : 'sms';
     const res = await fetch('/api/otp/request', {
       method:'POST', credentials:'same-origin',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ phone, purpose })
+      body: JSON.stringify({ phone, purpose, channel })
     });
     const json = await res.json().catch(()=>({}));
     if(res.status === 401){
@@ -2671,19 +2661,49 @@ async function requestOtp(kind, phoneRaw){
     }
     slot.phone = phone;
     slot.sent = true;
-    slot.displayOtp = json.otp || '';
+    slot.displayOtp = ''; // never store for UI
     slot.expiresAt = Date.now() + ((json.expiresInSec || 300) * 1000);
     slot.smsSent = !!json.smsSent;
     slot.smsConfigured = !!json.smsConfigured;
     slot.smsError = json.smsError || '';
+    slot.delivery = json.delivery || (json.smsSent ? 'sms' : 'whatsapp');
     slot.sending = false;
     slot.code = '';
+    slot.delivery = json.delivery || channel;
+    // Open WhatsApp only when staff chose that button — never show code on page
+    if(channel === 'whatsapp' && json.otpForWhatsApp){
+      const clinic = (state.data.clinicInfo && state.data.clinicInfo.name) || 'Clinic';
+      const msg = kind === 'staff'
+        ? `${clinic}: Your verification code for staff account setup is ${json.otpForWhatsApp}. Valid for 5 minutes. Do not share with others.`
+        : `${clinic}: Your verification code is ${json.otpForWhatsApp}. Valid for 5 minutes. Do not share with others.`;
+      try{ shareWhatsApp(phone, msg); }catch(e){}
+      slot.error = '';
+    } else if(channel === 'sms' && !json.smsSent){
+      if(json.smsConfigured){
+        slot.error = 'SMS could not be sent' + (json.smsError ? ': ' + json.smsError : '') + '. Try Resend or Send via WhatsApp.';
+      } else {
+        slot.error = 'SMS is not configured. Use “Send via WhatsApp”, or set SMS under Settings → Clinic info.';
+      }
+    } else {
+      slot.error = '';
+    }
     render();
   }catch(e){
     slot.error = 'Network error — try again.';
     slot.sending = false;
     render();
   }
+}
+/** Phone changed — clear prior verification; user must press Send OTP */
+function onPhoneForOtpInput(kind, phoneRaw){
+  const slot = otpSlot(kind);
+  slot.verified = false;
+  slot.sent = false;
+  slot.smsSent = false;
+  slot.error = '';
+  if(kind === 'patient') state.regDupeAcknowledged = false;
+  const phone = normalizePhone10(phoneRaw);
+  if(phone.length === 10) slot.phone = phone;
 }
 async function verifyOtp(kind){
   const slot = otpSlot(kind);
@@ -2722,50 +2742,47 @@ async function verifyOtp(kind){
   }
 }
 function shareOtpWhatsApp(kind){
-  const slot = otpSlot(kind);
-  const phone = slot.phone || normalizePhone10((document.getElementById(kind==='staff'?'st-phone':'reg-phone')||{}).value||'');
-  if(!slot.displayOtp || phone.length < 10){
-    alert('Request an OTP first.');
+  const phone = normalizePhone10((document.getElementById(kind==='staff'?'st-phone':'reg-phone')||{}).value||'');
+  if(phone.length < 10){
+    alert('Enter a valid 10-digit mobile number first.');
     return;
   }
-  const clinic = (state.data.clinicInfo && state.data.clinicInfo.name) || 'Clinic';
-  const text = kind === 'staff'
-    ? `${clinic}: Your verification code for staff account setup is ${slot.displayOtp}. Valid for 5 minutes. Do not share with others.`
-    : `${clinic}: Your verification code is ${slot.displayOtp}. Valid for 5 minutes. Share this only with clinic staff if you are registering in person.`;
-  shareWhatsApp(phone, text);
+  requestOtp(kind, phone, { force: true, channel: 'whatsapp' });
 }
 function otpVerifyBlockHTML(kind){
   const slot = otpSlot(kind);
   const phoneId = kind === 'staff' ? 'st-phone' : 'reg-phone';
   const otpId = kind === 'staff' ? 'st-otp' : 'reg-otp';
   const label = kind === 'staff' ? 'Staff mobile (for OTP)' : 'Phone *';
-  const smsNote = !slot.sent ? ''
+  const statusNote = slot.sending
+    ? `<div class="faint" style="margin-top:8px;">Sending OTP…</div>`
+    : !slot.sent ? `<div class="faint" style="margin-top:8px;">Enter the mobile number, then tap <strong>Send OTP</strong> (SMS) or <strong>Send via WhatsApp</strong>. The code is not shown on this screen.</div>`
     : slot.smsSent
-      ? `<div class="banner banner-info" style="margin-top:8px;">SMS sent to ******${esc((slot.phone||'').slice(-4))}.</div>`
-      : slot.smsConfigured
-        ? `<div class="banner" style="margin-top:8px;background:var(--danger-tint);color:var(--danger);">SMS could not be sent${slot.smsError?': '+esc(slot.smsError):''}. Use WhatsApp or the code below.</div>`
-        : `<div class="faint" style="margin-top:8px;">SMS gateway not configured — use WhatsApp or read the code at the desk. Admin can add SMS under Settings.</div>`;
+      ? `<div class="banner banner-info" style="margin-top:8px;">OTP sent by SMS to ******${esc((slot.phone||'').slice(-4))}. Enter the code from their phone.</div>`
+      : (slot.delivery === 'whatsapp')
+        ? `<div class="banner banner-info" style="margin-top:8px;">WhatsApp opened with the OTP for ******${esc((slot.phone||'').slice(-4))}. Send the message, then enter the code here.</div>`
+        : `<div class="banner" style="margin-top:8px;background:var(--danger-tint);color:var(--danger);">SMS not delivered. Configure SMS in Settings, or use Send via WhatsApp.</div>`;
   return `
     <div class="card" style="margin:12px 0;padding:12px;background:var(--bg-soft,var(--bg));border:1px solid var(--line);">
       <div style="font-weight:600;margin-bottom:8px;">📱 Phone verification (OTP)</div>
-      <p class="faint" style="margin:0 0 10px;">Confirms the mobile number. Tries <strong>SMS</strong> first (if configured); otherwise use <strong>WhatsApp</strong> or read the code at the desk.</p>
+      <p class="faint" style="margin:0 0 10px;">Code is <strong>never shown</strong> on this screen. Use <strong>Send OTP</strong> for SMS, or <strong>Send via WhatsApp</strong> if they use WhatsApp only.</p>
       ${kind === 'staff' ? `<div class="field"><label>${label}</label>
         <input id="${phoneId}" type="tel" inputmode="numeric" placeholder="10-digit mobile"
           value="${esc(slot.phone||'')}"
-          oninput="otpSlot('staff').verified=false;otpSlot('staff').sent=false;otpSlot('staff').displayOtp='';">
+          oninput="onPhoneForOtpInput('staff', this.value)">
       </div>` : ''}
       <div class="row" style="gap:8px;flex-wrap:wrap;align-items:flex-end;">
-        <button type="button" class="btn btn-sm" ${slot.sending?'disabled':''}
-          onclick="requestOtp('${kind}', document.getElementById('${phoneId}').value)">${slot.sending?'Sending…':(slot.sent?'Resend OTP':'Send OTP')}</button>
-        ${slot.displayOtp ? `<button type="button" class="btn btn-sm wa-btn" onclick="shareOtpWhatsApp('${kind}')">WhatsApp code</button>` : ''}
+        <button type="button" class="btn btn-primary btn-sm" ${slot.sending?'disabled':''}
+          onclick="requestOtp('${kind}', document.getElementById('${phoneId}').value, {force:true, channel:'sms'})">${slot.sending?'Sending…':(slot.sent?'Resend SMS':'Send OTP')}</button>
+        <button type="button" class="btn btn-sm wa-btn" ${slot.sending?'disabled':''}
+          onclick="shareOtpWhatsApp('${kind}')">Send via WhatsApp</button>
       </div>
-      ${smsNote}
-      ${slot.displayOtp ? `<div class="banner banner-info" style="margin-top:10px;">Code for this number: <strong style="letter-spacing:0.12em;font-size:18px;">${esc(slot.displayOtp)}</strong>
-        <span class="faint"> · valid ~5 min · WhatsApp or desk if SMS not available</span></div>` : ''}
-      ${slot.sent ? `
+      ${statusNote}
+      ${slot.sent || slot.sending ? `
       <div class="row" style="margin-top:10px;gap:8px;align-items:flex-end;flex-wrap:wrap;">
-        <div class="field" style="flex:1;min-width:140px;"><label>Enter OTP</label>
+        <div class="field" style="flex:1;min-width:140px;"><label>Enter OTP received on phone</label>
           <input id="${otpId}" type="text" inputmode="numeric" maxlength="6" placeholder="6-digit code" value="${esc(slot.code||'')}"
+            autocomplete="one-time-code"
             oninput="otpSlot('${kind}').code=this.value;otpSlot('${kind}').verified=false;">
         </div>
         <button type="button" class="btn btn-primary btn-sm" onclick="verifyOtp('${kind}')">Verify</button>
@@ -5143,18 +5160,13 @@ function loginView(){
   const selectedName = state.loginSelectedName || '';
   const resolved = resolveStaffName(selectedName);
   const known = !!(resolved && (state.data.staff||[]).some(s=>s.name===resolved));
-  const method = known ? staffAuthMethod(resolved) : (state.loginAuthMethod || 'pin');
-  state.loginAuthMethod = method;
   if(known){
     const selectedStaff = state.data.staff.find(s=>s.name===resolved);
     if(selectedStaff && selectedStaff.totpEnabled) state.loginNeedsTotp = true;
+    state.loginAuthMethod = staffAuthMethod(resolved);
   }
   const lockName = known ? resolved : (selectedName || '_');
   const lock = pinLockStatus(lockName);
-  const credField = method === 'password'
-    ? `<div class="field"><label>Password</label><input id="login-password" type="password" placeholder="Your password" autocomplete="current-password" ${lock.locked?'disabled':''} onkeydown="if(event.key==='Enter')doLogin()"></div>`
-    : `<div class="field"><label>PIN</label><input id="login-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="current-password" ${lock.locked?'disabled':''} onkeydown="if(event.key==='Enter')doLogin()"></div>`;
-  const forgotLabel = method === 'password' ? 'Forgot password?' : 'Forgot PIN?';
   return `
   <div class="center-screen">
     <div class="auth-card">
@@ -5168,21 +5180,16 @@ function loginView(){
           autocapitalize="words" spellcheck="false"
           oninput="onLoginUsernameInput(this.value)"
           onblur="onLoginUsernameBlur()"
-          onkeydown="if(event.key==='Enter'){event.preventDefault(); onLoginUsernameBlur(); setTimeout(()=>{const n=document.getElementById(state.loginAuthMethod==='password'?'login-password':'login-pin'); if(n) n.focus(); else doLogin();}, 40);}">
+          onkeydown="if(event.key==='Enter'){event.preventDefault(); const n=document.getElementById('login-secret'); if(n) n.focus(); else doLogin();}">
       </div>
-      ${known ? `<p id="login-method-hint" class="faint" style="margin-bottom:10px;">${method==='password'?'This account uses a password.':'This account uses a 4-digit PIN.'}</p>`
-        : `<div class="field"><label>Login type</label>
-        <div class="lang-toggle" style="width:100%;">
-          <button type="button" class="${method==='pin'?'on':''}" onclick="setLoginAuthMethod('pin')" style="flex:1;">PIN</button>
-          <button type="button" class="${method==='password'?'on':''}" onclick="setLoginAuthMethod('password')" style="flex:1;">Password</button>
-        </div>
-        <p id="login-method-hint" class="faint" style="margin-top:6px;">Type your staff name, then enter PIN or password.</p>
-      </div>`}
-      ${credField}
+      <div class="field"><label>PIN or password</label>
+        <input id="login-secret" type="password" placeholder="Enter your PIN or password" autocomplete="current-password"
+          ${lock.locked?'disabled':''} onkeydown="if(event.key==='Enter')doLogin()">
+      </div>
       ${state.loginNeedsTotp ? `<div class="field"><label>Authenticator code</label><input id="login-totp" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code" onkeydown="if(event.key==='Enter')doLogin()"></div>` : ''}
       ${state.loginError ? `<div class="error-text">${esc(state.loginError)}</div>` : ''}
       <button class="btn btn-primary btn-block" ${lock.locked?'disabled':''} onclick="doLogin()">Log in</button>
-      <button type="button" class="auth-link" onclick="showForgotAuth()">${forgotLabel}</button>
+      <button type="button" class="auth-link" onclick="showForgotAuth()">Forgot PIN or password?</button>
     </div>
   </div>`;
 }
@@ -6047,7 +6054,7 @@ function newPatientView(){
       <div class="field"><label>Address *</label><textarea id="reg-address"></textarea></div>
       <div class="row">
         <div class="field"><label>Phone *</label><input id="reg-phone" type="text" inputmode="numeric" placeholder="10-digit mobile"
-          oninput="state.regDupeAcknowledged=false;otpSlot('patient').verified=false;otpSlot('patient').sent=false;otpSlot('patient').displayOtp='';"></div>
+          oninput="onPhoneForOtpInput('patient', this.value)"></div>
         <div class="field"><label>Blood group</label><select id="reg-blood-group"><option value="">Not recorded</option>${BLOOD_GROUPS.map(b=>`<option>${b}</option>`).join('')}</select></div>
       </div>
       ${otpVerifyBlockHTML('patient')}

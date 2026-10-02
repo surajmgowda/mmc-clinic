@@ -574,18 +574,25 @@ app.post('/api/otp/request', requireSession, async (req, res) => {
       smsResult = await sendSmsViaGateway(smsCfg, phone, message);
     }
 
-    // Always return code to authenticated staff for WhatsApp / desk fallback.
-    res.json({
+    // By default OTP is not shown on screen. SMS is attempted when configured.
+    // If client requests channel "whatsapp", include otp once so the staff
+    // device can open wa.me — still not rendered in the page HTML.
+    const channel = String((req.body || {}).channel || 'sms').toLowerCase();
+    const payload = {
       ok: true,
       phone,
       purpose,
       expiresInSec: Math.floor(OTP_TTL_MS / 1000),
-      otp: code,
       smsSent: !!smsResult.sent,
-      smsProvider: smsResult.provider || smsCfg.provider || null,
+      smsProvider: smsResult.provider || (smsCfg.enabled ? smsCfg.provider : null),
       smsError: smsResult.sent ? null : (smsResult.reason || null),
-      smsConfigured: !!smsCfg.enabled
-    });
+      smsConfigured: !!smsCfg.enabled,
+      delivery: smsResult.sent ? 'sms' : (channel === 'whatsapp' ? 'whatsapp' : 'none')
+    };
+    if (channel === 'whatsapp') {
+      payload.otpForWhatsApp = code;
+    }
+    res.json(payload);
   } catch (e) {
     console.error('POST /api/otp/request failed:', e);
     res.status(500).json({ error: 'server error' });
