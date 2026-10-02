@@ -6689,22 +6689,133 @@ function growthRecordsCardHTML(p){
   if(alertOnly){
     return `<div class="card" style="margin-bottom:18px;"><h2 style="margin-bottom:8px;">Growth</h2>${growthAlertBannerHTML(p)}</div>`;
   }
-  const rows = recs.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(r=>`
-    <tr><td>${fmtDate(r.date)}</td><td>${(r.ageMonths/12).toFixed(1)}y</td>
-      <td>${r.weight?r.weight+'kg ('+pctZLabel(r.weightPercentile, r.weightZ)+')':'<span class="faint">—</span>'}</td>
-      <td>${r.height?r.height+'cm ('+pctZLabel(r.heightPercentile, r.heightZ)+')':'<span class="faint">—</span>'}</td>
-      <td>${r.hc?r.hc+'cm ('+pctZLabel(r.hcPercentile, r.hcZ)+')':'<span class="faint">—</span>'}</td>
-    </tr>`).join('');
+  const showGraphs = !!(state.ui && state.ui.growthGraphsFor === p.id);
+  const editingIdx = (state.ui && state.ui.editingGrowth && state.ui.editingGrowth.patientId === p.id)
+    ? state.ui.editingGrowth.index : -1;
+  const sorted = recs.map((r,i)=>({r,i})).sort((a,b)=>(b.r.date||'').localeCompare(a.r.date||''));
+  const rows = sorted.map(({r,i})=>{
+    if(editingIdx === i){
+      return `<tr>
+        <td colspan="6" style="padding:10px;background:var(--bg-soft,var(--bg));">
+          <div class="row" style="gap:8px;flex-wrap:wrap;">
+            <div class="field"><label>Date</label><input id="ge-date" type="date" value="${esc(r.date||'')}"></div>
+            <div class="field"><label>Age (months)</label><input id="ge-age" type="number" step="0.1" value="${esc(r.ageMonths!=null?r.ageMonths:'')}"></div>
+            <div class="field"><label>Weight (kg)</label><input id="ge-weight" type="number" step="0.1" value="${esc(r.weight!=null?r.weight:'')}"></div>
+            <div class="field"><label>Height (cm)</label><input id="ge-height" type="number" step="0.1" value="${esc(r.height!=null?r.height:'')}"></div>
+            <div class="field"><label>Head circ. (cm)</label><input id="ge-hc" type="number" step="0.1" value="${esc(r.hc!=null?r.hc:'')}"></div>
+          </div>
+          <div class="row" style="gap:8px;margin-top:8px;">
+            <button class="btn btn-primary btn-sm" onclick="saveGrowthRecordEdit('${p.id}',${i})">Save</button>
+            <button class="btn btn-ghost btn-sm" onclick="cancelGrowthRecordEdit()">Cancel</button>
+          </div>
+        </td>
+      </tr>`;
+    }
+    return `<tr>
+      <td>${fmtDate(r.date)}</td><td>${r.ageMonths!=null?(r.ageMonths/12).toFixed(1)+'y':'—'}</td>
+      <td>${r.weight!=null?r.weight+'kg ('+pctZLabel(r.weightPercentile, r.weightZ)+')':'<span class="faint">—</span>'}</td>
+      <td>${r.height!=null?r.height+'cm ('+pctZLabel(r.heightPercentile, r.heightZ)+')':'<span class="faint">—</span>'}</td>
+      <td>${r.hc!=null?r.hc+'cm ('+pctZLabel(r.hcPercentile, r.hcZ)+')':'<span class="faint">—</span>'}</td>
+      <td style="white-space:nowrap;">
+        ${can('viewClinical')||can('pediatrics')?`
+        <button class="btn btn-ghost btn-sm" onclick="startGrowthRecordEdit('${p.id}',${i})">Edit</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--danger);" onclick="deleteGrowthRecord('${p.id}',${i})">Delete</button>
+        `:''}
+      </td>
+    </tr>`;
+  }).join('');
+
+  const sex = p.sex === 'Female' ? 'Female' : 'Male';
+  const asc = recs.slice().sort((a,b)=>(a.ageMonths||0)-(b.ageMonths||0));
+  const last = asc[asc.length-1] || {};
+  const graphsHTML = showGraphs ? `
+    <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line);">
+      <p class="faint" style="margin-bottom:10px;">WHO standards — plotted points from saved readings. Gold = latest.</p>
+      ${last.weight!=null ? growthChartCardHTML('weight', sex, last.ageMonths, last.weight, asc.filter(r=>r.weight!=null).map(r=>({ageMonths:r.ageMonths,value:r.weight}))) : ''}
+      ${last.height!=null ? growthChartCardHTML('height', sex, last.ageMonths, last.height, asc.filter(r=>r.height!=null).map(r=>({ageMonths:r.ageMonths,value:r.height}))) : ''}
+      ${last.hc!=null ? growthChartCardHTML('hc', sex, last.ageMonths, last.hc, asc.filter(r=>r.hc!=null).map(r=>({ageMonths:r.ageMonths,value:r.hc}))) : ''}
+      ${!(last.weight!=null||last.height!=null||last.hc!=null) ? '<p class="muted">No plottable values yet.</p>' : ''}
+    </div>` : '';
+
   return `
     <div class="card" style="margin-bottom:18px;">
-      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px;">
         <h2 style="margin:0;">Growth records</h2>
-        <button class="btn btn-sm" onclick="printGrowthChart('${p.id}')">🖶 Print chart</button>
+        <div class="row" style="gap:6px;flex-wrap:wrap;">
+          <button class="btn btn-sm ${showGraphs?'btn-primary':''}" onclick="toggleGrowthGraphs('${p.id}')">${showGraphs?'Hide graphs':'📈 View graphs'}</button>
+          <button class="btn btn-sm" onclick="printGrowthChart('${p.id}')">🖶 Print chart</button>
+        </div>
       </div>
       ${growthAlertBannerHTML(p)}
-      <table><thead><tr><th>Date</th><th>Age</th><th>Weight</th><th>Height</th><th>Head circ.</th></tr></thead><tbody>${rows}</tbody></table>
+      <div style="overflow-x:auto;">
+        <table><thead><tr><th>Date</th><th>Age</th><th>Weight</th><th>Height</th><th>Head circ.</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table>
+      </div>
+      ${graphsHTML}
     </div>
     ${growthChartPrintHTML(p)}`;
+}
+function toggleGrowthGraphs(patientId){
+  if(!state.ui) state.ui = {};
+  state.ui.growthGraphsFor = state.ui.growthGraphsFor === patientId ? null : patientId;
+  render();
+}
+function startGrowthRecordEdit(patientId, index){
+  if(!can('viewClinical') && !can('pediatrics')) return;
+  if(!state.ui) state.ui = {};
+  state.ui.editingGrowth = { patientId, index };
+  render();
+}
+function cancelGrowthRecordEdit(){
+  if(state.ui) state.ui.editingGrowth = null;
+  render();
+}
+async function saveGrowthRecordEdit(patientId, index){
+  if(!can('viewClinical') && !can('pediatrics')) return;
+  const p = state.data.patients.find(x=>x.id===patientId);
+  if(!p || !p.growthRecords || !p.growthRecords[index]) return;
+  const date = (document.getElementById('ge-date')||{}).value || '';
+  const ageMonths = parseFloat((document.getElementById('ge-age')||{}).value);
+  const weight = parseFloat((document.getElementById('ge-weight')||{}).value);
+  const height = parseFloat((document.getElementById('ge-height')||{}).value);
+  const hc = parseFloat((document.getElementById('ge-hc')||{}).value);
+  if(!date){ alert('Date is required.'); return; }
+  const sex = p.sex === 'Female' ? 'Female' : 'Male';
+  const rec = p.growthRecords[index];
+  rec.date = date;
+  rec.ageMonths = isNaN(ageMonths) ? rec.ageMonths : ageMonths;
+  rec.sex = sex;
+  if(!isNaN(weight) && weight > 0){
+    rec.weight = weight;
+    const wp = growthPercentile('weight', sex, rec.ageMonths, weight);
+    if(wp){ rec.weightPercentile = wp.percentile; rec.weightZ = wp.z; }
+  } else { rec.weight = null; rec.weightPercentile = null; rec.weightZ = null; }
+  if(!isNaN(height) && height > 0){
+    rec.height = height;
+    const hp = growthPercentile('height', sex, rec.ageMonths, height);
+    if(hp){ rec.heightPercentile = hp.percentile; rec.heightZ = hp.z; }
+  } else { rec.height = null; rec.heightPercentile = null; rec.heightZ = null; }
+  if(!isNaN(hc) && hc > 0){
+    rec.hc = hc;
+    const hcp = growthPercentile('hc', sex, rec.ageMonths, hc);
+    if(hcp){ rec.hcPercentile = hcp.percentile; rec.hcZ = hcp.z; }
+  } else { rec.hc = null; rec.hcPercentile = null; rec.hcZ = null; }
+  logAudit('Edited growth record', `${p.name} (${p.id}) · ${date}`);
+  if(state.ui) state.ui.editingGrowth = null;
+  await saveData();
+  render();
+}
+async function deleteGrowthRecord(patientId, index){
+  if(!can('viewClinical') && !can('pediatrics')) return;
+  const p = state.data.patients.find(x=>x.id===patientId);
+  if(!p || !p.growthRecords || !p.growthRecords[index]) return;
+  const r = p.growthRecords[index];
+  if(!confirm(`Delete growth record from ${fmtDate(r.date)}?`)) return;
+  p.growthRecords.splice(index, 1);
+  logAudit('Deleted growth record', `${p.name} (${p.id}) · ${r.date||''}`);
+  if(state.ui && state.ui.editingGrowth && state.ui.editingGrowth.patientId===patientId) state.ui.editingGrowth = null;
+  await saveData();
+  render();
 }
 function growthChartPrintHTML(p){
   const recs = (p.growthRecords||[]).slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
@@ -9382,12 +9493,16 @@ function growthCalcHTML(){
         ${last.weight!=null ? growthChartCardHTML('weight', sexR, last.ageMonths, last.weight, recs.filter(r=>r.weight!=null).map(r=>({ageMonths:r.ageMonths,value:r.weight}))) : ''}
         ${last.height!=null ? growthChartCardHTML('height', sexR, last.ageMonths, last.height, recs.filter(r=>r.height!=null).map(r=>({ageMonths:r.ageMonths,value:r.height}))) : ''}
         ${last.hc!=null ? growthChartCardHTML('hc', sexR, last.ageMonths, last.hc, recs.filter(r=>r.hc!=null).map(r=>({ageMonths:r.ageMonths,value:r.hc}))) : ''}
-        <table style="margin-top:10px;"><thead><tr><th>Date</th><th>Age</th><th>Weight</th><th>Height</th><th>HC</th></tr></thead>
-        <tbody>${recs.slice().reverse().map(r=>`
+        <table style="margin-top:10px;"><thead><tr><th>Date</th><th>Age</th><th>Weight</th><th>Height</th><th>HC</th><th></th></tr></thead>
+        <tbody>${(linked.growthRecords||[]).map((r,i)=>({r,i})).sort((a,b)=>(b.r.date||'').localeCompare(a.r.date||'')).map(({r,i})=>`
           <tr><td>${fmtDate(r.date)}</td><td>${(r.ageMonths/12).toFixed(1)}y</td>
             <td>${r.weight!=null?r.weight+' kg'+(r.weightPercentile!=null?' ('+pctZLabel(r.weightPercentile, r.weightZ)+')':''):'—'}</td>
             <td>${r.height!=null?r.height+' cm'+(r.heightPercentile!=null?' ('+pctZLabel(r.heightPercentile, r.heightZ)+')':''):'—'}</td>
             <td>${r.hc!=null?r.hc+' cm'+(r.hcPercentile!=null?' ('+pctZLabel(r.hcPercentile, r.hcZ)+')':''):'—'}</td>
+            <td style="white-space:nowrap;">
+              <button class="btn btn-ghost btn-sm" onclick="startGrowthRecordEdit('${linked.id}',${i});go('patient',{patientId:'${linked.id}'})">Edit</button>
+              <button class="btn btn-ghost btn-sm" style="color:var(--danger);" onclick="deleteGrowthRecord('${linked.id}',${i})">Delete</button>
+            </td>
           </tr>`).join('')}</tbody></table>
       </div>`;
   } else if(linked){
