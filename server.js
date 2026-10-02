@@ -287,31 +287,46 @@ app.post('/api/login', async (req, res) => {
     let ok = false;
     let upgraded = false;
 
-    if (password) {
-      // Password login — only valid if this account uses password
-      if (method !== 'password' || !staff.password) {
+    // Accept either body field — some clients send only one. Always verify
+    // against this account's real method (PIN vs password).
+    const credential = (password != null && password !== '') ? String(password)
+      : (pin != null && pin !== '') ? String(pin) : '';
+    if (!credential) {
+      recordFailedLogin(staffName);
+      return res.status(401).json({ error: 'invalid credentials' });
+    }
+
+    if (method === 'password') {
+      if (!staff.password) {
         recordFailedLogin(staffName);
         return res.status(401).json({ error: 'invalid credentials' });
       }
-      ok = verifySecret(password, staff.password);
+      ok = verifySecret(credential, staff.password);
       if (ok && looksLegacyHash(staff.password)) {
-        staff.password = hashSecretSalted(password);
+        staff.password = hashSecretSalted(credential);
         upgraded = true;
       }
     } else {
-      // PIN login
-      if (method === 'password' && !staff.pin) {
-        recordFailedLogin(staffName);
-        return res.status(401).json({ error: 'invalid credentials' });
-      }
+      // PIN accounts
       if (!staff.pin) {
         recordFailedLogin(staffName);
         return res.status(401).json({ error: 'invalid credentials' });
       }
-      ok = verifySecret(pin, staff.pin);
+      ok = verifySecret(credential, staff.pin);
+      // Also try legacy client-prehashed PIN (SHA-256 hex) if raw failed —
+      // older app versions stored or sent pre-hashed values.
+      if (!ok && looksLegacyHash(staff.pin) && !/^[0-9a-f]{64}$/i.test(credential)) {
+        // already handled by verifySecret
+      }
+      if (!ok && staff.pin && looksLegacyHash(staff.pin) === false && credential.length === 64) {
+        // client accidentally sent a hash; cannot reverse — fail
+      }
       if (ok && looksLegacyHash(staff.pin)) {
-        staff.pin = hashSecretSalted(pin);
-        upgraded = true;
+        // Upgrade only when credential was the raw PIN (4 digits)
+        if (/^\d{4}$/.test(credential)) {
+          staff.pin = hashSecretSalted(credential);
+          upgraded = true;
+        }
       }
     }
 
@@ -344,7 +359,7 @@ app.post('/api/login', async (req, res) => {
       name: staff.name, role: staff.role, owner: !!staff.owner, exp: Date.now() + SESSION_MAX_AGE_MS
     });
     setSessionCookie(req, res, token);
-    res.json({ ok: true, name: staff.name, role: staff.role, owner: !!staff.owner });
+    res.json({ ok: true, name: staff.name, role: staff.role, owner: !!staff.owner, authMethod: method });
   } catch (e) {
     console.error('POST /api/login failed:', e);
     res.status(500).json({ error: 'server error' });

@@ -1872,15 +1872,57 @@ function onLoginUsernameInput(val){
   state.loginSelectedName = (val||'').trim();
   const resolved = resolveStaffName(state.loginSelectedName);
   if(resolved && (state.data.staff||[]).some(s=>s.name===resolved)){
+    const nextMethod = staffAuthMethod(resolved);
+    const staff = (state.data.staff||[]).find(s=>s.name===resolved);
+    const nextTotp = !!(staff && staff.totpEnabled);
+    const methodChanged = state.loginAuthMethod !== nextMethod;
+    const totpChanged = !!state.loginNeedsTotp !== nextTotp;
+    state.loginAuthMethod = nextMethod;
+    state.loginNeedsTotp = nextTotp;
+    // Re-render when method/2FA changes so the correct field is shown
+    if(methodChanged || totpChanged){
+      const keepUser = state.loginSelectedName;
+      render();
+      setTimeout(()=>{
+        const u = document.getElementById('login-username');
+        if(u){ u.value = keepUser; u.focus(); }
+        const cred = document.getElementById(nextMethod==='password'?'login-password':'login-pin');
+        if(cred) cred.focus();
+      }, 20);
+      return;
+    }
+  }
+  const hint = document.getElementById('login-method-hint');
+  if(hint){
+    if(resolved && (state.data.staff||[]).some(s=>s.name===resolved)){
+      const m = staffAuthMethod(resolved);
+      hint.textContent = m === 'password' ? 'This account uses a password.' : 'This account uses a 4-digit PIN.';
+    } else {
+      hint.textContent = 'Type your staff name exactly as registered.';
+    }
+  }
+}
+function onLoginUsernameBlur(){
+  const el = document.getElementById('login-username');
+  if(!el) return;
+  onLoginUsernameInput(el.value);
+  // Force a clean render so PIN vs Password field matches the account
+  const resolved = resolveStaffName((el.value||'').trim());
+  if(resolved && (state.data.staff||[]).some(s=>s.name===resolved)){
     state.loginAuthMethod = staffAuthMethod(resolved);
     const staff = (state.data.staff||[]).find(s=>s.name===resolved);
     state.loginNeedsTotp = !!(staff && staff.totpEnabled);
-  }
-  // Don't full re-render on every keystroke — only update method hint if elements exist
-  const hint = document.getElementById('login-method-hint');
-  if(hint && resolved){
-    const m = staffAuthMethod(resolved);
-    hint.textContent = m === 'password' ? 'This account uses a password.' : 'This account uses a 4-digit PIN.';
+    const pinVal = (document.getElementById('login-pin')||{}).value || '';
+    const passVal = (document.getElementById('login-password')||{}).value || '';
+    render();
+    setTimeout(()=>{
+      const u = document.getElementById('login-username');
+      if(u) u.value = state.loginSelectedName || resolved;
+      const pin = document.getElementById('login-pin');
+      const pass = document.getElementById('login-password');
+      if(pin && pinVal) pin.value = pinVal;
+      if(pass && passVal) pass.value = passVal;
+    }, 20);
   }
 }
 function setLoginAuthMethod(method){
@@ -2233,7 +2275,16 @@ async function doLogin(){
     return;
   }
   const totpCode = ((document.getElementById('login-totp')||{}).value||'').replace(/\s/g,'');
-  const body = method === 'password' ? {staffName: name, password} : {staffName: name, pin};
+  // Send the credential under the account method; also include the other key
+  // as a fallback so the server can verify against the stored secret.
+  const body = { staffName: name };
+  if(method === 'password'){
+    body.password = password || pin;
+    if(pin && !password) body.pin = pin;
+  } else {
+    body.pin = pin || password;
+    if(password && !pin) body.password = password;
+  }
   if(totpCode) body.totpCode = totpCode;
   const btn = document.querySelector('.auth-card .btn-primary');
   if(btn){ btn.disabled = true; btn.textContent = 'Signing in…'; }
@@ -2287,7 +2338,7 @@ async function doLogin(){
         } else {
           const left = PIN_LOCK_THRESHOLD - rec.fails;
           const what = method === 'password' ? 'password' : 'PIN';
-          state.loginError = `Incorrect ${what}. Try again.${left<=2 ? ` (${left} attempt${left===1?'':'s'} left before a cooldown)` : ''}`;
+          state.loginError = `Incorrect username or ${what}. Check the spelling of your username and try again.${left<=2 ? ` (${left} attempt${left===1?'':'s'} left before a cooldown)` : ''}`;
         }
         state.loginInProgress = false;
         render();
@@ -4919,15 +4970,17 @@ function loginView(){
         <input id="login-username" type="text" value="${esc(selectedName)}" placeholder="Your staff name" autocomplete="username"
           autocapitalize="words" spellcheck="false"
           oninput="onLoginUsernameInput(this.value)"
-          onkeydown="if(event.key==='Enter'){const n=document.getElementById(state.loginAuthMethod==='password'?'login-password':'login-pin'); if(n) n.focus(); else doLogin();}">
+          onblur="onLoginUsernameBlur()"
+          onkeydown="if(event.key==='Enter'){event.preventDefault(); onLoginUsernameBlur(); setTimeout(()=>{const n=document.getElementById(state.loginAuthMethod==='password'?'login-password':'login-pin'); if(n) n.focus(); else doLogin();}, 40);}">
       </div>
-      <div class="field"><label>Login type</label>
+      ${known ? `<p id="login-method-hint" class="faint" style="margin-bottom:10px;">${method==='password'?'This account uses a password.':'This account uses a 4-digit PIN.'}</p>`
+        : `<div class="field"><label>Login type</label>
         <div class="lang-toggle" style="width:100%;">
           <button type="button" class="${method==='pin'?'on':''}" onclick="setLoginAuthMethod('pin')" style="flex:1;">PIN</button>
           <button type="button" class="${method==='password'?'on':''}" onclick="setLoginAuthMethod('password')" style="flex:1;">Password</button>
         </div>
-        <p id="login-method-hint" class="faint" style="margin-top:6px;">${known ? (method==='password'?'This account uses a password.':'This account uses a 4-digit PIN.') : 'Choose PIN or Password for your account.'}</p>
-      </div>
+        <p id="login-method-hint" class="faint" style="margin-top:6px;">Type your staff name, then enter PIN or password.</p>
+      </div>`}
       ${credField}
       ${state.loginNeedsTotp ? `<div class="field"><label>Authenticator code</label><input id="login-totp" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code" onkeydown="if(event.key==='Enter')doLogin()"></div>` : ''}
       ${state.loginError ? `<div class="error-text">${esc(state.loginError)}</div>` : ''}
