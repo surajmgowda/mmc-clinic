@@ -1849,20 +1849,55 @@ function clearPinAttempts(name){
   delete all[name];
   savePinAttempts(all);
 }
+function resolveStaffName(input){
+  const q = (input||'').trim().toLowerCase();
+  if(!q) return '';
+  const list = (state.data && state.data.staff) || [];
+  const exact = list.find(s => (s.name||'').toLowerCase() === q);
+  if(exact) return exact.name;
+  // Optional: match username field if present on staff record
+  const byUser = list.find(s => (s.username||'').toLowerCase() === q);
+  if(byUser) return byUser.name;
+  return (input||'').trim(); // let server reject unknown names
+}
 function staffAuthMethod(name){
-  const s = (state.data && state.data.staff || []).find(x=>x.name===name);
-  if(!s) return 'pin';
+  const resolved = resolveStaffName(name) || name;
+  const s = (state.data && state.data.staff || []).find(x=>x.name===resolved);
+  if(!s) return state.loginAuthMethod || 'pin';
   if(s.authMethod === 'password' || s.authMethod === 'pin') return s.authMethod;
-  // Legacy accounts: prefer password if only password hash exists
   if(s.password && !s.pin) return 'password';
   return 'pin';
 }
+function onLoginUsernameInput(val){
+  state.loginSelectedName = (val||'').trim();
+  const resolved = resolveStaffName(state.loginSelectedName);
+  if(resolved && (state.data.staff||[]).some(s=>s.name===resolved)){
+    state.loginAuthMethod = staffAuthMethod(resolved);
+    const staff = (state.data.staff||[]).find(s=>s.name===resolved);
+    state.loginNeedsTotp = !!(staff && staff.totpEnabled);
+  }
+  // Don't full re-render on every keystroke — only update method hint if elements exist
+  const hint = document.getElementById('login-method-hint');
+  if(hint && resolved){
+    const m = staffAuthMethod(resolved);
+    hint.textContent = m === 'password' ? 'This account uses a password.' : 'This account uses a 4-digit PIN.';
+  }
+}
+function setLoginAuthMethod(method){
+  state.loginAuthMethod = method === 'password' ? 'password' : 'pin';
+  render();
+  setTimeout(()=>{
+    const el = document.getElementById(method==='password'?'login-password':'login-pin');
+    if(el) el.focus();
+  }, 30);
+}
 function onLoginStaffChange(name){
+  // kept for any leftover callers
   state.loginSelectedName = name;
   state.loginAuthMethod = staffAuthMethod(name);
   const staff = (state.data.staff||[]).find(s=>s.name===name);
   state.loginNeedsTotp = !!(staff && staff.totpEnabled);
-  const lock = pinLockStatus(name);
+  const lock = pinLockStatus(resolveStaffName(name)||name);
   state.loginError = lock.locked ? `Too many incorrect attempts. Try again in ${Math.ceil(lock.remainingMs/1000)}s.` : '';
   render();
 }
@@ -2165,8 +2200,17 @@ function cancelForgotAuth(){
 
 async function doLogin(){
   if(state.loginInProgress) return;
-  const name = document.getElementById('login-select').value;
-  const method = staffAuthMethod(name);
+  const rawName = ((document.getElementById('login-username')||{}).value||'').trim();
+  if(!rawName){
+    state.loginError = 'Enter your username.';
+    render();
+    return;
+  }
+  const name = resolveStaffName(rawName) || rawName;
+  state.loginSelectedName = rawName;
+  // Prefer explicit toggle; else detect from staff record when known
+  let method = state.loginAuthMethod || 'pin';
+  if((state.data.staff||[]).some(s=>s.name===name)) method = staffAuthMethod(name);
   state.loginAuthMethod = method;
   const pinEl = document.getElementById('login-pin');
   const passEl = document.getElementById('login-password');
@@ -2288,7 +2332,8 @@ async function doLogin(){
 }
 
 async function doVerifyRecoveryCode(){
-  const name = document.getElementById('forgot-select').value;
+  const raw = ((document.getElementById('forgot-username')||document.getElementById('forgot-select')||{}).value||'').trim();
+  const name = resolveStaffName(raw) || raw;
   const codeRaw = (document.getElementById('forgot-code')||{}).value || '';
   const code = codeRaw.replace(/[^A-Za-z0-9]/g,'').toUpperCase();
   const err = document.getElementById('forgot-error');
@@ -3604,6 +3649,9 @@ function initDraftVisit(patientId, existingVisit){
       vitals: { bp:'', pulse:'', temp:'', weight:'', height:'', ...(existingVisit.vitals||{}) },
       complaints: existingVisit.complaints||'', systemicExam: {cvs:'',rs:'',pa:'',cns:'', ...(existingVisit.systemicExam||{})},
       diagnosis: existingVisit.diagnosis||'', notes: existingVisit.notes||'',
+      notifiable: !!existingVisit.notifiable,
+      notifiableDisease: existingVisit.notifiableDisease||'',
+      notifiableReported: !!existingVisit.notifiableReported,
       followUpDate: existingVisit.followUpDate||'',
       assignedDoctor: existingVisit.assignedDoctor||'',
       referredTo: existingVisit.referredTo||'', referralReason: existingVisit.referralReason||'',
@@ -3620,7 +3668,9 @@ function initDraftVisit(patientId, existingVisit){
       editingVisitId: null,
       doctorName: state.session.staffName || '',
       vitals: {bp:'',pulse:'',temp:'',weight:'',height:''},
-      complaints:'', systemicExam:{cvs:'',rs:'',pa:'',cns:''}, diagnosis:'', notes:'', followUpDate:'', assignedDoctor:'',
+      complaints:'', systemicExam:{cvs:'',rs:'',pa:'',cns:''}, diagnosis:'', notes:'',
+      notifiable:false, notifiableDisease:'', notifiableReported:false,
+      followUpDate:'', assignedDoctor:'',
       referredTo:'', referralReason:'',
       attachments: [],
       prescriptions: [{medicine:'',dosage:'',frequency:'',duration:'',instructions:''}],
@@ -3887,6 +3937,11 @@ async function saveVisit(){
     dv.systemicExam = {cvs:val('v-se-cvs')||'', rs:val('v-se-rs')||'', pa:val('v-se-pa')||'', cns:val('v-se-cns')||''};
     dv.diagnosis = val('v-diagnosis');
     dv.notes = val('v-notes');
+    const nf = document.getElementById('v-notifiable');
+    dv.notifiable = !!(nf && nf.checked);
+    dv.notifiableDisease = dv.notifiable ? (val('v-notifiable-disease')||'') : '';
+    // keep reported flag if already set on existing visit
+    if(!dv.notifiable) dv.notifiableReported = false;
     dv.followUpDate = val('v-followup');
     dv.referredTo = val('v-referred-to');
     dv.referralReason = val('v-referral-reason');
@@ -4046,6 +4101,9 @@ async function saveVisit(){
     visit.systemicExam = dv.systemicExam;
     visit.diagnosis = dv.diagnosis;
     visit.notes = dv.notes;
+    visit.notifiable = !!dv.notifiable;
+    visit.notifiableDisease = dv.notifiable ? (dv.notifiableDisease||'') : '';
+    if(!visit.notifiable){ visit.notifiableReported = false; visit.notifiableReportedAt = ''; }
     visit.followUpDate = dv.followUpDate;
     visit.referredTo = dv.referredTo; visit.referralReason = dv.referralReason;
     visit.assignedDoctor = dv.assignedDoctor;
@@ -4064,6 +4122,8 @@ async function saveVisit(){
       id: newVisitId(), token: nextTokenNumber(), date: todayStr(), time: nowTimeStr(),
       doctorName: dv.doctorName, vitals: dv.vitals,
       complaints: dv.complaints, systemicExam: dv.systemicExam, diagnosis: dv.diagnosis, notes: dv.notes,
+      notifiable: !!dv.notifiable, notifiableDisease: dv.notifiable ? (dv.notifiableDisease||'') : '',
+      notifiableReported: false,
       followUpDate: dv.followUpDate, assignedDoctor: dv.assignedDoctor||'',
       referredTo: dv.referredTo||'', referralReason: dv.referralReason||'',
       prescriptions, investigations, status,
@@ -4832,26 +4892,42 @@ function setupView(){
 function loginView(){
   if(state.loginMode === 'forgot') return forgotAuthView();
   if(state.loginMode === 'reset') return resetAuthView();
-  const selectedName = state.loginSelectedName || (state.data.staff[0] && state.data.staff[0].name) || '';
-  const lock = pinLockStatus(selectedName);
-  const method = staffAuthMethod(selectedName);
+  const selectedName = state.loginSelectedName || '';
+  const resolved = resolveStaffName(selectedName);
+  const known = !!(resolved && (state.data.staff||[]).some(s=>s.name===resolved));
+  const method = known ? staffAuthMethod(resolved) : (state.loginAuthMethod || 'pin');
   state.loginAuthMethod = method;
-  const selectedStaff = state.data.staff.find(s=>s.name===selectedName);
-  if(selectedStaff && selectedStaff.totpEnabled) state.loginNeedsTotp = true;
-  const staffOptions = state.data.staff.map(s=>`<option value="${esc(s.name)}" ${s.name===selectedName?'selected':''}>${esc(s.name)} — ${esc(s.role)}</option>`).join('');
+  if(known){
+    const selectedStaff = state.data.staff.find(s=>s.name===resolved);
+    if(selectedStaff && selectedStaff.totpEnabled) state.loginNeedsTotp = true;
+  }
+  const lockName = known ? resolved : (selectedName || '_');
+  const lock = pinLockStatus(lockName);
   const credField = method === 'password'
     ? `<div class="field"><label>Password</label><input id="login-password" type="password" placeholder="Your password" autocomplete="current-password" ${lock.locked?'disabled':''} onkeydown="if(event.key==='Enter')doLogin()"></div>`
-    : `<div class="field"><label>PIN</label><input id="login-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="one-time-code" ${lock.locked?'disabled':''} onkeydown="if(event.key==='Enter')doLogin()"></div>`;
+    : `<div class="field"><label>PIN</label><input id="login-pin" type="password" inputmode="numeric" maxlength="4" placeholder="••••" autocomplete="current-password" ${lock.locked?'disabled':''} onkeydown="if(event.key==='Enter')doLogin()"></div>`;
   const forgotLabel = method === 'password' ? 'Forgot password?' : 'Forgot PIN?';
   return `
   <div class="center-screen">
     <div class="auth-card">
       <div class="auth-brand">
         ${brandMarkHTML({size:48})}
-        <h1 style="font-size:19px;">${esc(state.data.clinicInfo.name)}</h1>
-        <p class="muted" style="font-size:13px;">Log in to continue</p>
+        <h1 style="font-size:19px;">${esc((state.data.clinicInfo&&state.data.clinicInfo.name)||'Clinic')}</h1>
+        <p class="muted" style="font-size:13px;">Sign in with your username and PIN or password</p>
       </div>
-      <div class="field"><label>Staff</label><select id="login-select" onchange="onLoginStaffChange(this.value)">${staffOptions}</select></div>
+      <div class="field"><label>Username</label>
+        <input id="login-username" type="text" value="${esc(selectedName)}" placeholder="Your staff name" autocomplete="username"
+          autocapitalize="words" spellcheck="false"
+          oninput="onLoginUsernameInput(this.value)"
+          onkeydown="if(event.key==='Enter'){const n=document.getElementById(state.loginAuthMethod==='password'?'login-password':'login-pin'); if(n) n.focus(); else doLogin();}">
+      </div>
+      <div class="field"><label>Login type</label>
+        <div class="lang-toggle" style="width:100%;">
+          <button type="button" class="${method==='pin'?'on':''}" onclick="setLoginAuthMethod('pin')" style="flex:1;">PIN</button>
+          <button type="button" class="${method==='password'?'on':''}" onclick="setLoginAuthMethod('password')" style="flex:1;">Password</button>
+        </div>
+        <p id="login-method-hint" class="faint" style="margin-top:6px;">${known ? (method==='password'?'This account uses a password.':'This account uses a 4-digit PIN.') : 'Choose PIN or Password for your account.'}</p>
+      </div>
       ${credField}
       ${state.loginNeedsTotp ? `<div class="field"><label>Authenticator code</label><input id="login-totp" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code" onkeydown="if(event.key==='Enter')doLogin()"></div>` : ''}
       ${state.loginError ? `<div class="error-text">${esc(state.loginError)}</div>` : ''}
@@ -4862,17 +4938,18 @@ function loginView(){
 }
 
 function forgotAuthView(){
-  const selectedName = state.loginSelectedName || (state.data.staff[0] && state.data.staff[0].name) || '';
-  const staffOptions = state.data.staff.map(s=>`<option value="${esc(s.name)}" ${s.name===selectedName?'selected':''}>${esc(s.name)} — ${esc(s.role)}</option>`).join('');
+  const selectedName = state.loginSelectedName || '';
   return `
   <div class="center-screen">
     <div class="auth-card">
       <div class="auth-brand">
         ${brandMarkHTML({size:48})}
         <h1 style="font-size:19px;">Reset login</h1>
-        <p class="muted" style="font-size:13px;">Enter the recovery code that was shown when your account was created (or last reset).</p>
+        <p class="muted" style="font-size:13px;">Enter your username and the recovery code shown when your account was created (or last reset).</p>
       </div>
-      <div class="field"><label>Staff</label><select id="forgot-select">${staffOptions}</select></div>
+      <div class="field"><label>Username</label>
+        <input id="forgot-username" type="text" value="${esc(selectedName)}" placeholder="Your staff name" autocomplete="username" autocapitalize="words" spellcheck="false">
+      </div>
       <div class="field"><label>Recovery code</label><input id="forgot-code" type="text" placeholder="e.g. AB12-CD34" autocomplete="off" style="text-transform:uppercase;letter-spacing:0.06em;"></div>
       <div id="forgot-error" class="error-text"></div>
       <button class="btn btn-primary btn-block" onclick="doVerifyRecoveryCode()">Verify code</button>
@@ -5148,6 +5225,7 @@ function routeContent(){
     case 'labResults': return labResultsView();
     case 'tokenDisplay': return tokenDisplayView();
     case 'dailyClose': return `<div class="page-head"><div><h1>End of day</h1><p class="muted">Checklist, daily numbers, print & WhatsApp</p></div></div>${dailyCloseHTML()}`;
+    case 'notifiable': return notifiableRegisterView();
     case 'dueList': return `<div class="page-head"><h1>Tomorrow due list</h1></div>${dueListPrintHTML()}`;
     default: return dashboardView();
   }
@@ -5696,6 +5774,13 @@ async function performMerge(){
   go('patient', {patientId: a.id});
 }
 
+const NOTIFIABLE_DISEASES = [
+  'Dengue','Chikungunya','Malaria','Typhoid','Tuberculosis (TB)','COVID-19',
+  'Measles','Chickenpox','Acute diarrhoea / cholera suspected','Hepatitis A','Hepatitis B',
+  'HIV / AIDS (as per protocol)','Leptospirosis','Japanese encephalitis','Acute encephalitis',
+  'Diphtheria','Pertussis','Tetanus','Rabies (animal bite — post-exposure)','Other (specify in notes)'
+];
+
 const BLOOD_GROUPS = ['A+','A-','B+','B-','AB+','AB-','O+','O-','Unknown'];
 function newPatientView(){
   return `
@@ -5960,7 +6045,8 @@ function patientView(patientId){
       <td>${st==='waiting'
         ? `<span class="pill" style="background:var(--accent-tint);color:var(--accent);">Waiting${canContinue?' — tap to continue':''}</span>`
         : '<span class="pill">Completed</span>'}
-        ${v.referredTo ? `<span class="pill" title="Referred to ${esc(v.referredTo)}${v.referralReason?' — '+esc(v.referralReason):''}" style="margin-left:4px;">↗ Referred</span>` : ''}</td>
+        ${v.referredTo ? `<span class="pill" title="Referred to ${esc(v.referredTo)}${v.referralReason?' — '+esc(v.referralReason):''}" style="margin-left:4px;">↗ Referred</span>` : ''}
+        ${v.notifiable ? `<span class="pill" style="margin-left:4px;background:var(--accent-tint);color:var(--accent-dark);" title="${esc(v.notifiableDisease||'Notifiable')}">Notifiable${v.notifiableReported?' ✓':''}</span>` : ''}</td>
       <td>${can('deleteVisit') ? `<button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();deleteVisit('${p.id}','${v.id}')">Delete</button>` : ''}</td>
     </tr>`;
   }).join('');
@@ -8461,6 +8547,19 @@ function newVisitView(){
         <input id="v-diagnosis" value="${esc(dv.diagnosis)}" oninput="onDiagnosisInput(this)" placeholder="">
         <div class="chip-row" id="diagnosis-chips">${chipRowHTML(chipsFor(dv.diagnosis, DIAGNOSIS_TERMS), 'insertDiagnosisChip')}</div>
       </div>
+      <div class="field" style="margin-top:8px;">
+        <label style="display:flex;align-items:center;gap:8px;font-weight:600;">
+          <input type="checkbox" id="v-notifiable" ${dv.notifiable?'checked':''} onchange="const b=document.getElementById('v-notifiable-box'); if(b) b.style.display=this.checked?'':'none';">
+          Notifiable disease (public health report)
+        </label>
+        <div id="v-notifiable-box" style="margin-top:8px;${dv.notifiable?'':'display:none;'}">
+          <select id="v-notifiable-disease">
+            <option value="">Select disease…</option>
+            ${NOTIFIABLE_DISEASES.map(d=>`<option value="${esc(d)}" ${dv.notifiableDisease===d?'selected':''}>${esc(d)}</option>`).join('')}
+          </select>
+          <p class="faint" style="margin-top:6px;">Marks this visit for the notifiable register. Reporting to the health authority is still done by your clinic as per local rules — this is a clinic checklist, not an automatic government submission.</p>
+        </div>
+      </div>
       <div class="field"><label>Doctor's notes ${dictationBtn('v-notes')}</label>
         ${adviceInsertControlHTML()}
         <textarea id="v-notes" placeholder="">${esc(dv.notes)}</textarea>
@@ -10466,6 +10565,83 @@ async function remindAllVaccineDue(){
   }
 }
 
+
+function notifiableVisitEntries(){
+  const out = [];
+  (state.data.patients||[]).forEach(p=>{
+    (p.visits||[]).forEach(v=>{
+      if(v.notifiable) out.push({patient:p, visit:v});
+    });
+  });
+  out.sort((a,b)=>{
+    const ar = a.visit.notifiableReported ? 1 : 0;
+    const br = b.visit.notifiableReported ? 1 : 0;
+    if(ar !== br) return ar - br; // unreported first
+    return (b.visit.date||'').localeCompare(a.visit.date||'');
+  });
+  return out;
+}
+async function markNotifiableReported(patientId, visitId, reported){
+  if(!can('viewClinical') && !can('reports')) return;
+  const p = state.data.patients.find(x=>x.id===patientId);
+  const v = p && (p.visits||[]).find(x=>x.id===visitId);
+  if(!v) return;
+  v.notifiableReported = !!reported;
+  v.notifiableReportedAt = reported ? new Date().toISOString() : '';
+  v.notifiableReportedBy = reported ? (state.session.staffName||'') : '';
+  try{ logAudit(reported?'Notifiable marked reported':'Notifiable unmarked', `${p.name} · ${v.notifiableDisease||'—'}`); }catch(e){}
+  await saveData();
+  render();
+}
+function notifiableRegisterHTML(){
+  const list = notifiableVisitEntries();
+  const pending = list.filter(x=>!x.visit.notifiableReported);
+  const rows = list.map(({patient:p, visit:v})=>{
+    const st = v.notifiableReported
+      ? `<span class="pill" style="background:var(--teal-tint);color:var(--teal);">Reported${v.notifiableReportedAt?' · '+fmtDate(v.notifiableReportedAt.slice(0,10)):''}</span>`
+      : `<span class="pill" style="background:var(--accent-tint);color:var(--accent-dark);">Pending</span>`;
+    return `<tr>
+      <td>${fmtDate(v.date)}</td>
+      <td><strong>${esc(p.name)}</strong> <span class="pill">${esc(p.id)}</span>
+        <div class="faint">${esc(p.phone)||'—'} · ${esc(p.address)||''}</div></td>
+      <td>${esc(v.notifiableDisease)||'—'}
+        ${v.diagnosis?`<div class="faint">Dx: ${esc(v.diagnosis)}</div>`:''}</td>
+      <td>${esc(v.doctorName)||'—'}</td>
+      <td>${st}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-ghost btn-sm" onclick="go('visitPrint',{patientId:'${p.id}',visitId:'${v.id}'})">Open</button>
+        ${!v.notifiableReported
+          ? `<button class="btn btn-sm" onclick="markNotifiableReported('${p.id}','${v.id}',true)">Mark reported</button>`
+          : `<button class="btn btn-ghost btn-sm" onclick="markNotifiableReported('${p.id}','${v.id}',false)">Undo</button>`}
+      </td>
+    </tr>`;
+  }).join('');
+  return `
+    <div class="card" style="margin-bottom:16px;">
+      <div class="rx-row-head" style="margin-bottom:10px;">
+        <div>
+          <h2 style="margin:0;">Notifiable disease register</h2>
+          <p class="faint" style="margin:4px 0 0;">${pending.length} pending · ${list.length} total marked. Use this list when informing the local health authority.</p>
+        </div>
+      </div>
+      ${list.length
+        ? `<div style="overflow-x:auto;"><table><thead><tr><th>Date</th><th>Patient</th><th>Disease</th><th>Doctor</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+        : `<p class="muted">No visits marked as notifiable yet. Tick “Notifiable disease” on a visit when the diagnosis requires public health notification.</p>`}
+    </div>`;
+}
+function notifiableRegisterView(){
+  if(!can('viewClinical') && !can('reports')){
+    return accessDeniedHTML('Notifiable register', 'Clinical or reports access is required.');
+  }
+  return `
+    <div class="page-head">
+      <div><h1>Notifiable diseases</h1><p class="muted">Clinic checklist for public health reporting</p></div>
+      <button class="btn btn-ghost" onclick="go('reports')">Back to reports</button>
+    </div>
+    ${notifiableRegisterHTML()}`;
+}
+
+
 function reportsView(){
   const extraAdmin = `
     <div class="card" style="margin-bottom:16px;">
@@ -10473,6 +10649,7 @@ function reportsView(){
       <div class="row" style="gap:8px;flex-wrap:wrap;">
         <button class="btn btn-sm" onclick="go('dailyClose')">Daily close sheet</button>
         <button class="btn btn-sm" onclick="go('dueList')">Tomorrow due list</button>
+        <button class="btn btn-sm" onclick="go('notifiable')">Notifiable register</button>
         <button class="btn btn-sm" onclick="go('tokenDisplay')">Token TV display</button>
       </div>
       <h3 style="margin:16px 0 8px;">Staff activity today</h3>
