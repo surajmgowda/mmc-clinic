@@ -4041,7 +4041,7 @@ function restoreVisitDraftIfAny(){
   if(snap.followUpDate) dv.followUpDate = snap.followUpDate;
   if(snap.referredTo) dv.referredTo = snap.referredTo;
   if(snap.referralReason) dv.referralReason = snap.referralReason;
-  if(snap.prescriptions && snap.prescriptions.length) dv.prescriptions = snap.prescriptions.map(r=>({medicine:'',dosage:'',frequency:'',duration:'',instructions:'',...r}));
+  if(snap.prescriptions && snap.prescriptions.length) dv.prescriptions = snap.prescriptions.map(r=>({medicine:'',dosage:'',amountEach:'',frequency:'',duration:'',instructions:'',...r}));
   if(snap.investigations && snap.investigations.length) dv.investigations = snap.investigations.map(r=>({test:'',notes:'',...r}));
 }
 // A small pill with a pulsing dot — reused at the top of the OPD form (so
@@ -4125,9 +4125,7 @@ async function saveCurrentAsTemplate(){
     dv.prescriptions[i] = {
       medicine: row.querySelector('[data-f="medicine"]').value.trim(),
       dosage: row.querySelector('[data-f="dosage"]').value.trim(),
-      amountEach: (row.querySelector('[data-f="amountEach"]')||{}).value
-        ? row.querySelector('[data-f="amountEach"]').value.trim()
-        : '',
+      amountEach: ((row.querySelector('[data-f="amountEach"]')||{}).value || '').trim(),
       frequency: row.querySelector('[data-f="frequency"]').value.trim(),
       duration: row.querySelector('[data-f="duration"]').value.trim(),
       instructions: row.querySelector('[data-f="instructions"]').value.trim()
@@ -4204,9 +4202,11 @@ async function saveVisit(){
 
   document.querySelectorAll('[data-rx-idx]').forEach(row=>{
     const i = Number(row.getAttribute('data-rx-idx'));
+    const amtEl = row.querySelector('[data-f="amountEach"]');
     dv.prescriptions[i] = {
       medicine: row.querySelector('[data-f="medicine"]').value.trim(),
       dosage: row.querySelector('[data-f="dosage"]').value.trim(),
+      amountEach: amtEl ? amtEl.value.trim() : (dv.prescriptions[i] && dv.prescriptions[i].amountEach) || '',
       frequency: row.querySelector('[data-f="frequency"]').value.trim(),
       duration: row.querySelector('[data-f="duration"]').value.trim(),
       instructions: row.querySelector('[data-f="instructions"]').value.trim()
@@ -4725,20 +4725,33 @@ function rxCardHTML(prescriptions){
       ${prescriptions.map((r,i)=>{
         const days = daysLabel(r.duration);
         const freqShown = formatFrequencyDisplay(r.frequency);
-        const strength = (r.dosage||'').trim(); // e.g. 125mg/5ml — bottle strength
-        const amountEach = (r.amountEach||'').trim(); // doctor-typed: 5 ml, 2.5 ml, 1 tablet
-        // Line 1 under medicine: strength · frequency · days (never invent ml from strength)
-        const scheduleParts = [
-          strength ? `<span class="opdx-rx-dose">${esc(strength)}</span>` : '',
-          freqShown ? `<span class="opdx-rx-freq">${esc(freqShown)}</span>` : '',
-          days ? esc('× '+days) : '',
-          r.instructions ? esc(r.instructions) : ''
-        ].filter(Boolean).join(' · ');
-        // "Take … each time" ONLY when doctor filled Amount each time
-        const takeLine = amountEach
+        const strength = (r.dosage||'').trim(); // Tab: 500mg · Syp: 125mg/5ml
+        const amountEach = (r.amountEach||'').trim();
+        const isSyp = isSyrupMedicine(r.medicine);
+        // Tablets/capsules: strength + frequency + days (no "Take … each time")
+        // Syrups: strength + frequency + days, then optional "Take X ml each time"
+        let scheduleParts;
+        if(isSyp){
+          scheduleParts = [
+            strength ? `<span class="opdx-rx-dose">${esc(strength)}</span>` : '',
+            freqShown ? `<span class="opdx-rx-freq">${esc(freqShown)}</span>` : '',
+            days ? esc('× '+days) : '',
+            r.instructions ? esc(r.instructions) : ''
+          ].filter(Boolean).join(' · ');
+        } else {
+          // Tablet: show strength/dosage; if amountEach set (e.g. 1 tablet) include it once
+          const doseBit = strength || '';
+          scheduleParts = [
+            doseBit ? `<span class="opdx-rx-dose">${esc(doseBit)}</span>` : '',
+            freqShown ? `<span class="opdx-rx-freq">${esc(freqShown)}</span>` : '',
+            days ? esc('× '+days) : '',
+            r.instructions ? esc(r.instructions) : ''
+          ].filter(Boolean).join(' · ');
+        }
+        // "Take … each time" only for syrups / liquids when doctor typed amount
+        const takeLine = (isSyp && amountEach)
           ? `<div class="opdx-rx-sub"><span class="opdx-rx-dose">Take ${esc(amountEach)} each time</span></div>`
           : '';
-        // Tablet total quantity only (no auto syrup ml)
         const qty = showQty ? computeQuantityLabel(r.medicine, r.frequency, r.duration, amountEach || strength) : '';
         const qtyLine = (qty && !String(qty).toLowerCase().startsWith('take '))
           ? `<div class="opdx-rx-sub">${esc(qty)}</div>` : '';
@@ -7082,10 +7095,10 @@ function rxRowsHTML(){
           <input data-f="dosage" type="text" placeholder="e.g. 125mg/5ml" value="${esc(r.dosage)}"
             oninput="state.draftVisit.prescriptions[${i}].dosage=this.value">
         </div>
-        <div class="field"><label>Amount each time *</label>
-          <input data-f="amountEach" type="text" placeholder="e.g. 5 ml or 1 tablet" value="${esc(r.amountEach||'')}"
+        <div class="field"><label>Amount each time (syrups)</label>
+          <input data-f="amountEach" type="text" placeholder="e.g. 5 ml or 2.5 ml" value="${esc(r.amountEach||'')}"
             oninput="state.draftVisit.prescriptions[${i}].amountEach=this.value">
-          <div class="faint" style="margin-top:4px;">What to take each dose — shown on the prescription</div>
+          <div class="faint" style="margin-top:4px;">For syrups only — ml per dose on the Rx. Not used for tablets.</div>
         </div>
       </div>
       ${showDose ? `<div id="rx-dose-hint-${i}" class="banner banner-info" style="margin:6px 0 8px;font-size:12.5px;">${rxDoseHintHTML(r.medicine, knownWt)}</div>` : ''}
