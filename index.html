@@ -5250,18 +5250,48 @@ async function resetStaffPin(name){
 }
 async function saveStaffProfileEdit(name){
   if(!isOwner()){ alert('Only the clinic admin can edit staff profiles.'); return; }
-  const s = state.data.staff.find(s=>s.name===name);
+  const s = state.data.staff.find(x=>x.name===name);
   if(!s) return;
+  const nameEl = document.getElementById('edit-st-name');
   const qualEl = document.getElementById('edit-st-qualification');
   const roleEl = document.getElementById('edit-st-role');
+  let newName = nameEl ? nameEl.value.trim() : name;
+  if(!newName){ alert('Name cannot be empty.'); return; }
+  if(newName !== name){
+    const taken = state.data.staff.some(x=>x.name===newName && x!==s);
+    if(taken){ alert('That name is already used by another staff account.'); return; }
+    // Update references across visits, appointments, audit (display)
+    (state.data.patients||[]).forEach(p=>{
+      (p.visits||[]).forEach(v=>{
+        if(v.doctorName===name) v.doctorName = newName;
+        if(v.assignedDoctor===name) v.assignedDoctor = newName;
+      });
+    });
+    (state.data.appointments||[]).forEach(a=>{
+      if(a.doctorName===name) a.doctorName = newName;
+    });
+    (state.data.auditLog||[]).forEach(e=>{
+      if(e.staff===name) e.staff = newName;
+    });
+    if(state.session && state.session.staffName===name){
+      state.session.staffName = newName;
+    }
+    s.name = newName;
+  }
   if(qualEl) s.qualification = qualEl.value.trim();
-  if(roleEl){
+  if(roleEl && !s.owner){
     const roles = ['Doctor','Receptionist','Staff'];
     if(roles.includes(roleEl.value)) s.role = roleEl.value;
   }
   state.ui.editingStaffName = null;
-  logAudit('Updated staff profile', `${name}${s.qualification?' · '+s.qualification:''}`);
+  logAudit('Updated staff profile', (name!==s.name ? (name+' → '+s.name) : s.name) + (s.qualification?' · '+s.qualification:''));
   await saveData();
+  // Keep server session username in sync if API supports rename - client session updated above
+  try{
+    if(name!==s.name && typeof api==='function'){
+      await api('/api/staff/rename', {method:'POST', body: JSON.stringify({from:name, to:s.name})}).catch(()=>{});
+    }
+  }catch(e){}
   render();
 }
 function startEditStaffProfile(name){
@@ -11808,13 +11838,18 @@ function settingsView(){
       return `<tr>
         <td colspan="5">
           <div class="card" style="padding:14px;margin:4px 0;background:var(--primary-tint,#E8F1F6);">
-            <h3 style="margin-bottom:10px;">Edit profile — ${esc(s.name)}</h3>
+            <h3 style="margin-bottom:10px;">Edit profile${s.owner?' (Admin)':''}</h3>
             <div class="row">
+              <div class="field" style="flex:2;"><label>Display name</label>
+                <input id="edit-st-name" value="${esc(s.name)}" autocomplete="off">
+              </div>
               <div class="field"><label>Role</label>
-                <select id="edit-st-role">
+                <select id="edit-st-role" ${s.owner?'disabled title="Admin role is fixed"':''}>
                   ${['Doctor','Receptionist','Staff'].map(r=>`<option ${s.role===r?'selected':''}>${r}</option>`).join('')}
                 </select>
               </div>
+            </div>
+            <div class="row">
               <div class="field" style="flex:2;"><label>Qualification / course</label>
                 <input id="edit-st-qualification" value="${esc(s.qualification||'')}" placeholder="e.g. M.B.B.S., M.D. Paediatrics">
               </div>
