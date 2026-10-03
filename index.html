@@ -1209,6 +1209,33 @@
     .dash-clean-greet{font-size:22px !important;}
   }
 
+
+  .plist-cards{display:none;flex-direction:column;gap:10px;}
+  .plist-table-wrap{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .plist-card{
+    display:flex;flex-direction:column;gap:10px;
+    width:100%;text-align:left;background:#fff;border:1px solid var(--line);
+    border-radius:14px;padding:14px 14px 12px;box-shadow:var(--shadow-sm);
+  }
+  button.plist-card{cursor:pointer;font:inherit;color:inherit;}
+  .plist-card-main{
+    background:none;border:none;padding:0;margin:0;text-align:left;cursor:pointer;
+    font:inherit;color:inherit;width:100%;
+  }
+  .plist-top{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px;}
+  .plist-name{font-weight:700;font-size:16px;color:var(--primary-dark);margin-bottom:4px;}
+  .plist-meta{font-size:12.5px;color:var(--ink-soft);line-height:1.4;}
+  .plist-card-action{align-self:stretch;}
+  @media (max-width:820px){
+    .plist-cards{display:flex;}
+    .plist-table-wrap{display:none;}
+    .search-wrap input{font-size:16px;}
+  }
+  @media (min-width:821px){
+    .plist-cards{display:none;}
+    .plist-table-wrap{display:block;}
+  }
+
 </style>
 </head>
 <body>
@@ -4534,6 +4561,24 @@ async function saveVisit(){
   } else {
     if(visit.token!=null && !wasExisting){
       setTimeout(()=>printTokenSlip(patient.id, visit.id), 300);
+      const wantReceipt = document.getElementById('v-checkin-print-receipt');
+      if(wantReceipt && wantReceipt.checked && visit.billing && visit.billing.paid){
+        setTimeout(()=>{
+          try{
+            go('billingDetail', {patientId: patient.id, visitId: visit.id});
+            setTimeout(()=>{
+              if(typeof printSection==='function' && document.getElementById('sheet-receipt')){
+                printSection('sheet-receipt');
+              }
+            }, 400);
+          }catch(e){}
+        }, 600);
+      }
+    }
+    const feeAmt = visit.billing && visit.billing.fee ? ('₹'+visit.billing.fee) : '';
+    const paidLbl = visit.billing && visit.billing.paid ? 'Paid' : 'Unpaid';
+    if(typeof toast==='function'){
+      toast('Token #'+(visit.token!=null?visit.token:'—')+(feeAmt?' · '+feeAmt+' '+paidLbl:''));
     }
     go('dashboard');
   }
@@ -4712,6 +4757,11 @@ async function saveClinicInfo(){
   if(shortEl) state.data.clinicInfo.shortName = shortEl.value.trim();
   state.data.clinicInfo.address = addrEl ? addrEl.value.trim() : state.data.clinicInfo.address;
   state.data.clinicInfo.phone = phoneEl ? phoneEl.value.trim() : state.data.clinicInfo.phone;
+  const feeDef = document.getElementById('ci-default-fee');
+  if(feeDef){
+    const n = parseFloat(feeDef.value);
+    state.data.clinicInfo.defaultConsultFee = isNaN(n) ? 300 : n;
+  }
   const ownEl = document.getElementById('ci-owner-phone');
   if(ownEl) state.data.clinicInfo.ownerPhone = ownEl.value.trim();
   const nsEl = document.getElementById('ci-noshow');
@@ -6187,6 +6237,18 @@ function patientsTableHTML(){
       : emptyState('🗂️', 'No patients registered yet', 'Register your first patient to start building records.',
           `<button class="btn btn-accent btn-sm" onclick="go('newPatient')">+ New Patient</button>`);
   }
+  const cards = list.map(p=>{
+    const lv = lastVisitDate(p);
+    return `<button type="button" class="plist-card" onclick="go('patient',{patientId:'${p.id}'})">
+      <div class="plist-top">
+        <span class="pill">${esc(p.id)}</span>
+        ${isPediatricPatient(p)?'<span class="pill">Ped</span>':''}
+      </div>
+      <div class="plist-name">${esc(p.name)}</div>
+      <div class="plist-meta">${esc(displayAge(p))} · ${esc(p.sex||'—')}</div>
+      <div class="plist-meta">${p.phone?esc(p.phone):'No phone'} · ${lv?('Last visit '+fmtDate(lv)):'No visits'}</div>
+    </button>`;
+  }).join('');
   const rows = list.map(p=>{
     const lv = lastVisitDate(p);
     return `<tr class="clickable" onclick="go('patient',{patientId:'${p.id}'})">
@@ -6197,7 +6259,8 @@ function patientsTableHTML(){
       <td>${lv?fmtDate(lv):'<span class="faint">No visits</span>'}</td>
     </tr>`;
   }).join('');
-  return `<table><thead><tr><th>ID</th><th>Name</th><th>Age/Sex</th><th>Phone</th><th>Last visit</th></tr></thead><tbody>${rows}</tbody></table>`;
+  return `<div class="plist-cards">${cards}</div>
+    <div class="plist-table-wrap"><table><thead><tr><th>ID</th><th>Name</th><th>Age/Sex</th><th>Phone</th><th>Last visit</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
 function patientsView(){
@@ -9210,33 +9273,51 @@ function newVisitView(){
     const doctors = state.data.staff.filter(s=>s.role==='Doctor');
     return `
       <div class="page-head"><h1>Check In Patient</h1></div>
-      <p class="muted" style="margin-bottom:14px;">Find or register the patient. The doctor will take vitals and handle the consultation.</p>
+      <div class="card" style="margin-bottom:14px;padding:12px 14px;">
+        <div style="font-size:13px;font-weight:600;color:var(--primary-dark);margin-bottom:6px;">Reception flow</div>
+        <ol style="margin:0;padding-left:18px;font-size:13px;color:var(--ink-soft);line-height:1.5;">
+          <li>Select or register patient</li>
+          <li>Enter consultation fee &amp; mark paid if collected</li>
+          <li>Check in → token prints · patient joins waiting queue</li>
+        </ol>
+      </div>
       ${patientBlock}
       <div class="card">
+        <div class="visit-section-title" style="margin-bottom:10px;">Fee &amp; token</div>
+        <p class="faint" style="margin:-4px 0 10px;">Next token today: <strong>#${peekNextTokenNumber()}</strong></p>
         ${doctors.length ? `<div class="field"><label>Preferred doctor (optional)</label>
           <select id="v-assigned-doctor"><option value="">No preference — any doctor</option>
             ${doctors.map(d=>`<option>${esc(d.name)}</option>`).join('')}
           </select></div>` : ''}
+        <div class="chip-row" style="margin-bottom:10px;">
+          ${feePresets().map(fp=>`<button type="button" class="chip" onclick="document.getElementById('v-checkin-fee').value='${fp.amount}'">${esc(fp.label)} ₹${fp.amount}</button>`).join('')}
+        </div>
         <div class="row">
-          <div class="field"><label>Consultation fee (₹)</label><input id="v-checkin-fee" type="number" step="0.01" min="0" placeholder="optional"></div>
+          <div class="field"><label>Consultation fee (₹)</label>
+            <input id="v-checkin-fee" type="number" step="1" min="0" value="${(state.data.clinicInfo||{}).defaultConsultFee != null && (state.data.clinicInfo||{}).defaultConsultFee !== '' ? esc(String((state.data.clinicInfo||{}).defaultConsultFee)) : (feePresets().find(f=>/consult/i.test(f.label))||{amount:300}).amount}">
+          </div>
           <div class="field"><label>Payment</label>
             <select id="v-checkin-paid">
-              <option value="false">Unpaid</option>
               <option value="true">Paid now</option>
+              <option value="false">Unpaid (pay later)</option>
             </select>
           </div>
           <div class="field"><label>Mode</label>
             <select id="v-checkin-mode">
-              <option value="">—</option>
               <option>Cash</option>
               <option>UPI</option>
               <option>Card</option>
+              <option value="">Other / later</option>
             </select>
           </div>
         </div>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:12px;">
+          <input type="checkbox" id="v-checkin-print-receipt" checked>
+          Print payment receipt if paid
+        </label>
         <div id="visit-error" class="error-text"></div>
         <div class="row">
-          <button class="btn btn-primary" onclick="saveVisit()">Check in</button>
+          <button class="btn btn-primary" onclick="saveVisit()">Check in &amp; print token</button>
           ${cancelBtn}
         </div>
       </div>`;
@@ -9782,25 +9863,41 @@ function onPediatricSearchInput(v){
   if(el) el.innerHTML = pediatricPatientsTableInner(list);
 }
 function pediatricPatientsTableInner(list){
+  const vacLabel = (p)=>{
+    const due = vaccinationDueSummary(p);
+    if(due.overdue) return `<span class="pill" style="background:var(--danger-tint);color:var(--danger);">${due.overdue} due</span>`;
+    if(due.upcoming) return `<span class="pill" style="background:var(--accent-tint);color:var(--accent-dark,var(--accent));">${due.upcoming} upcoming</span>`;
+    return '<span class="faint">Vaccines OK</span>';
+  };
+  const cards = list.map(p=>{
+    const lv = lastVisitDate(p);
+    return `<div class="plist-card">
+      <button type="button" class="plist-card-main" onclick="go('patient',{patientId:'${p.id}'})">
+        <div class="plist-top"><span class="pill">${esc(p.id)}</span>${vacLabel(p)}</div>
+        <div class="plist-name">${esc(p.name)}</div>
+        <div class="plist-meta">${esc(opdAgeDisplay(p))} · ${esc(p.sex||'—')}</div>
+        <div class="plist-meta">${p.phone?esc(p.phone):'No phone'} · ${lv?('Last '+fmtDate(lv)):'No visits'}</div>
+      </button>
+      <button type="button" class="btn btn-sm btn-accent plist-card-action" onclick="go('newVisit',{patientId:'${p.id}'})">OPD</button>
+    </div>`;
+  }).join('');
   const rows = list.map(p=>{
     const lv = lastVisitDate(p);
-    const due = vaccinationDueSummary(p);
     return `<tr class="clickable" onclick="go('patient',{patientId:'${p.id}'})">
       <td><span class="pill">${p.id}</span></td>
       <td>${esc(p.name)}</td>
       <td>${esc(opdAgeDisplay(p))} / ${esc(p.sex)}</td>
       <td>${esc(p.phone)||'<span class="faint">—</span>'}</td>
       <td>${lv?fmtDate(lv):'<span class="faint">No visits</span>'}</td>
-      <td>${due.overdue ? `<span class="pill" style="background:var(--danger-tint);color:var(--danger);">${due.overdue} due</span>`
-        : due.upcoming ? `<span class="pill" style="background:var(--accent-tint);color:var(--accent);">${due.upcoming} upcoming</span>`
-        : '<span class="faint">Up to date</span>'}</td>
+      <td>${vacLabel(p)}</td>
       <td><button class="btn btn-sm btn-accent" onclick="event.stopPropagation();go('newVisit',{patientId:'${p.id}'})">OPD</button></td>
     </tr>`;
   }).join('');
-  return `<p class="muted" style="margin-bottom:10px;">${list.length} patient${list.length===1?'':'s'} under 16 years</p>
+  return `<p class="muted" style="margin-bottom:10px;">${list.length} under 16 years</p>
     ${list.length
-      ? `<table><thead><tr><th>ID</th><th>Name</th><th>Age / Sex</th><th>Phone</th><th>Last visit</th><th>Vaccines</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
-      : emptyState('🧒', 'No pediatric patients yet', 'Register a child (with date of birth or age under 16) and they will appear here.',
+      ? `<div class="plist-cards">${cards}</div>
+         <div class="plist-table-wrap"><table><thead><tr><th>ID</th><th>Name</th><th>Age / Sex</th><th>Phone</th><th>Last visit</th><th>Vaccines</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+      : emptyState('🧒', 'No pediatric patients yet', 'Register a child under 16 to see them here.',
           `<button class="btn btn-accent btn-sm" onclick="go('newPatient')">+ New Patient</button>`)}`;
 }
 
@@ -11784,6 +11881,7 @@ function settingsView(){
       <div class="field"><label>Short name</label><input id="ci-short" value="${esc(ci.shortName||'')}" placeholder="MMC"></div>
       <div class="field"><label>Address (shown on printouts)</label><input id="ci-address" value="${esc(ci.address)}"></div>
       <div class="field"><label>Phone (shown on printouts)</label><input id="ci-phone" value="${esc(ci.phone)}"></div>
+      <div class="field"><label>Default consultation fee (₹)</label><input id="ci-default-fee" type="number" min="0" step="1" value="${esc(ci.defaultConsultFee!=null&&ci.defaultConsultFee!==''?ci.defaultConsultFee:300)}"></div>
       <div class="field"><label>Owner WhatsApp number (daily close summary)</label><input id="ci-owner-phone" value="${esc(ci.ownerPhone||'')}" placeholder="same as clinic phone if blank"></div>
       <div class="field"><label>Mark long wait / missed after (minutes)</label><input id="ci-noshow" type="number" min="10" max="180" value="${esc(ci.noShowMinutes||45)}"></div>
       <div class="field"><label>Clinic registration / RMP number (shown on printouts)</label><input id="ci-regno" value="${esc(ci.regNo||'')}" placeholder="e.g. KA-12345"></div>
