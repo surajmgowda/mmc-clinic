@@ -1387,10 +1387,12 @@ function formatComplaintsForOpd(raw){
   }).join('\n');
 }
 
-// BMI classification:
-// Adults (≥16y): Consensus / WHO-Asian cut-offs widely used in India
-//   <18.5 Underweight · 18.5–22.9 Normal · 23–24.9 Overweight · ≥25 Obese
-// Pediatrics (<16y): IAP-oriented age-band screening (confirm with growth chart)
+// BMI classification — Indian clinical practice:
+// Adults (≥18y preferred; ≥16y used as clinic cutoff): WHO Asia-Pacific / Consensus
+//   <18.5 Underweight · 18.5–22.9 Normal · 23–24.9 Overweight · 25–27.4 Obese I · ≥27.5 Obese II
+//   (Some Indian societies treat ≥25 as obese; ≥27.5 as higher risk — both labelled clearly.)
+// Children: <5y prefer WHO weight/length-for-age (growth chart). 5–18y IAP BMI percentiles preferred;
+//   crude bands below are screening only.
 function calcBMI(weightKg, heightCm, ageYears){
   const w = parseFloat(weightKg), h = parseFloat(heightCm);
   if(!w || !h || h <= 0) return null;
@@ -1400,27 +1402,38 @@ function calcBMI(weightKg, heightCm, ageYears){
   const age = (ageYears != null && ageYears !== '') ? parseFloat(ageYears) : null;
   const pediatric = age != null && !isNaN(age) && age < 16;
 
-  let label, standard;
+  let label, standard, note = '';
   if(pediatric){
-    standard = 'Indian pediatric (IAP-oriented)';
-    // Approximate age-banded screening thresholds for South Asian children
-    let uw, ow, ob;
-    if(age < 5){ uw = 14; ow = 17; ob = 19; }
-    else if(age < 11){ uw = 14.5; ow = 18; ob = 21; }
-    else { uw = 16; ow = 22; ob = 25; } // 11–15y approaches adult Asian cut-offs
-    if(bmi < uw) label = 'Underweight';
-    else if(bmi < ow) label = 'Normal';
-    else if(bmi < ob) label = 'Overweight';
-    else label = 'Obese';
+    if(age < 5){
+      standard = 'Screening only — use WHO growth chart (<5y)';
+      note = 'Prefer weight-for-length / length-for-age percentiles';
+      // Rough WHO-ish screening; not a substitute for chart
+      if(bmi < 13) label = 'Possible undernutrition — check chart';
+      else if(bmi < 17) label = 'Likely normal range — confirm on chart';
+      else if(bmi < 19) label = 'Possible overweight — check chart';
+      else label = 'Possible obesity — check chart';
+    } else {
+      // IAP BMI charts for 5–18y (approx screening bands for South Asian children)
+      standard = 'Indian pediatric screening (IAP BMI 5–18y)';
+      note = 'Confirm on IAP BMI percentile chart';
+      let uw, ow, ob;
+      if(age < 11){ uw = 14; ow = 18; ob = 21; }
+      else { uw = 15; ow = 22; ob = 25; }
+      if(bmi < uw) label = 'Underweight (screening)';
+      else if(bmi < ow) label = 'Normal (screening)';
+      else if(bmi < ob) label = 'Overweight (screening)';
+      else label = 'Obese (screening)';
+    }
   } else {
-    standard = 'Indian adult (Asian cut-offs)';
+    standard = 'Indian adult (Asia-Pacific cut-offs)';
     if(bmi < 18.5) label = 'Underweight';
     else if(bmi < 23) label = 'Normal';
     else if(bmi < 25) label = 'Overweight';
-    else if(bmi < 30) label = 'Obese';
-    else label = 'Obese (class II)';
+    else if(bmi < 27.5) label = 'Obese (Class I)';
+    else if(bmi < 30) label = 'Obese (Class II)';
+    else label = 'Obese (Class III)';
   }
-  return { value, label, standard, pediatric: !!pediatric };
+  return { value, label, standard, note, pediatric: !!pediatric };
 }
 function patientAgeYearsForBmi(p){
   if(!p) return null;
@@ -1443,7 +1456,7 @@ function updateBmiPreview(){
   }
   const r = calcBMI(w && w.value, h && h.value, ageY);
   if(!r){ el.textContent = ''; return; }
-  el.textContent = `BMI: ${r.value} (${r.label}) · ${r.standard}`;
+  el.textContent = `BMI: ${r.value} (${r.label}) · ${r.standard}` + (r.note ? ` — ${r.note}` : '');
 }
 
 function normalizeComplaintsInput(raw){
@@ -7720,21 +7733,61 @@ function lmsAt(table, ageMonths){
   const row2 = table[hi];
   return [row[0]+(row2[0]-row[0])*frac, row[1]+(row2[1]-row[1])*frac, row[2]+(row2[2]-row[2])*frac];
 }
+// WHO growth interpretation uses Z-scores (SD), not crude percentile bands alone.
+// Reference: WHO Child Growth Standards — weight/length/HC-for-age, 0–60 months.
+function whoGrowthClassification(measure, z){
+  // measure: weight | height | hc
+  if(z == null || isNaN(z)) return {label:'—', cls:'band-mid'};
+  if(measure === 'height'){
+    // Length/height-for-age: stunting
+    if(z < -3) return {label:'Severe stunting (Z < −3 SD)', cls:'band-low'};
+    if(z < -2) return {label:'Stunting (Z < −2 SD)', cls:'band-low'};
+    if(z > 3) return {label:'Very tall (Z > +3 SD) — review', cls:'band-mid'};
+    if(z > 2) return {label:'Tall (Z > +2 SD)', cls:'band-mid'};
+    return {label:'Normal length/height-for-age', cls:'band-ok'};
+  }
+  if(measure === 'weight'){
+    // Weight-for-age: underweight (not the same as wasting — that needs weight-for-length)
+    if(z < -3) return {label:'Severely underweight (Z < −3 SD)', cls:'band-low'};
+    if(z < -2) return {label:'Underweight (Z < −2 SD)', cls:'band-low'};
+    if(z > 3) return {label:'Possible overweight / high weight-for-age (Z > +3 SD)', cls:'band-mid'};
+    if(z > 2) return {label:'High weight-for-age (Z > +2 SD)', cls:'band-mid'};
+    return {label:'Normal weight-for-age', cls:'band-ok'};
+  }
+  // Head circumference
+  if(z < -3) return {label:'Microcephaly range (Z < −3 SD) — assess', cls:'band-low'};
+  if(z < -2) return {label:'Small head (Z < −2 SD) — assess', cls:'band-low'};
+  if(z > 3) return {label:'Macrocephaly range (Z > +3 SD) — assess', cls:'band-mid'};
+  if(z > 2) return {label:'Large head (Z > +2 SD)', cls:'band-mid'};
+  return {label:'Normal head circumference-for-age', cls:'band-ok'};
+}
 function percentileBand(p){
-  if(p < 3) return {label:'Below normal range', cls:'band-low'};
-  if(p < 15) return {label:'Lower normal range', cls:'band-mid'};
-  if(p <= 85) return {label:'Normal range', cls:'band-ok'};
-  if(p <= 97) return {label:'Upper normal range', cls:'band-mid'};
-  return {label:'Above normal range', cls:'band-low'};
+  // Fallback if only percentile known (legacy)
+  if(p < 3) return {label:'Below 3rd percentile', cls:'band-low'};
+  if(p < 15) return {label:'3rd–15th percentile', cls:'band-mid'};
+  if(p <= 85) return {label:'15th–85th percentile (usual range)', cls:'band-ok'};
+  if(p <= 97) return {label:'85th–97th percentile', cls:'band-mid'};
+  return {label:'Above 97th percentile', cls:'band-low'};
 }
 function growthPercentile(measure, sex, ageMonths, value){
   const key = measure + '_' + (sex==='Female'?'girls':'boys');
   const table = WHO_LMS[key];
-  if(!table || !value || ageMonths<0 || ageMonths>60) return null;
+  // WHO standards in this app: 0–60 completed months only
+  if(!table || !value || value <= 0 || ageMonths < 0 || ageMonths > 60) return null;
   const [L,M,S] = lmsAt(table, ageMonths);
+  if(!M || !S) return null;
   const {z, percentile} = lmsToPercentile(value, L, M, S);
+  if(z == null || isNaN(z)) return null;
   const clamped = Math.max(0.1, Math.min(99.9, percentile));
-  return { percentile: clamped, z, ...percentileBand(clamped) };
+  const who = whoGrowthClassification(measure, z);
+  return {
+    percentile: clamped,
+    z,
+    label: who.label,
+    cls: who.cls,
+    // Also keep classic percentile band for UI context
+    pctBand: percentileBand(clamped).label
+  };
 }
 
 // ---- Growth chart (SVG, self-contained — no charting library) ----
@@ -7827,16 +7880,17 @@ function growthChartCardHTML(measure, sex, childAgeMonths, childValue, extraPoin
 // mgPerKg is per single dose unless noted; always shown with a "confirm
 // before prescribing" note in the UI, and capped at maxMg where relevant.
 const PEDIATRIC_DOSE_DB = [
-  {name:'Paracetamol', mgPerKg:15, maxMg:500, freq:'Every 6 hours (max 4 doses/day)', form:'Syrup 125mg/5ml or 250mg/5ml', conc:[125,250]},
-  {name:'Ibuprofen', mgPerKg:10, maxMg:400, freq:'Every 6-8 hours', form:'Syrup 100mg/5ml', conc:[100]},
-  {name:'Amoxicillin', mgPerKg:25, maxMg:500, freq:'Per dose, BD (total ~50mg/kg/day)', form:'Syrup 125mg/5ml or 250mg/5ml', conc:[125,250]},
-  {name:'Amoxicillin + Clavulanic Acid', mgPerKg:22.5, maxMg:625, freq:'Per dose, BD (amoxicillin component)', form:'Syrup 228.5mg/5ml (as amoxicillin)', conc:[228.5]},
-  {name:'Azithromycin', mgPerKg:10, maxMg:500, freq:'OD for 3 days', form:'Syrup 200mg/5ml', conc:[200]},
-  {name:'Cefixime', mgPerKg:4, maxMg:200, freq:'Per dose, BD (total ~8mg/kg/day)', form:'Syrup 100mg/5ml', conc:[100]},
-  {name:'Cefpodoxime', mgPerKg:5, maxMg:200, freq:'Per dose, BD (total ~10mg/kg/day)', form:'Syrup 50mg/5ml or 100mg/5ml', conc:[50,100]},
-  {name:'Metronidazole', mgPerKg:7.5, maxMg:400, freq:'Every 8 hours', form:'Syrup 200mg/5ml', conc:[200]},
-  {name:'Ceftriaxone (Inj.)', mgPerKg:50, maxMg:2000, freq:'OD or BD (per day total, 50-75mg/kg/day)', form:'Injection', conc:null},
-  {name:'Domperidone', mgPerKg:0.3, maxMg:10, freq:'Every 8 hours before food', form:'Syrup 5mg/5ml', conc:[5]},
+  // Reference doses commonly used in Indian pediatric practice — always confirm weight, indication & max.
+  {name:'Paracetamol', mgPerKg:15, maxMg:500, freq:'Every 6 hours (max 60mg/kg/day)', form:'Syrup 125mg/5ml or 250mg/5ml', conc:[125,250]},
+  {name:'Ibuprofen', mgPerKg:10, maxMg:400, freq:'Every 6-8 hours (max 40mg/kg/day)', form:'Syrup 100mg/5ml', conc:[100]},
+  {name:'Amoxicillin', mgPerKg:20, maxMg:500, freq:'Per dose, TDS or BD (standard 40–50mg/kg/day)', form:'Syrup 125mg/5ml or 250mg/5ml', conc:[125,250]},
+  {name:'Amoxicillin + Clavulanic Acid', mgPerKg:20, maxMg:500, freq:'Per dose as amoxicillin, BD (check brand ratio)', form:'Syrup 228.5mg/5ml (as amoxicillin)', conc:[228.5]},
+  {name:'Azithromycin', mgPerKg:10, maxMg:500, freq:'OD for 3 days (day 1 may be 10mg/kg)', form:'Syrup 200mg/5ml', conc:[200]},
+  {name:'Cefixime', mgPerKg:4, maxMg:200, freq:'Per dose, BD (total 8mg/kg/day)', form:'Syrup 100mg/5ml', conc:[100]},
+  {name:'Cefpodoxime', mgPerKg:5, maxMg:200, freq:'Per dose, BD (total 10mg/kg/day)', form:'Syrup 50mg/5ml or 100mg/5ml', conc:[50,100]},
+  {name:'Metronidazole', mgPerKg:7.5, maxMg:400, freq:'Every 8 hours (≈22.5mg/kg/day)', form:'Syrup 200mg/5ml', conc:[200]},
+  {name:'Ceftriaxone (Inj.)', mgPerKg:50, maxMg:2000, freq:'OD (50–75mg/kg/day; meningitis higher — specialist)', form:'Injection', conc:null},
+  {name:'Domperidone', mgPerKg:0.25, maxMg:10, freq:'Every 8 hours before food (max 0.75mg/kg/day)', form:'Syrup 5mg/5ml', conc:[5]},
   {name:'Ondansetron', mgPerKg:0.15, maxMg:4, freq:'Every 8 hours as needed', form:'Syrup 2mg/5ml', conc:[2]},
   {name:'Salbutamol', mgPerKg:0.1, maxMg:4, freq:'Every 8 hours', form:'Syrup 2mg/5ml', conc:[2]},
   {name:'Cetirizine', mgPerKg:0.25, maxMg:10, freq:'OD or BD', form:'Syrup 5mg/5ml', conc:[5]},
@@ -7847,23 +7901,24 @@ const PEDIATRIC_DOSE_DB = [
   {name:'Prednisolone', mgPerKg:1, maxMg:40, freq:'OD, short course as directed', form:'Syrup 15mg/5ml', conc:[15]}
 ];
 
-// ---- IAP-aligned immunization schedule (reference; confirm current IAP/UIP guidance) ----
+// ---- India immunization: UIP (public) + IAP (private) reference ----
+// Confirm against current MoHFW UIP and IAP schedule before vaccinating.
 const IMMUNIZATION_SCHEDULE = [
-  {age:'Birth', vaccines:'BCG, Hepatitis B-1, OPV-0'},
-  {age:'6 weeks', vaccines:'DTwP/DTaP-1, IPV-1, Hib-1, Hepatitis B-2, Rotavirus-1, PCV-1'},
-  {age:'10 weeks', vaccines:'DTwP/DTaP-2, IPV-2, Hib-2, Rotavirus-2, PCV-2'},
-  {age:'14 weeks', vaccines:'DTwP/DTaP-3, IPV-3, Hib-3, Hepatitis B-3, Rotavirus-3, PCV-3'},
-  {age:'6 months', vaccines:'OPV-2 (UIP), Influenza-1 (annual, from 6 months)'},
-  {age:'9 months', vaccines:'Measles-Rubella / MMR-1, Vitamin A-1'},
-  {age:'9-12 months', vaccines:'Typhoid Conjugate Vaccine (TCV)'},
-  {age:'12 months', vaccines:'Hepatitis A-1'},
-  {age:'15 months', vaccines:'MMR-2, Varicella-1, PCV booster'},
-  {age:'16-18 months', vaccines:'DTwP/DTaP booster-1, IPV booster-1, Hib booster-1'},
-  {age:'18-19 months', vaccines:'Hepatitis A-2 (6 months after dose 1)'},
-  {age:'2 years', vaccines:'Typhoid booster (repeat every 3 years)'},
-  {age:'4-6 years', vaccines:'DTwP/DTaP booster-2, OPV booster, MMR-3, Varicella-2'},
-  {age:'9-14 years', vaccines:'HPV (2 doses, 6 months apart) — for girls (and boys per current IAP advice)'},
-  {age:'10-12 years', vaccines:'Tdap/Td booster'}
+  {age:'Birth', vaccines:'BCG, OPV-0, Hepatitis B-1 (birth dose within 24h)'},
+  {age:'6 weeks', vaccines:'OPV-1, Pentavalent-1 (DTwP+Hib+HepB) / DTwP+Hib+HepB, Rotavirus-1, PCV-1, fIPV-1'},
+  {age:'10 weeks', vaccines:'OPV-2, Pentavalent-2, Rotavirus-2, PCV-2'},
+  {age:'14 weeks', vaccines:'OPV-3, Pentavalent-3, Rotavirus-3, PCV-3, fIPV-2'},
+  {age:'6 months', vaccines:'Influenza-1 (IAP, annual from 6 months) — not in UIP'},
+  {age:'9 months', vaccines:'MR-1 (Measles-Rubella), Vitamin A-1, JE-1 (endemic areas)'},
+  {age:'9-12 months', vaccines:'Typhoid Conjugate (IAP / some states)'},
+  {age:'12 months', vaccines:'Hepatitis A-1 (IAP)'},
+  {age:'15 months', vaccines:'MMR / MR booster (IAP), Varicella-1 (IAP), PCV booster (IAP)'},
+  {age:'16-24 months', vaccines:'DPT booster-1, OPV booster, MR-2, JE-2 (endemic), Hib booster (if used)'},
+  {age:'18-19 months', vaccines:'Hepatitis A-2 (IAP, 6 months after dose 1)'},
+  {age:'2 years', vaccines:'Typhoid booster (IAP, as advised)'},
+  {age:'5-6 years', vaccines:'DPT booster-2 / Td, OPV (if available)'},
+  {age:'9-14 years', vaccines:'HPV (2 doses, 6 months apart) — girls; boys per IAP'},
+  {age:'10-16 years', vaccines:'Td / Tdap booster'}
 ];
 
 // ---- Normal vital sign ranges by age (reference) ----
@@ -9454,12 +9509,12 @@ const IMMUNIZATION_AGE_MONTHS = [
   {ageLabel:'9-12 months', minM:9, maxM:13},
   {ageLabel:'12 months', minM:11.5, maxM:14},
   {ageLabel:'15 months', minM:14, maxM:17},
-  {ageLabel:'16-18 months', minM:15.5, maxM:19},
+  {ageLabel:'16-24 months', minM:15.5, maxM:26},
   {ageLabel:'18-19 months', minM:17.5, maxM:21},
   {ageLabel:'2 years', minM:22, maxM:30},
-  {ageLabel:'4-6 years', minM:48, maxM:78},
+  {ageLabel:'5-6 years', minM:54, maxM:78},
   {ageLabel:'9-14 years', minM:108, maxM:180},
-  {ageLabel:'10-12 years', minM:120, maxM:156}
+  {ageLabel:'10-16 years', minM:120, maxM:192}
 ];
 function patientAgeMonths(p){
   if(p && p.dob){
@@ -9604,7 +9659,7 @@ function pctZLabel(pct, z){
 }
 function growthRowHTML(label, valueStr, r){
   const bg = r.cls==='band-low' ? 'var(--danger-tint)' : r.cls==='band-mid' ? 'var(--accent-tint)' : 'var(--primary-tint)';
-  const fg = r.cls==='band-low' ? 'var(--danger)' : r.cls==='band-mid' ? 'var(--accent)' : 'var(--primary-dark)';
+  const fg = r.cls==='band-low' ? 'var(--danger)' : r.cls==='band-mid' ? 'var(--accent-dark,var(--accent))' : 'var(--primary-dark)';
   const zStr = (r.z>=0?'+':'') + r.z.toFixed(2);
   return `<div class="card" style="padding:12px 14px;margin-bottom:8px;">
     <div style="display:flex;justify-content:space-between;align-items:baseline;">
@@ -9612,9 +9667,10 @@ function growthRowHTML(label, valueStr, r){
     </div>
     <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;">
       <div style="font-size:24px;font-family:'Source Serif 4',serif;color:var(--primary-dark);margin-top:4px;">${r.percentile.toFixed(0)}<span style="font-size:14px;">th percentile</span></div>
-      <span class="faint" style="font-size:13px;">${zStr} SD</span>
+      <span style="font-size:15px;font-weight:600;color:var(--primary-dark);">${zStr} SD</span>
     </div>
-    <span class="pill" style="background:${bg};color:${fg};margin-top:4px;">${esc(r.label)}</span>
+    <span class="pill" style="background:${bg};color:${fg};margin-top:6px;">${esc(r.label)}</span>
+    <div class="faint" style="margin-top:6px;">WHO Child Growth Standards (0–5 years). Z-score = standard deviations from median.</div>
   </div>`;
 }
 
@@ -10853,14 +10909,15 @@ function ancView(){
   const list = state.data.ancRegister||[];
   const rows = list.map(a=>{
     const p = state.data.patients.find(x=>x.id===a.patientId);
+    const ga = a.lmp ? gestationalAgeFromLmp(a.lmp) : null;
     return `<tr class="clickable" onclick="go('patient',{patientId:'${a.patientId}'})">
       <td><strong>${esc(p?p.name:a.patientId)}</strong></td>
-      <td>${a.lmp?fmtDate(a.lmp):'—'}</td>
+      <td>${a.lmp?fmtDate(a.lmp):'—'}${ga?`<div class="faint">${esc(ga.display)}</div>`:''}</td>
       <td>${a.edd?fmtDate(a.edd):'—'}</td>
       <td>G${esc(a.gravida)||'?'} P${esc(a.para)||'?'}</td>
-      <td>${esc(a.risk)||'—'}</td>
+      <td>${esc(a.risk)||'—'}${a.tt?`<div class="faint">TT: ${esc(a.tt)}</div>`:''}</td>
       <td>${esc(a.lastBp)||'—'}</td>
-      <td>${esc(a.lastWt)||'—'}</td>
+      <td>${esc(a.lastWt)||'—'}${a.hb?`<div class="faint">Hb ${esc(a.hb)}</div>`:''}</td>
       <td>${esc(a.fundalHt)||'—'}</td>
       <td>${a.nextVisit?fmtDate(a.nextVisit):'—'}</td>
       <td onclick="event.stopPropagation()"><button class="btn btn-ghost btn-sm" onclick="removeAnc('${a.id}')">Remove</button></td>
@@ -10872,29 +10929,61 @@ function ancView(){
     <div class="card" style="margin-bottom:14px;max-width:560px;">
       <h3 style="margin-bottom:10px;">Add ANC entry</h3>
       <div class="field"><label>Patient</label><select id="anc-pid">${patients.map(p=>`<option value="${p.id}">${esc(p.name)} (${p.id})</option>`).join('')||'<option value="">No female patients</option>'}</select></div>
+      <p class="faint" style="margin-bottom:10px;">EDD by Naegele’s rule (LMP + 280 days). Confirm with early USG when available. Minimum 4 ANC visits (India): registration · 4 months · 6–8 months · 9 months.</p>
       <div class="row">
         <div class="field"><label>LMP</label><input type="date" id="anc-lmp" onchange="ancUpdateEdd()"></div>
         <div class="field"><label>EDD</label><input type="date" id="anc-edd"></div>
         <div class="field"><label>Gravida</label><input id="anc-g" placeholder="G"></div>
         <div class="field"><label>Para</label><input id="anc-p" placeholder="P"></div>
       </div>
-      <div class="field"><label>Risk / notes</label><input id="anc-risk" placeholder="e.g. Previous LSCS, anemia"></div>
+      <p id="anc-ga-preview" class="banner banner-info" style="display:none;"></p>
+      <div class="field"><label>Risk / notes</label><input id="anc-risk" placeholder="e.g. Previous LSCS, anemia, GDM, PIH"></div>
       <div class="row">
         <div class="field"><label>BP</label><input id="anc-bp" placeholder="110/70"></div>
         <div class="field"><label>Weight (kg)</label><input id="anc-wt" placeholder="kg"></div>
         <div class="field"><label>Fundal height</label><input id="anc-fh" placeholder="cm / weeks"></div>
+        <div class="field"><label>Hb (g/dL)</label><input id="anc-hb" placeholder="e.g. 11.2"></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>TT / Td doses given</label><input id="anc-tt" placeholder="e.g. TT1, TT2"></div>
         <div class="field"><label>Next ANC visit</label><input type="date" id="anc-next"></div>
       </div>
       <button class="btn btn-primary btn-sm" onclick="addAncEntry()">Add</button>
     </div>
     <div class="card">${list.length?`<table><thead><tr><th>Patient</th><th>LMP</th><th>EDD</th><th>G/P</th><th>Risk</th><th>BP</th><th>Wt</th><th>FH</th><th>Next</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:emptyState('🤰','No ANC entries','Register antenatal patients for follow-up.')}</div>`;
 }
+/** Gestational age from LMP (completed weeks + days), Indian ANC practice. */
+function gestationalAgeFromLmp(lmpStr, onDate){
+  if(!lmpStr) return null;
+  const lmp = new Date(lmpStr+'T00:00:00');
+  if(isNaN(lmp)) return null;
+  const on = onDate ? new Date(onDate+'T00:00:00') : new Date();
+  if(isNaN(on) || on < lmp) return null;
+  const days = Math.floor((on - lmp) / 86400000);
+  const weeks = Math.floor(days / 7);
+  const rem = days % 7;
+  return { days, weeks, rem, display: weeks + 'w+' + rem + 'd', trimester: weeks < 13 ? 1 : (weeks < 28 ? 2 : 3) };
+}
+/** Naegele: EDD = LMP + 280 days (40 weeks). Adjust clinically for irregular cycles / USG. */
+function eddFromLmp(lmpStr){
+  if(!lmpStr) return '';
+  const d = new Date(lmpStr+'T00:00:00');
+  if(isNaN(d)) return '';
+  d.setDate(d.getDate() + 280);
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+  return y+'-'+m+'-'+day;
+}
 function ancUpdateEdd(){
   const lmp = document.getElementById('anc-lmp').value;
   if(!lmp) return;
-  const d = new Date(lmp+'T00:00:00');
-  d.setDate(d.getDate()+280);
-  document.getElementById('anc-edd').value = d.toISOString().slice(0,10);
+  const eddEl = document.getElementById('anc-edd');
+  if(eddEl) eddEl.value = eddFromLmp(lmp);
+  const ga = gestationalAgeFromLmp(lmp);
+  const gaEl = document.getElementById('anc-ga-preview');
+  if(gaEl && ga){
+    gaEl.style.display = 'block';
+    gaEl.textContent = 'GA today: ' + ga.display + ' · Trimester ' + ga.trimester + ' (Naegele EDD = LMP + 280 days)';
+  } else if(gaEl){ gaEl.textContent = ''; gaEl.style.display = 'none'; }
 }
 async function addAncEntry(){
   const patientId = document.getElementById('anc-pid').value;
@@ -10910,6 +10999,8 @@ async function addAncEntry(){
     lastBp: (document.getElementById('anc-bp')||{}).value||'',
     lastWt: (document.getElementById('anc-wt')||{}).value||'',
     fundalHt: (document.getElementById('anc-fh')||{}).value||'',
+    hb: (document.getElementById('anc-hb')||{}).value||'',
+    tt: (document.getElementById('anc-tt')||{}).value||'',
     nextVisit: (document.getElementById('anc-next')||{}).value||''
   });
   await saveData(); render();
