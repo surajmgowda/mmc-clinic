@@ -6940,29 +6940,49 @@ function vaccineOptionsList(){
   IMMUNIZATION_SCHEDULE.forEach(r=> r.vaccines.split(',').forEach(v=> set.add(v.trim())));
   return Array.from(set);
 }
+function vaccinationStatusPill(s){
+  if(s==='given') return '<span class="pill">Given</span>';
+  if(s==='overdue') return '<span class="pill" style="background:var(--danger-tint);color:var(--danger);">Overdue</span>';
+  if(s==='due') return '<span class="pill" style="background:var(--accent-tint);color:var(--accent-dark,var(--accent));">Due now</span>';
+  if(s==='upcoming') return '<span class="pill" style="background:var(--primary-tint);color:var(--primary);">Upcoming</span>';
+  return '<span class="pill" style="background:var(--bg);color:var(--ink-soft);">Later</span>';
+}
+function vaccinationFullScheduleTableHTML(p){
+  if(!p || !isPediatricPatient(p)) return '';
+  const items = vaccinationStatusForPatient(p);
+  // Always show full UIP schedule (given + due + upcoming + later)
+  const rows = items.map(it=>`
+    <tr>
+      <td style="white-space:nowrap;">${esc(it.age)}</td>
+      <td>${esc(it.vaccine)}</td>
+      <td>${vaccinationStatusPill(it.status)}</td>
+      <td>${it.status!=='given'
+        ? `<button class="btn btn-sm btn-accent" onclick="quickAddVaccination('${p.id}', this.getAttribute('data-vac'))" data-vac="${esc(it.vaccine)}">Mark given</button>`
+        : '<span class="faint">✓</span>'}</td>
+    </tr>`).join('');
+  return `
+    <div style="margin-bottom:14px;">
+      <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
+        <p class="faint" style="margin:0;">Full <strong>IAP</strong> schedule — status by age (upcoming doses stay visible even if not yet due)</p>
+        <button class="btn btn-sm" onclick="state.pedLinkedPatientId='${p.id}';state.pedTab='immunization';go('pediatrics')">Open vaccination page</button>
+      </div>
+      <div style="overflow-x:auto;">
+        <table><thead><tr><th>Age</th><th>Vaccine</th><th>Status</th><th></th></tr></thead>
+        <tbody>${rows}</tbody></table>
+      </div>
+    </div>`;
+}
 function vaccinationCardHTML(p){
   const vacs = (p.vaccinations||[]).slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   const rows = vacs.map((v,i)=>`
     <tr><td>${esc(v.vaccine)}</td><td>${v.date?fmtDate(v.date):'<span class="faint">—</span>'}</td>
       <td><button class="btn btn-ghost btn-sm" onclick="removeVaccination('${p.id}',${i})">Remove</button></td></tr>`).join('');
-  let dueBlock = '';
-  if(isPediatricPatient(p)){
-    const due = vaccinationStatusForPatient(p).filter(i=>i.status==='due'||i.status==='overdue'||i.status==='upcoming').slice(0,8);
-    if(due.length){
-      dueBlock = `<div style="margin-bottom:12px;">
-        <p class="faint" style="margin-bottom:6px;">Suggested by age (IAP/UIP):</p>
-        <div class="chip-row">${due.map(d=>
-          `<button type="button" class="chip" style="${d.status==='overdue'||d.status==='due'?'border-color:var(--accent);':''}"
-            onclick="quickAddVaccination('${p.id}', this.getAttribute('data-vac'))" data-vac="${esc(d.vaccine)}">${esc(d.vaccine)} · ${d.status}</button>`
-        ).join('')}</div>
-      </div>`;
-    }
-  }
   return `
     <div class="card" style="margin-bottom:18px;">
-      <h2 style="margin-bottom:10px;">Vaccinations</h2>
-      ${dueBlock}
-      ${vacs.length ? `<table><thead><tr><th>Vaccine</th><th>Date given</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="muted">None recorded yet.</p>`}
+      <h2 style="margin-bottom:10px;">Vaccinations (IAP)</h2>
+      ${vaccinationFullScheduleTableHTML(p)}
+      <h3 style="margin:12px 0 8px;font-size:14px;">Recorded doses</h3>
+      ${vacs.length ? `<table><thead><tr><th>Vaccine</th><th>Date given</th><th></th></tr></thead><tbody>${rows}</tbody></table>` : `<p class="muted">None recorded yet — mark from the schedule above.</p>`}
       <div class="row" style="margin-top:10px;">
         <div class="field" style="flex:2;"><label>Vaccine</label>
           <select id="vac-name">${vaccineOptionsList().map(v=>`<option>${esc(v)}</option>`).join('')}</select>
@@ -7901,24 +7921,28 @@ const PEDIATRIC_DOSE_DB = [
   {name:'Prednisolone', mgPerKg:1, maxMg:40, freq:'OD, short course as directed', form:'Syrup 15mg/5ml', conc:[15]}
 ];
 
-// ---- India immunization: UIP (public) + IAP (private) reference ----
-// Confirm against current MoHFW UIP and IAP schedule before vaccinating.
+// ---- IAP (Indian Academy of Pediatrics) immunization schedule ----
+// Primary schedule for this clinic. Confirm against current IAP recommendations.
 const IMMUNIZATION_SCHEDULE = [
-  {age:'Birth', vaccines:'BCG, OPV-0, Hepatitis B-1 (birth dose within 24h)'},
-  {age:'6 weeks', vaccines:'OPV-1, Pentavalent-1 (DTwP+Hib+HepB) / DTwP+Hib+HepB, Rotavirus-1, PCV-1, fIPV-1'},
-  {age:'10 weeks', vaccines:'OPV-2, Pentavalent-2, Rotavirus-2, PCV-2'},
-  {age:'14 weeks', vaccines:'OPV-3, Pentavalent-3, Rotavirus-3, PCV-3, fIPV-2'},
-  {age:'6 months', vaccines:'Influenza-1 (IAP, annual from 6 months) — not in UIP'},
-  {age:'9 months', vaccines:'MR-1 (Measles-Rubella), Vitamin A-1, JE-1 (endemic areas)'},
-  {age:'9-12 months', vaccines:'Typhoid Conjugate (IAP / some states)'},
-  {age:'12 months', vaccines:'Hepatitis A-1 (IAP)'},
-  {age:'15 months', vaccines:'MMR / MR booster (IAP), Varicella-1 (IAP), PCV booster (IAP)'},
-  {age:'16-24 months', vaccines:'DPT booster-1, OPV booster, MR-2, JE-2 (endemic), Hib booster (if used)'},
-  {age:'18-19 months', vaccines:'Hepatitis A-2 (IAP, 6 months after dose 1)'},
-  {age:'2 years', vaccines:'Typhoid booster (IAP, as advised)'},
-  {age:'5-6 years', vaccines:'DPT booster-2 / Td, OPV (if available)'},
+  {age:'Birth', vaccines:'BCG, OPV-0, Hepatitis B-1 (birth dose within 24 hours)'},
+  {age:'6 weeks', vaccines:'DTwP/DTaP-1, IPV-1, Hib-1, Hepatitis B-2, Rotavirus-1, PCV-1'},
+  {age:'10 weeks', vaccines:'DTwP/DTaP-2, IPV-2, Hib-2, Rotavirus-2, PCV-2'},
+  {age:'14 weeks', vaccines:'DTwP/DTaP-3, IPV-3, Hib-3, Hepatitis B-3, Rotavirus-3, PCV-3'},
+  {age:'6 months', vaccines:'OPV-1, Influenza-1 (annual from 6 months)'},
+  {age:'7 months', vaccines:'Influenza-2'},
+  {age:'9 months', vaccines:'MMR-1 / MR-1, Typhoid conjugate (TCV), Vitamin A-1'},
+  {age:'12 months', vaccines:'Hepatitis A-1'},
+  {age:'15 months', vaccines:'MMR-2, Varicella-1, PCV booster'},
+  {age:'16-18 months', vaccines:'DTwP/DTaP booster-1, IPV booster, Hib booster, OPV-2'},
+  {age:'18 months', vaccines:'Hepatitis A-2 (6 months after dose 1), Vitamin A'},
+  {age:'2 years', vaccines:'Typhoid booster (as advised / every 3 years)'},
+  {age:'4-6 years', vaccines:'DTwP/DTaP booster-2, OPV-3, MMR-3 / Varicella-2'},
   {age:'9-14 years', vaccines:'HPV (2 doses, 6 months apart) — girls; boys per IAP'},
-  {age:'10-16 years', vaccines:'Td / Tdap booster'}
+  {age:'10-12 years', vaccines:'Tdap / Td booster'}
+];
+// UIP-only notes (national public programme) — for reference if needed
+const IMMUNIZATION_OPTIONAL = [
+  {age:'UIP note', vaccines:'National UIP uses Pentavalent + fIPV at 6/10/14 weeks; JE in endemic districts at 9 months & 16–24 months'}
 ];
 
 // ---- Normal vital sign ranges by age (reference) ----
@@ -9504,17 +9528,17 @@ const IMMUNIZATION_AGE_MONTHS = [
   {ageLabel:'6 weeks', minM:1.2, maxM:2.2},
   {ageLabel:'10 weeks', minM:2.2, maxM:3.2},
   {ageLabel:'14 weeks', minM:3.0, maxM:4.5},
-  {ageLabel:'6 months', minM:5.5, maxM:7.5},
-  {ageLabel:'9 months', minM:8.5, maxM:10.5},
-  {ageLabel:'9-12 months', minM:9, maxM:13},
+  {ageLabel:'6 months', minM:5.5, maxM:7},
+  {ageLabel:'7 months', minM:6.5, maxM:8},
+  {ageLabel:'9 months', minM:8.5, maxM:11},
   {ageLabel:'12 months', minM:11.5, maxM:14},
-  {ageLabel:'15 months', minM:14, maxM:17},
-  {ageLabel:'16-24 months', minM:15.5, maxM:26},
-  {ageLabel:'18-19 months', minM:17.5, maxM:21},
+  {ageLabel:'15 months', minM:14, maxM:16.5},
+  {ageLabel:'16-18 months', minM:15.5, maxM:19},
+  {ageLabel:'18 months', minM:17.5, maxM:20},
   {ageLabel:'2 years', minM:22, maxM:30},
-  {ageLabel:'5-6 years', minM:54, maxM:78},
+  {ageLabel:'4-6 years', minM:48, maxM:78},
   {ageLabel:'9-14 years', minM:108, maxM:180},
-  {ageLabel:'10-16 years', minM:120, maxM:192}
+  {ageLabel:'10-12 years', minM:120, maxM:156}
 ];
 function patientAgeMonths(p){
   if(p && p.dob){
@@ -9805,41 +9829,42 @@ function calcDose(){
 function immunizationHTML(){
   const linked = state.pedLinkedPatientId ? state.data.patients.find(p=>p.id===state.pedLinkedPatientId) : null;
   const scheduleRows = IMMUNIZATION_SCHEDULE.map(r=>`<tr><td style="white-space:nowrap;"><strong>${esc(r.age)}</strong></td><td>${esc(r.vaccines)}</td></tr>`).join('');
+  const optionalRows = (typeof IMMUNIZATION_OPTIONAL!=='undefined'?IMMUNIZATION_OPTIONAL:[]).map(r=>
+    `<tr><td style="white-space:nowrap;"><strong>${esc(r.age)}</strong></td><td>${esc(r.vaccines)}</td></tr>`).join('');
 
   let patientBlock = `
-    <div class="field"><label>Link a pediatric patient to record &amp; suggest vaccines by age</label>
+    <div class="field"><label>Link a pediatric patient to see full schedule status &amp; record doses</label>
       <input type="text" placeholder="Search by name, ID or phone" oninput="onGrowthPatientSearch(this.value)">
       <div id="growth-patient-results">${growthPatientResultsHTML()}</div>
     </div>`;
 
   if(linked){
     const items = vaccinationStatusForPatient(linked);
-    const statusPill = s => s==='given' ? '<span class="pill">Given</span>'
-      : s==='overdue' ? '<span class="pill" style="background:var(--danger-tint);color:var(--danger);">Overdue</span>'
-      : s==='due' ? '<span class="pill" style="background:var(--accent-tint);color:var(--accent);">Due now</span>'
-      : s==='upcoming' ? '<span class="pill" style="background:var(--primary-tint);color:var(--primary);">Upcoming</span>'
-      : '<span class="faint">Later</span>';
-    const statusRows = items.map((it,i)=>`
+    const statusRows = items.map(it=>`
       <tr>
         <td>${esc(it.age)}</td>
         <td>${esc(it.vaccine)}</td>
-        <td>${statusPill(it.status)}</td>
+        <td>${vaccinationStatusPill(it.status)}</td>
         <td>${it.status!=='given'
           ? `<button class="btn btn-sm btn-accent" onclick="quickAddVaccination('${linked.id}', this.getAttribute('data-vac'))" data-vac="${esc(it.vaccine)}">Mark given</button>`
-          : '<span class="faint">—</span>'}</td>
+          : '<span class="faint">✓</span>'}</td>
       </tr>`).join('');
     const recorded = (linked.vaccinations||[]).slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));
     const recRows = recorded.map((v,i)=>`
       <tr><td>${esc(v.vaccine)}</td><td>${v.date?fmtDate(v.date):'—'}</td>
         <td><button class="btn btn-ghost btn-sm" onclick="removeVaccination('${linked.id}',${i})">Remove</button></td></tr>`).join('');
+    const counts = vaccinationDueSummary(linked);
     patientBlock = `
       <div class="banner banner-info">${esc(linked.name)} (${linked.id}) — ${esc(opdAgeDisplay(linked))}
         <button class="btn btn-ghost btn-sm" style="margin-left:8px;" onclick="state.pedLinkedPatientId=null;render()">Unlink</button>
         <button class="btn btn-sm btn-accent" style="margin-left:6px;" onclick="go('newVisit',{patientId:'${linked.id}'})">Start OPD</button>
       </div>
-      <h3 style="margin:12px 0 8px;">Suggested by age</h3>
-      <p class="faint" style="margin-bottom:8px;">Based on IAP/UIP schedule and this child's age. Confirm clinically before recording.</p>
-      <table><thead><tr><th>Age band</th><th>Vaccine</th><th>Status</th><th></th></tr></thead><tbody>${statusRows}</tbody></table>
+      <p class="faint" style="margin:10px 0;">Given ${counts.given} · Due/overdue ${counts.overdue} · Upcoming ${counts.upcoming} — <strong>full IAP list below always stays open</strong></p>
+      <h3 style="margin:12px 0 8px;">Full IAP schedule for this child</h3>
+      <p class="faint" style="margin-bottom:8px;">All doses listed (including upcoming). Mark given when administered.</p>
+      <div style="overflow-x:auto;">
+        <table><thead><tr><th>Age band</th><th>Vaccine</th><th>Status</th><th></th></tr></thead><tbody>${statusRows}</tbody></table>
+      </div>
       <h3 style="margin:18px 0 8px;">Recorded vaccinations</h3>
       ${recorded.length ? `<table><thead><tr><th>Vaccine</th><th>Date</th><th></th></tr></thead><tbody>${recRows}</tbody></table>` : '<p class="muted">None recorded yet.</p>'}
       <div class="row" style="margin-top:12px;">
@@ -9854,13 +9879,18 @@ function immunizationHTML(){
   return `
     <div class="card" style="margin-bottom:18px;">
       <h2 style="margin-bottom:4px;">Vaccination status</h2>
-      <p class="faint" style="margin-bottom:12px;">Track what has been given and see what is due for each child under 16.</p>
+      <p class="faint" style="margin-bottom:12px;">Indian Academy of Pediatrics (<strong>IAP</strong>) schedule — full list is always shown so you can plan upcoming doses.</p>
       ${patientBlock}
     </div>
-    <div class="card">
-      <h2 style="margin-bottom:4px;">Full IAP / UIP schedule (reference)</h2>
-      <p class="faint" style="margin-bottom:12px;">Recommendations are revised periodically — confirm against the current IAP schedule.</p>
+    <div class="card" style="margin-bottom:18px;">
+      <h2 style="margin-bottom:4px;">Full IAP schedule (reference)</h2>
+      <p class="faint" style="margin-bottom:12px;">Indian Academy of Pediatrics schedule. Confirm against the latest IAP recommendations before vaccinating.</p>
       <table><thead><tr><th>Age</th><th>Vaccines</th></tr></thead><tbody>${scheduleRows}</tbody></table>
+    </div>
+    <div class="card">
+      <h2 style="margin-bottom:4px;">UIP / national notes</h2>
+      <p class="faint" style="margin-bottom:12px;">Public UIP differs in a few places (e.g. Pentavalent, fIPV, JE). Use IAP list above for clinic tracking.</p>
+      <table><thead><tr><th>Age</th><th>Vaccines</th></tr></thead><tbody>${optionalRows}</tbody></table>
     </div>`;
 }
 async function quickAddVaccination(patientId, vaccine){
