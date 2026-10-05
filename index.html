@@ -1302,6 +1302,30 @@
     body{background:#fff !important;}
   }
 
+
+  /* Patients list: cards on mobile, table on desktop — only ONE visible */
+  .plist-cards{display:none !important;flex-direction:column;gap:10px;}
+  .plist-table-wrap{display:block !important;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .plist-card{
+    display:block;width:100%;text-align:left;cursor:pointer;font:inherit;color:inherit;
+    background:#fff !important;border:1px solid #E2E8F0 !important;border-radius:14px !important;
+    padding:14px !important;box-shadow:0 1px 3px rgba(15,27,45,0.05) !important;
+    margin:0;
+  }
+  .plist-card-main{background:none;border:none;padding:0;margin:0;text-align:left;cursor:pointer;font:inherit;color:inherit;width:100%;}
+  .plist-top{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px;}
+  .plist-name{font-weight:700;font-size:15.5px;color:#0F1B2D;margin-bottom:4px;}
+  .plist-meta{font-size:12.5px;color:#5B6578;line-height:1.45;}
+  .plist-card-action{align-self:stretch;margin-top:4px;}
+  @media (max-width:820px){
+    .plist-cards{display:flex !important;}
+    .plist-table-wrap{display:none !important;}
+  }
+  @media (min-width:821px){
+    .plist-cards{display:none !important;}
+    .plist-table-wrap{display:block !important;}
+  }
+
 </style>
 </head>
 <body>
@@ -6333,8 +6357,15 @@ function patientsTableHTML(){
       : emptyState('🗂️', 'No patients registered yet', 'Register your first patient to start building records.',
           `<button class="btn btn-accent btn-sm" onclick="go('newPatient')">+ New Patient</button>`);
   }
+  const phoneTxt = (p)=>{
+    const raw = String(p.phone||'').trim();
+    const digits = raw.replace(/\D/g,'');
+    return digits.length>=5 ? raw : '';
+  };
   const cards = list.map(p=>{
     const lv = lastVisitDate(p);
+    const ph = phoneTxt(p);
+    const line2 = [ph || null, lv ? ('Last visit '+fmtDate(lv)) : 'No visits'].filter(Boolean).join(' · ');
     return `<button type="button" class="plist-card" onclick="go('patient',{patientId:'${p.id}'})">
       <div class="plist-top">
         <span class="pill">${esc(p.id)}</span>
@@ -6342,16 +6373,17 @@ function patientsTableHTML(){
       </div>
       <div class="plist-name">${esc(p.name)}</div>
       <div class="plist-meta">${esc(displayAge(p))} · ${esc(p.sex||'—')}</div>
-      <div class="plist-meta">${p.phone?esc(p.phone):'No phone'} · ${lv?('Last visit '+fmtDate(lv)):'No visits'}</div>
+      <div class="plist-meta">${esc(line2)}</div>
     </button>`;
   }).join('');
   const rows = list.map(p=>{
     const lv = lastVisitDate(p);
+    const ph = phoneTxt(p);
     return `<tr class="clickable" onclick="go('patient',{patientId:'${p.id}'})">
       <td><span class="pill">${p.id}</span></td>
       <td>${esc(p.name)}${isPediatricPatient(p)?' <span class="pill" title="Under 16">Ped</span>':''}</td>
       <td>${esc(displayAge(p))} / ${esc(p.sex)}</td>
-      <td>${esc(p.phone)||'<span class="faint">—</span>'}</td>
+      <td>${ph?esc(ph):'<span class="faint">—</span>'}</td>
       <td>${lv?fmtDate(lv):'<span class="faint">No visits</span>'}</td>
     </tr>`;
   }).join('');
@@ -9972,7 +10004,7 @@ function pediatricPatientsTableInner(list){
         <div class="plist-top"><span class="pill">${esc(p.id)}</span>${vacLabel(p)}</div>
         <div class="plist-name">${esc(p.name)}</div>
         <div class="plist-meta">${esc(opdAgeDisplay(p))} · ${esc(p.sex||'—')}</div>
-        <div class="plist-meta">${p.phone?esc(p.phone):'No phone'} · ${lv?('Last '+fmtDate(lv)):'No visits'}</div>
+        <div class="plist-meta">${(()=>{ const raw=String(p.phone||'').trim(); const ok=/\d{5,}/.test(raw); const bits=[]; if(ok) bits.push(esc(raw)); bits.push(lv?('Last '+fmtDate(lv)):'No visits'); return bits.join(' · '); })()}</div>
       </button>
       <button type="button" class="btn btn-sm btn-accent plist-card-action" onclick="go('newVisit',{patientId:'${p.id}'})">OPD</button>
     </div>`;
