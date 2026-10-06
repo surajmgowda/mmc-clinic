@@ -805,6 +805,40 @@
   /* ---- OPD / Rx / certificate / referral / receipt print cards ---- */
   .opdx-card{position:relative;border:1px solid #C9D3DE;border-radius:10px;overflow:hidden;background:#fff;max-width:640px;}
   .opdx-card::before{display:none;}
+
+  /* Document seal watermark (prints only — not clinic logo) */
+  .print-sheet.opdx-card,
+  .print-sheet{
+    position:relative;
+  }
+  .print-sheet.opdx-card::after,
+  .print-sheet::after{
+    content:"";
+    position:absolute;
+    left:50%;
+    top:42%;
+    transform:translate(-50%,-50%);
+    width:min(72%,420px);
+    aspect-ratio:200/220;
+    background:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%20200%20220%22%20fill%3D%22none%22%3E%0A%20%20%3Ccircle%20cx%3D%22100%22%20cy%3D%2295%22%20r%3D%2278%22%20stroke%3D%22%239AA3AD%22%20stroke-width%3D%222.2%22/%3E%0A%20%20%3Ccircle%20cx%3D%22100%22%20cy%3D%2295%22%20r%3D%2270%22%20stroke%3D%22%239AA3AD%22%20stroke-width%3D%221.2%22/%3E%0A%20%20%3Ccircle%20cx%3D%22100%22%20cy%3D%2295%22%20r%3D%2258%22%20stroke%3D%22%23B0B8C0%22%20stroke-width%3D%220.8%22/%3E%0A%20%20%3C%21--%20top%20small%20cross%20--%3E%0A%20%20%3Cpath%20d%3D%22M100%2028%20v12%20M94%2034%20h12%22%20stroke%3D%22%239AA3AD%22%20stroke-width%3D%222.5%22%20stroke-linecap%3D%22round%22/%3E%0A%20%20%3Cpath%20d%3D%22M88%2034%20Q100%2022%20112%2034%22%20stroke%3D%22%239AA3AD%22%20stroke-width%3D%221.2%22%20fill%3D%22none%22/%3E%0A%20%20%3C%21--%20main%20cross%20--%3E%0A%20%20%3Crect%20x%3D%2288%22%20y%3D%2258%22%20width%3D%2224%22%20height%3D%2254%22%20rx%3D%223%22%20fill%3D%22%239AA3AD%22/%3E%0A%20%20%3Crect%20x%3D%2273%22%20y%3D%2273%22%20width%3D%2254%22%20height%3D%2224%22%20rx%3D%223%22%20fill%3D%22%239AA3AD%22/%3E%0A%20%20%3C%21--%20laurels%20simplified%20--%3E%0A%20%20%3Cpath%20d%3D%22M78%20118%20Q70%20105%2074%2092%22%20stroke%3D%22%239AA3AD%22%20stroke-width%3D%221.4%22%20fill%3D%22none%22/%3E%0A%20%20%3Cpath%20d%3D%22M72%20100%20l-6%20-2%20M74%20108%20l-6%200%20M76%20114%20l-5%202%22%20stroke%3D%22%239AA3AD%22%20stroke-width%3D%221.2%22/%3E%0A%20%20%3Cpath%20d%3D%22M122%20118%20Q130%20105%20126%2092%22%20stroke%3D%22%239AA3AD%22%20stroke-width%3D%221.4%22%20fill%3D%22none%22/%3E%0A%20%20%3Cpath%20d%3D%22M128%20100%20l6%20-2%20M126%20108%20l6%200%20M124%20114%20l5%202%22%20stroke%3D%22%239AA3AD%22%20stroke-width%3D%221.2%22/%3E%0A%20%20%3C%21--%20ribbon%20--%3E%0A%20%20%3Cpath%20d%3D%22M42%20155%20Q100%20175%20158%20155%20L152%20168%20Q100%20185%2048%20168%20Z%22%20fill%3D%22%239AA3AD%22%20opacity%3D%220.35%22%20stroke%3D%22%239AA3AD%22%20stroke-width%3D%221%22/%3E%0A%20%20%3Ctext%20x%3D%22100%22%20y%3D%22172%22%20text-anchor%3D%22middle%22%20font-family%3D%22Georgia%2Cserif%22%20font-size%3D%227.5%22%20fill%3D%22%236B7280%22%20font-weight%3D%22600%22%3EMALE%20MADESHWARA%20CLINIC%3C/text%3E%0A%20%20%3Ccircle%20cx%3D%22100%22%20cy%3D%22198%22%20r%3D%221.5%22%20fill%3D%22%239AA3AD%22/%3E%0A%3C/svg%3E") center / contain no-repeat;
+    opacity:0.14;
+    pointer-events:none;
+    z-index:0;
+  }
+  .print-sheet .opdx-inner,
+  .print-sheet > *{
+    position:relative;
+    z-index:1;
+  }
+  @media print{
+    .print-sheet.opdx-card::after,
+    .print-sheet::after{
+      opacity:0.12;
+      -webkit-print-color-adjust:exact;
+      print-color-adjust:exact;
+    }
+  }
+
   .opdx-inner{padding:0;}
   .opdx-head{
     display:flex;align-items:flex-start;justify-content:space-between;gap:14px;
@@ -4727,7 +4761,7 @@ function saveSheetAsPdf(id){
     <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>${styles}
       body{background:#fff;margin:0;padding:12px;font-family:'Public Sans',sans-serif;color:#152033;}
-      .print-sheet{display:block !important;box-shadow:none !important;border:1px solid #C9D3DE !important;max-width:640px;margin:0 auto;}
+      .print-sheet{display:block !important;box-shadow:none !important;border:1px solid #C9D3DE !important;max-width:640px;margin:0 auto;} .print-sheet{position:relative;} .print-sheet::after{content:"";position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);width:70%;aspect-ratio:1;background:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%20200%20220%22%20fill%3D%22none%22%3E%0A%20%20%3Ccircle%20cx%3D%22100%22%20cy%3D%2295%22%20r%3D%2278%22%20stroke%3D%22%239AA3AD%22%20stroke-width%3D%222.2%22/%3E%0A%20%20%3Ccircle%20cx%3D%22100%22%20cy%3D%2295%22%20r%3D%2270%22%20stroke%3D%22%239AA3AD%22%20stroke-width%3D%221.2%22/%3E%0A%20%20%3Ccircle%20cx%3D%22100%22%20cy%3D%2295%22%20r%3D%2258%22%20stroke%3D%22%23B0B8C0%22%20stroke-width%3D%220.8%22/%3E%0A%20%20%3C%21--%20top%20small%20cross%20--%3E%0A%20%20%3Cpath%20d%3D%22M100%2028%20v12%20M94%2034%20h12%22%20stroke%3D%22%239AA3AD%22%20stroke-width%3D%222.5%22%20stroke-linecap%3D%22round%22/%3E%0A%20%20%3Cpath%20d%3D%22M88%2034%20Q100%2022%20112%2034%22%20stroke%3D%22%239AA3AD%22%20stroke-width%3D%221.2%22%20fill%3D%22none%22/%3E%0A%20%20%3C%21--%20main%20cross%20--%3E%0A%20%20%3Crect%20x%3D%2288%22%20y%3D%2258%22%20width%3D%2224%22%20height%3D%2254%22%20rx%3D%223%22%20fill%3D%22%239AA3AD%22/%3E%0A%20%20%3Crect%20x%3D%2273%22%20y%3D%2273%22%20width%3D%2254%22%20height%3D%2224%22%20rx%3D%223%22%20fill%3D%22%239AA3AD%22/%3E%0A%20%20%3C%21--%20laurels%20simplified%20--%3E%0A%20%20%3Cpath%20d%3D%22M78%20118%20Q70%20105%2074%2092%22%20stroke%3D%22%239AA3AD%22%20stroke-width%3D%221.4%22%20fill%3D%22none%22/%3E%0A%20%20%3Cpath%20d%3D%22M72%20100%20l-6%20-2%20M74%20108%20l-6%200%20M76%20114%20l-5%202%22%20stroke%3D%22%239AA3AD%22%20stroke-width%3D%221.2%22/%3E%0A%20%20%3Cpath%20d%3D%22M122%20118%20Q130%20105%20126%2092%22%20stroke%3D%22%239AA3AD%22%20stroke-width%3D%221.4%22%20fill%3D%22none%22/%3E%0A%20%20%3Cpath%20d%3D%22M128%20100%20l6%20-2%20M126%20108%20l6%200%20M124%20114%20l5%202%22%20stroke%3D%22%239AA3AD%22%20stroke-width%3D%221.2%22/%3E%0A%20%20%3C%21--%20ribbon%20--%3E%0A%20%20%3Cpath%20d%3D%22M42%20155%20Q100%20175%20158%20155%20L152%20168%20Q100%20185%2048%20168%20Z%22%20fill%3D%22%239AA3AD%22%20opacity%3D%220.35%22%20stroke%3D%22%239AA3AD%22%20stroke-width%3D%221%22/%3E%0A%20%20%3Ctext%20x%3D%22100%22%20y%3D%22172%22%20text-anchor%3D%22middle%22%20font-family%3D%22Georgia%2Cserif%22%20font-size%3D%227.5%22%20fill%3D%22%236B7280%22%20font-weight%3D%22600%22%3EMALE%20MADESHWARA%20CLINIC%3C/text%3E%0A%20%20%3Ccircle%20cx%3D%22100%22%20cy%3D%22198%22%20r%3D%221.5%22%20fill%3D%22%239AA3AD%22/%3E%0A%3C/svg%3E") center/contain no-repeat;opacity:0.12;pointer-events:none;z-index:0;} .print-sheet>*{position:relative;z-index:1;}
       .print-sheet *{visibility:visible !important;}
       @media print{body{padding:0;} .print-sheet{border:none !important;}}
     </style></head><body>${el.outerHTML}
