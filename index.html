@@ -1450,7 +1450,8 @@ function defaultData(){
       printPrefs: {
         showAddress: true, showPhone: true, showLogo: true,
         showVitalsOnRx: false, showQtyOnRx: true, alwaysShowAllergyOnRx: true,
-        labelLang: 'en', showRegNo: true
+        labelLang: 'en', showRegNo: true,
+        closedDates: []
       }
     },
     rolePerms: JSON.parse(JSON.stringify(typeof ROLE_PERM_DEFAULTS!=='undefined'?ROLE_PERM_DEFAULTS:{})),
@@ -1474,6 +1475,7 @@ function defaultData(){
     adviceLibrary: [], // {id, title, text}
     favouriteComplaints: [], // strings
     favouriteDiagnoses: [], // strings
+    messageTemplates: [], // {id,title,body}
     lastPrinted: null // {patientId, visitId, at}
   };
 }
@@ -4118,10 +4120,39 @@ function checkApptConflictsLive(){
   box.innerHTML = html;
 }
 
+async 
+function clinicClosedDates(){
+  const ci = state.data.clinicInfo || {};
+  return Array.isArray(ci.closedDates) ? ci.closedDates.filter(Boolean) : [];
+}
+function isClinicClosed(dateStr){
+  return clinicClosedDates().includes(dateStr);
+}
+function addClinicHoliday(dateStr){
+  if(!dateStr) return;
+  const ci = state.data.clinicInfo || (state.data.clinicInfo = {});
+  if(!Array.isArray(ci.closedDates)) ci.closedDates = [];
+  if(!ci.closedDates.includes(dateStr)) ci.closedDates.push(dateStr);
+  ci.closedDates.sort();
+  saveData();
+  render();
+}
+function removeClinicHoliday(dateStr){
+  const ci = state.data.clinicInfo || {};
+  if(!Array.isArray(ci.closedDates)) return;
+  ci.closedDates = ci.closedDates.filter(d=>d!==dateStr);
+  saveData();
+  render();
+}
 async function saveAppointment(){
   const da = state.draftAppt;
   const date = document.getElementById('appt-date').value;
   const time = document.getElementById('appt-time').value;
+  if(date && isClinicClosed(date)){
+    state.apptError = 'Clinic is closed on this date (holiday). Pick another day.';
+    render();
+    return;
+  }
   const doctorEl = document.getElementById('appt-doctor');
   const doctorName = doctorEl ? doctorEl.value : '';
   const notes = document.getElementById('appt-notes').value.trim();
@@ -4366,6 +4397,62 @@ function removePatientPhoto(patientId){
   saveData().then(()=>render());
 }
 
+
+function defaultMessageTemplates(){
+  return [
+    {id:'t1', title:'Follow-up reminder', body:'Hello, this is a reminder for your follow-up visit at {clinic}. Please call {phone} to confirm.'},
+    {id:'t2', title:'Lab report ready', body:'Hello, your lab report is ready at {clinic}. You may collect it during clinic hours.'},
+    {id:'t3', title:'Appointment reminder', body:'Reminder: appointment at {clinic} on {date}. Please arrive 10 minutes early.'}
+  ];
+}
+function allMessageTemplates(){
+  const custom = state.data.messageTemplates || [];
+  return defaultMessageTemplates().concat(custom);
+}
+function fillMessageTemplate(body, p){
+  const ci = state.data.clinicInfo||{};
+  return String(body||'')
+    .replaceAll('{clinic}', ci.name||'our clinic')
+    .replaceAll('{phone}', ci.phone||'')
+    .replaceAll('{name}', (p&&p.name)||'')
+    .replaceAll('{date}', todayStr());
+}
+async function addMessageTemplate(){
+  const title = prompt('Template title:');
+  if(!title) return;
+  const body = prompt('Message body (use {clinic} {phone} {name} {date}):');
+  if(!body) return;
+  if(!state.data.messageTemplates) state.data.messageTemplates = [];
+  state.data.messageTemplates.push({id:'mt'+Date.now(), title:title.trim(), body:body.trim()});
+  await saveData();
+  render();
+}
+async function removeMessageTemplate(id){
+  state.data.messageTemplates = (state.data.messageTemplates||[]).filter(x=>x.id!==id);
+  await saveData();
+  render();
+}
+function sendTemplateToPatient(patientId, templateId){
+  const p = state.data.patients.find(x=>x.id===patientId);
+  if(!p || !p.phone){ alert('No phone on file.'); return; }
+  const tmpl = allMessageTemplates().find(x=>x.id===templateId);
+  if(!tmpl) return;
+  const text = fillMessageTemplate(tmpl.body, p);
+  shareWhatsApp(p.phone, text);
+}
+function messageTemplatesSettingsHTML(){
+  const list = state.data.messageTemplates||[];
+  const rows = list.map(x=>`<tr>
+    <td><strong>${esc(x.title)}</strong><div class="faint">${esc(x.body)}</div></td>
+    <td><button class="btn btn-ghost btn-sm" onclick="removeMessageTemplate('${x.id}')">Remove</button></td>
+  </tr>`).join('');
+  return `<div class="card" style="margin-bottom:18px;max-width:640px;">
+    <h2 style="margin-bottom:6px;">Message templates</h2>
+    <p class="muted" style="font-size:12.5px;">WhatsApp/SMS style templates. Placeholders: {clinic} {phone} {name} {date}</p>
+    ${list.length?`<table><thead><tr><th>Template</th><th></th></tr></thead><tbody>${rows}</tbody></table>`:'<p class="faint">No custom templates yet (built-in ones still available on patient page).</p>'}
+    <button class="btn btn-sm" style="margin-top:10px;" onclick="addMessageTemplate()">+ Add template</button>
+  </div>`;
+}
 function continueFromLastVisit(patientId){
   const p = state.data.patients.find(x=>x.id===patientId);
   if(!p){ alert('Patient not found.'); return; }
@@ -5829,6 +5916,7 @@ function shellView(){
     ['labResults', 'Lab results', 'clinicalVisit'],
     ['reports', t('Reports'), 'reports'],
     ['dailyClose', 'End of day', 'reports'],
+    ['shiftHandover', 'Shift handover', 'reports'],
     ['roster', 'Roster', 'roster'],
     ['stock', 'Stock', 'stock'],
     ['expenses', 'Expenses', 'expenses']
@@ -5943,6 +6031,7 @@ function routeContent(){
     case 'expenses': return expensesView();
     case 'stock': return stockView();
     case 'missedFollowUps': return missedFollowUpsView();
+    case 'shiftHandover': return shiftHandoverView();
     case 'roster': return rosterView();
     case 'recall': return recallView();
     case 'anc': return ancView();
@@ -6355,6 +6444,16 @@ function dashboardView(){
         <span class="muted" style="margin-left:8px;">${low.length? low.length+' low':''}${low.length&&exp.length?' · ':''}${exp.length? exp.length+' expiring ≤30d':''} — tap to open</span>
       </div>`;
     })()}
+    ${(()=>{
+      if(!can('clinicalVisit') && !can('viewClinical')) return '';
+      const n = (typeof pendingLabEntries==='function'?pendingLabEntries():[]).length;
+      if(!n) return '';
+      return `<div class="card" style="margin-bottom:14px;padding:12px 16px;cursor:pointer;" onclick="go('labResults')">
+        <strong>Pending labs</strong>
+        <span class="muted" style="margin-left:8px;">${n} investigation${n===1?'':'s'} awaiting result — tap to open</span>
+      </div>`;
+    })()}
+
     <div class="dash-stat-row">
         <button type="button" class="dash-stat dash-stat-btn" onclick="go('todayVisits')">
           <div class="dash-stat-icon teal" aria-hidden="true">
@@ -6447,6 +6546,59 @@ function collectMissedFollowUps(){
   });
   list.sort((a,b)=> a.visit.followUpDate.localeCompare(b.visit.followUpDate));
   return list;
+}
+
+function shiftHandoverView(){
+  const today = todayStr();
+  let waiting=0, unpaid=0, completed=0;
+  const waitingList=[];
+  (state.data.patients||[]).forEach(p=>{
+    (p.visits||[]).forEach(v=>{
+      if(v.date!==today) return;
+      const st = visitStatus(v);
+      if(st==='waiting'){
+        waiting++;
+        waitingList.push({p,v});
+      } else completed++;
+      if(v.feePaid===false || (v.feeAmount && !v.feePaid && v.paymentStatus!=='paid')) unpaid++;
+      else if(typeof v.paid!=='undefined' && !v.paid && (v.fee||v.amount)) unpaid++;
+    });
+  });
+  const missed = (typeof collectMissedFollowUps==='function'?collectMissedFollowUps():[]).length;
+  const pendingLabs = (typeof pendingLabEntries==='function'?pendingLabEntries():[]).length;
+  const stock = state.data.drugStock||[];
+  const lowStock = stock.filter(s=>(parseFloat(s.lowAt)||0)>0 && (parseFloat(s.quantity)||0)<=(parseFloat(s.lowAt)||0)).length;
+  const waitRows = waitingList.slice(0,20).map(({p,v})=>`
+    <tr class="clickable" onclick="go('newVisit',{patientId:'${p.id}',editVisitId:'${v.id}'})">
+      <td>${esc(v.token!=null?'T'+v.token:'—')}</td>
+      <td><strong>${esc(p.name)}</strong><div class="faint">${esc(p.id)}</div></td>
+      <td>${esc(v.assignedDoctor||v.doctorName||'—')}</td>
+      <td>${v.handoffNote&&can('viewClinical')?esc(v.handoffNote):'—'}</td>
+    </tr>`).join('');
+  return `
+    <div class="page-head">
+      <div><h1>Shift handover</h1><p class="muted">${fmtDate(today)} · snapshot for staff change</p></div>
+      <button class="btn btn-ghost" onclick="go('dashboard')">← Home</button>
+    </div>
+    <div class="dash-stat-row" style="margin-bottom:16px;">
+      <div class="dash-stat"><div class="dash-stat-num">${waiting}</div><div class="dash-stat-lbl">Still waiting</div></div>
+      <div class="dash-stat"><div class="dash-stat-num">${completed}</div><div class="dash-stat-lbl">Completed today</div></div>
+      <div class="dash-stat"><div class="dash-stat-num">${pendingLabs}</div><div class="dash-stat-lbl">Pending labs</div></div>
+      <div class="dash-stat"><div class="dash-stat-num">${missed}</div><div class="dash-stat-lbl">Missed follow-ups</div></div>
+      <div class="dash-stat"><div class="dash-stat-num">${lowStock}</div><div class="dash-stat-lbl">Low stock items</div></div>
+    </div>
+    <div class="row" style="gap:10px;flex-wrap:wrap;margin-bottom:14px;">
+      <button class="btn btn-sm" onclick="go('labResults')">Pending labs</button>
+      <button class="btn btn-sm" onclick="go('missedFollowUps')">Missed follow-ups</button>
+      <button class="btn btn-sm" onclick="go('stock')">Stock</button>
+      <button class="btn btn-sm" onclick="go('billing')">Billing</button>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:10px;">Waiting now</h3>
+      ${waitingList.length
+        ? `<div style="overflow-x:auto;"><table><thead><tr><th>Token</th><th>Patient</th><th>Doctor</th><th>Handoff note</th></tr></thead><tbody>${waitRows}</tbody></table></div>`
+        : `<div class="dash-empty">No patients waiting</div>`}
+    </div>`;
 }
 function missedFollowUpsView(){
   const list = collectMissedFollowUps();
@@ -6787,6 +6939,51 @@ function maskAadhaar(a){
 }
 
 
+
+function patientChronicProblems(p){
+  return Array.isArray(p.chronicProblems) ? p.chronicProblems.filter(x=>x && x.text) : [];
+}
+async function addChronicProblem(patientId){
+  const text = prompt('Chronic problem / diagnosis (e.g. Type 2 Diabetes Mellitus):');
+  if(!text || !text.trim()) return;
+  const p = state.data.patients.find(x=>x.id===patientId);
+  if(!p) return;
+  if(!p.chronicProblems) p.chronicProblems = [];
+  p.chronicProblems.push({text: text.trim(), since: todayStr(), by: state.session.staffName||''});
+  logAudit('Added chronic problem', patientId+' '+text.trim());
+  await saveData();
+  render();
+}
+async function removeChronicProblem(patientId, idx){
+  const p = state.data.patients.find(x=>x.id===patientId);
+  if(!p || !p.chronicProblems) return;
+  const item = p.chronicProblems[idx];
+  if(!item) return;
+  if(!confirm('Remove "'+item.text+'" from chronic list?')) return;
+  p.chronicProblems.splice(idx,1);
+  logAudit('Removed chronic problem', patientId+' '+(item.text||''));
+  await saveData();
+  render();
+}
+function chronicProblemsCardHTML(p){
+  if(!can('viewClinical')) return '';
+  const list = patientChronicProblems(p);
+  const rows = list.map((x,i)=>`<tr>
+    <td><strong>${esc(x.text)}</strong></td>
+    <td>${x.since?fmtDate(x.since):'—'}</td>
+    <td>${esc(x.by)||'—'}</td>
+    <td>${can('clinicalVisit')?`<button class="btn btn-ghost btn-sm" onclick="removeChronicProblem('${p.id}',${i})">Remove</button>`:''}</td>
+  </tr>`).join('');
+  return `<div class="card" style="margin-bottom:14px;">
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <h3 style="margin:0;">Chronic problems</h3>
+      ${can('clinicalVisit')?`<button class="btn btn-sm" onclick="addChronicProblem('${p.id}')">+ Add</button>`:''}
+    </div>
+    ${list.length
+      ? `<table><thead><tr><th>Problem</th><th>Since</th><th>By</th><th></th></tr></thead><tbody>${rows}</tbody></table>`
+      : `<p class="faint">None recorded. Add lasting conditions (HTN, DM, asthma…).</p>`}
+  </div>`;
+}
 function patientProblemList(p){
   const seen = new Set();
   const list = [];
@@ -7055,7 +7252,11 @@ function patientView(patientId){
         <button class="btn btn-accent" onclick="go('newVisit',{patientId:'${p.id}'})">${can('clinicalVisit')?'+ New OPD Visit':'+ Check in'}</button>
         ${can('clinicalVisit') && (p.visits||[]).length?`<button class="btn" type="button" onclick="continueFromLastVisit('${p.id}')">Continue last visit</button>`:''}
         ${can('certificates')?`<button class="btn" onclick="state.certPatientId='${p.id}';state.certType='sick';go('certificates')">Certificate</button>`:''}
-        ${p.phone?`<button class="btn wa-btn" onclick="shareWhatsApp(${jsAttr(p.phone)}, patientWhatsAppText(state.data.patients.find(x=>x.id===${jsAttr(p.id)})))">${t('WhatsApp')}</button>`:''}
+        ${p.phone?`<button class="btn wa-btn" onclick="shareWhatsApp(${jsAttr(p.phone)}, patientWhatsAppText(state.data.patients.find(x=>x.id===${jsAttr(p.id)})))">${t('WhatsApp')}</button>
+        <select class="btn btn-sm" style="max-width:180px;" onchange="if(this.value){sendTemplateToPatient('${p.id}',this.value);this.value='';}">
+          <option value="">Message template…</option>
+          ${allMessageTemplates().map(x=>`<option value="${esc(x.id)}">${esc(x.title)}</option>`).join('')}
+        </select>`:''}
         <button class="btn btn-ghost btn-sm" type="button" onclick="copyPatientLink('${p.id}')">Copy link</button>
         <button class="btn btn-sm" type="button" onclick="exportPatientJSON('${p.id}')">Export JSON</button>
         <button class="btn btn-sm" type="button" onclick="exportPatientPrintable('${p.id}')">Print / PDF file</button>
@@ -7063,7 +7264,7 @@ function patientView(patientId){
       </div>
     </div>
     ${pedBanner}
-    ${showClinical?`<div class="clinical-summary">${problemListHTML}${medHistHTML}</div>`:''}
+    ${showClinical?`<div class="clinical-summary">${chronicProblemsCardHTML(p)}${problemListHTML}${medHistHTML}</div>`:''}
     ${showClinical?bmiHTML:''}
     <div class="card" style="margin-bottom:18px;">${infoBlock}</div>
     ${showClinical && isPediatricPatient(p) ? growthRecordsCardHTML(p) : ''}
@@ -7728,7 +7929,18 @@ function allergyMatch(medicineName){
   if(!allergies || !medicineName) return null;
   const tokens = allergies.split(',').map(s=>s.trim().toLowerCase()).filter(Boolean);
   const med = medicineName.toLowerCase();
-  return tokens.find(t=> t.length>2 && med.includes(t)) || null;
+  const medTok = medToken(medicineName);
+  // Penicillin-class expansion
+  const penRelated = ['penicillin','amoxicillin','ampicillin','cloxacillin','piperacillin','augmentin','clavulanate'];
+  for(const t of tokens){
+    if(t.length<2) continue;
+    if(med.includes(t) || medTok.includes(t.replace(/[^a-z0-9]/g,''))) return t;
+    if((t.includes('penicillin')||t==='pcn'||t==='penicillin allergy') && penRelated.some(p=>medTok.includes(p)||med.includes(p))) return t;
+    if(t.includes('sulfa')||t.includes('sulfonamide')){
+      if(['sulfamethoxazole','cotrimoxazole','septran','sulfadiazine'].some(p=>med.includes(p)||medTok.includes(p))) return t;
+    }
+  }
+  return null;
 }
 function rxAllergyWarningHTML(medicineName){
   const hit = allergyMatch(medicineName);
@@ -7741,9 +7953,12 @@ function updateRxAllergyWarning(i){
   updateRxInteractionWarnings();
 }
 const DRUG_INTERACTION_GROUPS = [
-  {name:'NSAIDs', members:['ibuprofen','diclofenac','naproxen','aceclofenac','mefenamic','aspirin','nimesulide','ketorolac']},
-  {name:'ACE inhibitors + potassium', members:['enalapril','ramipril','lisinopril','telmisartan','losartan','olmesartan','spironolactone']},
-  {name:'Sedating antihistamines + other sedatives', members:['cetirizine','hydroxyzine','promethazine','diphenhydramine','clonazepam','alprazolam','diazepam']}
+  {name:'NSAIDs (two or more)', members:['ibuprofen','diclofenac','naproxen','aceclofenac','mefenamic','aspirin','nimesulide','ketorolac','etoricoxib','indomethacin']},
+  {name:'ACE/ARB + potassium-sparing', members:['enalapril','ramipril','lisinopril','telmisartan','losartan','olmesartan','spironolactone','eplerenone']},
+  {name:'Sedating drugs (combined)', members:['cetirizine','hydroxyzine','promethazine','diphenhydramine','clonazepam','alprazolam','diazepam','pheniramine']},
+  {name:'Two or more fluoroquinolones', members:['ciprofloxacin','levofloxacin','ofloxacin','norfloxacin','moxifloxacin']},
+  {name:'Two or more macrolides', members:['azithromycin','clarithromycin','erythromycin','roxithromycin']},
+  {name:'Warfarin + NSAID/antibiotic caution', members:['warfarin','acenocoumarol','ibuprofen','diclofenac','nimesulide','ciprofloxacin','metronidazole']}
 ];
 function medToken(name){ return (name||'').toLowerCase().replace(/[^a-z0-9]/g,''); }
 function findDrugInteractions(prescriptions){
@@ -12313,7 +12528,19 @@ function settingsView(){
 
 ${isOwner() ? `
     <div class="card" style="margin-bottom:18px;max-width:560px;">
-      <h2 style="margin-bottom:6px;">Print preferences</h2>
+      </div>
+    <div class="card" style="margin-bottom:18px;max-width:560px;">
+      <h2 style="margin-bottom:6px;">Clinic holidays</h2>
+      <p class="muted" style="font-size:12.5px;">Closed dates block new appointments. Existing visits are not changed.</p>
+      <div class="row" style="align-items:flex-end;">
+        <div class="field" style="flex:1;"><label>Add closed date</label><input type="date" id="holiday-date"></div>
+        <button class="btn btn-sm" style="margin-bottom:13px;" onclick="addClinicHoliday(document.getElementById('holiday-date').value)">Add</button>
+      </div>
+      ${clinicClosedDates().length
+        ? `<div style="display:flex;flex-wrap:wrap;gap:8px;">${clinicClosedDates().map(d=>`<span class="pill" style="padding:6px 10px;">${fmtDate(d)} <button class="btn btn-ghost btn-sm" style="padding:0 4px;margin-left:4px;" onclick="removeClinicHoliday('${d}')">×</button></span>`).join('')}</div>`
+        : `<p class="faint">No holidays set.</p>`}
+    </div>
+<div class="card" style="margin-bottom:18px;max-width:560px;"><h2 style="margin-bottom:6px;">Print preferences</h2>
       <p class="muted" style="font-size:12.5px;margin-bottom:12px;">Applies to OPD cards, prescriptions, certificates, referrals and receipts.</p>
       ${(()=>{ const pp = (ci.printPrefs)||{}; const chk=(id,on)=>`<label style="display:flex;align-items:center;gap:8px;margin:6px 0;font-size:13.5px;"><input type="checkbox" id="${id}" ${on?'checked':''}> `; return `
       ${chk('pp-address', pp.showAddress!==false)}Show address on letterhead</label>
@@ -12367,7 +12594,7 @@ ${isOwner() ? `
       })()}
     </div>
     ${referralDirectorySettingsHTML()}
-    ${adviceLibrarySettingsHTML()}
+    ${adviceLibrarySettingsHTML()}${messageTemplatesSettingsHTML()}
     ${deviceListSettingsHTML()}
 
     <div class="card" style="margin-bottom:18px;max-width:520px;">
@@ -12594,6 +12821,42 @@ function render(){
   }
   if(state.route==='certificates') applyPendingCertFields();
   handlePatientHashRoute();
+}
+
+
+function mmcGlobalKeydown(e){
+  const tag = (e.target && e.target.tagName||'').toLowerCase();
+  const typing = tag==='input'||tag==='textarea'||tag==='select'||e.target.isContentEditable;
+  if(e.key==='Escape'){
+    if(state.cmdOpen){ state.cmdOpen=false; render(); return; }
+  }
+  // Ctrl/Cmd+K already handled elsewhere for command palette
+  if(typing) return;
+  if(!state.session || !state.session.staffName) return;
+  if(e.key==='/' && !e.ctrlKey && !e.metaKey){
+    e.preventDefault();
+    const search = document.querySelector('.search-wrap input, #patient-search, input[placeholder*="Search"]');
+    if(search){ search.focus(); search.select(); }
+    else { go('patients'); setTimeout(()=>{ const s=document.querySelector('.search-wrap input'); if(s) s.focus(); }, 200); }
+    return;
+  }
+  if(e.key==='n' || e.key==='N'){
+    if(e.ctrlKey||e.metaKey||e.altKey) return;
+    e.preventDefault();
+    go('newVisit');
+    return;
+  }
+  if(e.key==='h' || e.key==='H'){
+    if(e.shiftKey){ e.preventDefault(); go('shiftHandover'); return; }
+    if(!e.ctrlKey && !e.metaKey){ e.preventDefault(); go('dashboard'); return; }
+  }
+  if(e.key==='l' || e.key==='L'){
+    if(!e.ctrlKey && !e.metaKey && !e.altKey){ e.preventDefault(); go('labResults'); return; }
+  }
+}
+if(typeof window!=='undefined' && !window._mmcKeysBound){
+  window._mmcKeysBound = true;
+  document.addEventListener('keydown', mmcGlobalKeydown);
 }
 
 initSession();
