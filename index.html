@@ -1476,6 +1476,7 @@ function defaultData(){
     favouriteComplaints: [], // strings
     favouriteDiagnoses: [], // strings
     messageTemplates: [], // {id,title,body}
+    clinicNotes: [], // {id, text, by, at, done}
     lastPrinted: null // {patientId, visitId, at}
   };
 }
@@ -2523,6 +2524,29 @@ function visitStatus(v){
 // than being migrated in the database.
 function billingOf(v){
   return v.billing || { fee:'', charges:[], paid:false, mode:'' };
+}
+
+function isVisitUnpaid(v){
+  if(!v) return false;
+  const b = billingOf(v);
+  const total = billingTotal(b);
+  if(total > 0) return !b.paid;
+  // legacy fields
+  if(v.feePaid === false) return true;
+  if(v.feeAmount && !v.feePaid && v.paymentStatus !== 'paid') return true;
+  if(typeof v.paid === 'boolean' && !v.paid && (parseFloat(v.fee)||parseFloat(v.amount)||0) > 0) return true;
+  return false;
+}
+function collectUnpaidToday(){
+  const today = todayStr();
+  const list = [];
+  (state.data.patients||[]).forEach(p=>{
+    (p.visits||[]).forEach(v=>{
+      if(v.date === today && isVisitUnpaid(v)) list.push({patient:p, visit:v});
+    });
+  });
+  list.sort((a,b)=>(a.visit.time||'').localeCompare(b.visit.time||''));
+  return list;
 }
 function billingTotal(b){
   const fee = parseFloat(b.fee) || 0;
@@ -4120,10 +4144,13 @@ function checkApptConflictsLive(){
   box.innerHTML = html;
 }
 
-async 
 function clinicClosedDates(){
   const ci = state.data.clinicInfo || {};
-  return Array.isArray(ci.closedDates) ? ci.closedDates.filter(Boolean) : [];
+  let list = Array.isArray(ci.closedDates) ? ci.closedDates.slice() : [];
+  // legacy: was briefly stored under printPrefs
+  const leg = ci.printPrefs && Array.isArray(ci.printPrefs.closedDates) ? ci.printPrefs.closedDates : [];
+  leg.forEach(d=>{ if(d && !list.includes(d)) list.push(d); });
+  return list.filter(Boolean).sort();
 }
 function isClinicClosed(dateStr){
   return clinicClosedDates().includes(dateStr);
@@ -4920,7 +4947,7 @@ function recordLastPrinted(sheetId){
   }
 }
 function printSection(id){
-  if(id==='sheet-opd' || id==='sheet-rx-only' || id==='sheet-inv' || id==='sheet-referral' || id==='sheet-receipt'){
+  if(id==='sheet-opd' || id==='sheet-rx-only' || id==='sheet-inv' || id==='sheet-referral' || id==='sheet-receipt' || id==='sheet-morning-queue'){
     recordLastPrinted(id);
   }
   document.querySelectorAll('.print-sheet').forEach(el=>el.classList.remove('print-active'));
@@ -5917,6 +5944,8 @@ function shellView(){
     ['reports', t('Reports'), 'reports'],
     ['dailyClose', 'End of day', 'reports'],
     ['shiftHandover', 'Shift handover', 'reports'],
+    ['morningQueue', 'Morning list', 'checkIn'],
+    ['clinicNotes', 'Clinic notes', 'checkIn'],
     ['roster', 'Roster', 'roster'],
     ['stock', 'Stock', 'stock'],
     ['expenses', 'Expenses', 'expenses']
@@ -6032,6 +6061,8 @@ function routeContent(){
     case 'stock': return stockView();
     case 'missedFollowUps': return missedFollowUpsView();
     case 'shiftHandover': return shiftHandoverView();
+    case 'morningQueue': return morningQueueView();
+    case 'clinicNotes': return clinicNotesView();
     case 'roster': return rosterView();
     case 'recall': return recallView();
     case 'anc': return ancView();
@@ -6053,7 +6084,10 @@ function dashboardView(){
     (p.visits||[]).forEach(v=>{
       if(v.date===today) todaysVisits.push({patient:p, visit:v});
       if(visitStatus(v)==='waiting' && (!can('clinicalVisit') || !v.assignedDoctor || v.assignedDoctor===state.session.staffName)) waitingVisits.push({patient:p, visit:v});
-      if(v.followUpDate && v.followUpDate<=today) followUps.push({patient:p, visit:v});
+      if(v.followUpDate && v.followUpDate<=today && !v.followUpContacted){
+        const cameBack = (p.visits||[]).some(later => later.id !== v.id && (later.date||'') >= v.followUpDate);
+        if(!cameBack) followUps.push({patient:p, visit:v});
+      }
     });
   });
   todaysVisits.sort((a,b)=> (b.visit.time||'').localeCompare(a.visit.time||''));
@@ -6427,6 +6461,8 @@ function dashboardView(){
         <div class="dash-clean-actions">
           <button class="btn btn-accent btn-sm" onclick="go('newVisit')">+ New OPD</button>
           <button class="btn btn-sm" onclick="go('newAppointment')">Book</button>
+          <button class="btn btn-sm" onclick="go('morningQueue')">Morning list</button>
+          <button class="btn btn-sm" onclick="go('clinicNotes')">Notes</button>
         </div>
       </div>
 
@@ -6454,7 +6490,30 @@ function dashboardView(){
       </div>`;
     })()}
 
-    <div class="dash-stat-row">
+    
+    ${(()=>{
+      if(!can('billing') && !can('checkIn') && !isOwner()) return '';
+      const unpaid = collectUnpaidToday();
+      if(!unpaid.length) return '';
+      return `<div class="card" style="margin-bottom:14px;padding:12px 16px;border-color:var(--danger);background:var(--danger-tint);">
+        <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+          <div><strong>Unpaid today</strong> <span class="muted">${unpaid.length} visit${unpaid.length===1?'':'s'}</span></div>
+          <button class="btn btn-sm" onclick="go('billing')">Open billing</button>
+        </div>
+        <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px;">
+          ${unpaid.slice(0,8).map(({patient:p,visit:v})=>{
+            const b = billingOf(v);
+            const tot = billingTotal(b);
+            return `<div class="row" style="justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span style="cursor:pointer;" onclick="go('billingDetail',{patientId:'${p.id}',visitId:'${v.id}'})"><strong>${esc(p.name)}</strong> <span class="faint">${esc(p.id)} · ${esc(v.time||'')}</span></span>
+              <span>₹${tot.toFixed(0)} <button class="btn btn-sm btn-accent" onclick="event.stopPropagation();go('billingDetail',{patientId:'${p.id}',visitId:'${v.id}'})">Collect</button></span>
+            </div>`;
+          }).join('')}
+          ${unpaid.length>8?`<div class="faint">+${unpaid.length-8} more</div>`:''}
+        </div>
+      </div>`;
+    })()}
+<div class="dash-stat-row">
         <button type="button" class="dash-stat dash-stat-btn" onclick="go('todayVisits')">
           <div class="dash-stat-icon teal" aria-hidden="true">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
@@ -6525,8 +6584,14 @@ function collectFollowUpsDue(){
   const today = todayStr();
   const list = [];
   state.data.patients.forEach(p=>{
-    (p.visits||[]).forEach(v=>{
-      if(v.followUpDate && v.followUpDate<=today) list.push({patient:p, visit:v});
+    const visits = (p.visits||[]).slice();
+    visits.forEach(v=>{
+      if(!v.followUpDate || v.followUpDate > today) return;
+      if(v.followUpContacted) return;
+      // Already returned on/after follow-up date
+      const cameBack = visits.some(later => later.id !== v.id && (later.date||'') >= v.followUpDate);
+      if(cameBack) return;
+      list.push({patient:p, visit:v});
     });
   });
   list.sort((a,b)=> a.visit.followUpDate.localeCompare(b.visit.followUpDate));
@@ -6539,7 +6604,7 @@ function collectMissedFollowUps(){
     const visits = (p.visits||[]).slice().sort((a,b)=>(a.date+a.id).localeCompare(b.date+b.id));
     visits.forEach(v=>{
       if(!v.followUpDate || v.followUpDate >= today) return;
-      // Missed = follow-up date passed and no later visit on/after that date
+      if(v.followUpContacted) return;
       const cameBack = visits.some(later => later.id!==v.id && later.date >= v.followUpDate);
       if(!cameBack) list.push({patient:p, visit:v});
     });
@@ -6548,6 +6613,164 @@ function collectMissedFollowUps(){
   return list;
 }
 
+
+function morningQueueRows(){
+  const today = todayStr();
+  const rows = [];
+  (state.data.patients||[]).forEach(p=>{
+    (p.visits||[]).forEach(v=>{
+      if(v.date !== today) return;
+      rows.push({
+        kind: 'visit',
+        time: v.time || '',
+        token: v.token,
+        name: p.name,
+        id: p.id,
+        age: typeof opdAgeDisplay==='function'?opdAgeDisplay(p):displayAge(p),
+        sex: p.sex||'',
+        doctor: v.assignedDoctor || v.doctorName || '',
+        status: visitStatus(v),
+        patientId: p.id,
+        visitId: v.id
+      });
+    });
+  });
+  (state.data.appointments||[]).forEach(a=>{
+    if(a.date !== today || a.status === 'cancelled' || a.status === 'checked_in') return;
+    const p = a.patientId ? (state.data.patients||[]).find(x=>x.id===a.patientId) : null;
+    rows.push({
+      kind: 'appt',
+      time: a.time || '',
+      token: null,
+      name: p ? p.name : (a.name||'Guest'),
+      id: p ? p.id : '—',
+      age: p ? (typeof opdAgeDisplay==='function'?opdAgeDisplay(p):displayAge(p)) : '—',
+      sex: p ? (p.sex||'') : '',
+      doctor: a.doctorName || '',
+      status: a.status || 'booked',
+      patientId: a.patientId || null
+    });
+  });
+  rows.sort((a,b)=> (a.time||'').localeCompare(b.time||'') || String(a.token||'').localeCompare(String(b.token||'')));
+  return rows;
+}
+
+function clinicNotesView(){
+  const notes = (state.data.clinicNotes||[]).slice().sort((a,b)=>(b.at||'').localeCompare(a.at||''));
+  const open = notes.filter(n=>!n.done);
+  const done = notes.filter(n=>n.done).slice(0,30);
+  const row = (n, showUndo)=>`
+    <div class="row" style="justify-content:space-between;align-items:flex-start;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);">
+      <div style="flex:1;">
+        <div style="${n.done?'text-decoration:line-through;opacity:0.65;':''}">${esc(n.text)}</div>
+        <div class="faint">${esc(n.by||'')} · ${n.at?new Date(n.at).toLocaleString('en-IN',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}):''}</div>
+      </div>
+      <div style="display:flex;gap:6px;">
+        ${n.done
+          ? `<button class="btn btn-ghost btn-sm" onclick="toggleClinicNoteDone('${n.id}',false)">Restore</button>`
+          : `<button class="btn btn-sm" onclick="toggleClinicNoteDone('${n.id}',true)">Done</button>`}
+        <button class="btn btn-ghost btn-sm" onclick="removeClinicNote('${n.id}')">Delete</button>
+      </div>
+    </div>`;
+  return `
+    <div class="page-head">
+      <div><h1>Clinic notes</h1><p class="muted">Team sticky notes — not part of any patient file</p></div>
+      <button class="btn btn-ghost" onclick="go('dashboard')">← Home</button>
+    </div>
+    <div class="card" style="margin-bottom:16px;max-width:640px;">
+      <div class="field"><label>New note</label>
+        <textarea id="cn-text" rows="2" placeholder="e.g. Printer paper low · Call lab for X-ray machine"></textarea>
+      </div>
+      <button class="btn btn-accent btn-sm" onclick="addClinicNote()">Add note</button>
+    </div>
+    <div class="card" style="max-width:640px;margin-bottom:16px;">
+      <h3 style="margin-bottom:8px;">Open (${open.length})</h3>
+      ${open.length?open.map(n=>row(n)).join(''):'<p class="faint">No open notes</p>'}
+    </div>
+    ${done.length?`<div class="card" style="max-width:640px;"><h3 style="margin-bottom:8px;">Done</h3>${done.map(n=>row(n)).join('')}</div>`:''}`;
+}
+async function addClinicNote(){
+  const el = document.getElementById('cn-text');
+  const text = el ? el.value.trim() : '';
+  if(!text) return;
+  if(!state.data.clinicNotes) state.data.clinicNotes = [];
+  state.data.clinicNotes.push({
+    id: 'N'+Date.now().toString(36),
+    text,
+    by: state.session.staffName||'',
+    at: new Date().toISOString(),
+    done: false
+  });
+  logAudit('Clinic note added', text.slice(0,80));
+  await saveData();
+  render();
+}
+async function toggleClinicNoteDone(id, done){
+  const n = (state.data.clinicNotes||[]).find(x=>x.id===id);
+  if(!n) return;
+  n.done = !!done;
+  await saveData();
+  render();
+}
+async function removeClinicNote(id){
+  if(!confirm('Delete this note?')) return;
+  state.data.clinicNotes = (state.data.clinicNotes||[]).filter(x=>x.id!==id);
+  await saveData();
+  render();
+}
+function morningQueueView(){
+  const today = todayStr();
+  const rows = morningQueueRows();
+  const ci = state.data.clinicInfo || {};
+  const tableRows = rows.map(r=>`
+    <tr>
+      <td>${esc(r.time)||'—'}</td>
+      <td>${r.token!=null?'T'+r.token:'—'}</td>
+      <td><strong>${esc(r.name)}</strong></td>
+      <td>${esc(r.id)}</td>
+      <td>${esc(r.age)}${r.sex?' / '+esc(r.sex):''}</td>
+      <td>${r.kind==='appt'?'Appointment':'OPD'}</td>
+      <td>${esc(r.doctor)||'—'}</td>
+      <td>${esc(r.status)}</td>
+    </tr>`).join('');
+  const sheet = `
+    <div class="print-sheet opdx-card" id="sheet-morning-queue" style="max-width:900px;">
+      <div class="opdx-inner" style="padding:16px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;">
+          <div>
+            <div style="font-size:18px;font-weight:700;">${esc(ci.name||'Clinic')}</div>
+            <div class="faint">${esc(ci.address||'')} ${ci.phone?('· '+esc(ci.phone)):''}</div>
+          </div>
+          <div style="text-align:right;">
+            <div style="font-weight:700;">Morning queue</div>
+            <div>${fmtDate(today)}</div>
+            <div class="faint">${rows.length} entr${rows.length===1?'y':'ies'}</div>
+          </div>
+        </div>
+        <table style="width:100%;font-size:12px;">
+          <thead><tr>
+            <th>Time</th><th>Token</th><th>Name</th><th>ID</th><th>Age/Sex</th><th>Type</th><th>Doctor</th><th>Status</th>
+          </tr></thead>
+          <tbody>${tableRows || '<tr><td colspan="8" class="faint">No visits or appointments today</td></tr>'}</tbody>
+        </table>
+        <p class="faint" style="margin-top:12px;">Staff checklist — not a clinical document.</p>
+      </div>
+    </div>`;
+  return `
+    <div class="page-head">
+      <div><h1>Morning list</h1><p class="muted">${fmtDate(today)} · ${rows.length} entries</p></div>
+      <div class="row" style="gap:8px;">
+        <button class="btn btn-accent" onclick="printSection('sheet-morning-queue')">Print list</button>
+        <button class="btn btn-ghost" onclick="go('dashboard')">← Home</button>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:14px;overflow-x:auto;">
+      <table><thead><tr>
+        <th>Time</th><th>Token</th><th>Name</th><th>ID</th><th>Age/Sex</th><th>Type</th><th>Doctor</th><th>Status</th>
+      </tr></thead><tbody>${tableRows || '<tr><td colspan="8" class="faint">Nothing scheduled today</td></tr>'}</tbody></table>
+    </div>
+    ${sheet}`;
+}
 function shiftHandoverView(){
   const today = todayStr();
   let waiting=0, unpaid=0, completed=0;
@@ -6611,6 +6834,7 @@ function missedFollowUpsView(){
       <td>${esc(visit.diagnosis||'—')}</td>
       <td>
         <button class="btn btn-sm btn-accent" onclick="event.stopPropagation();go('newVisit',{patientId:'${patient.id}'})">Start OPD</button>
+        <button class="btn btn-sm" onclick="event.stopPropagation();markFollowUpContacted('${patient.id}','${visit.id}')">Contacted</button>
         ${patient.phone?`<button class="btn btn-sm wa-btn" onclick="event.stopPropagation();shareWhatsApp(${jsAttr(patient.phone)}, 'Reminder: follow-up was due on ${fmtDate(visit.followUpDate)} at ${(state.data.clinicInfo||{}).name||'our clinic'}. Please visit.')">Remind</button>`:''}
       </td>
     </tr>`).join('');
@@ -6653,6 +6877,30 @@ function todayVisitsView(){
         : `<div class="dash-empty">No visits recorded today</div>`}
     </div>`;
 }
+
+async function markFollowUpContacted(patientId, visitId){
+  const p = state.data.patients.find(x=>x.id===patientId);
+  if(!p) return;
+  const v = (p.visits||[]).find(x=>x.id===visitId);
+  if(!v) return;
+  v.followUpContacted = true;
+  v.followUpContactedAt = new Date().toISOString();
+  v.followUpContactedBy = state.session.staffName || '';
+  logAudit('Follow-up marked contacted', (p.name||'')+' '+fmtDate(v.followUpDate));
+  await saveData();
+  render();
+}
+async function unmarkFollowUpContacted(patientId, visitId){
+  const p = state.data.patients.find(x=>x.id===patientId);
+  if(!p) return;
+  const v = (p.visits||[]).find(x=>x.id===visitId);
+  if(!v) return;
+  v.followUpContacted = false;
+  delete v.followUpContactedAt;
+  delete v.followUpContactedBy;
+  await saveData();
+  render();
+}
 function followUpsView(){
   const list = collectFollowUpsDue();
   const today = todayStr();
@@ -6666,6 +6914,7 @@ function followUpsView(){
       <td>${esc(visit.diagnosis||'—')}</td>
       <td>
         <button class="btn btn-sm btn-accent" onclick="event.stopPropagation();go('newVisit',{patientId:'${patient.id}'})">Start OPD</button>
+        <button class="btn btn-sm" onclick="event.stopPropagation();markFollowUpContacted('${patient.id}','${visit.id}')">Contacted</button>
       </td>
     </tr>`;
   }).join('');
@@ -12527,8 +12776,6 @@ function settingsView(){
     </div>
 
 ${isOwner() ? `
-    <div class="card" style="margin-bottom:18px;max-width:560px;">
-      </div>
     <div class="card" style="margin-bottom:18px;max-width:560px;">
       <h2 style="margin-bottom:6px;">Clinic holidays</h2>
       <p class="muted" style="font-size:12.5px;">Closed dates block new appointments. Existing visits are not changed.</p>
