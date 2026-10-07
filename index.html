@@ -805,6 +805,49 @@
   /* ---- OPD / Rx / certificate / referral / receipt print cards ---- */
   .opdx-card{position:relative;border:1px solid #C9D3DE;border-radius:10px;overflow:hidden;background:#fff;max-width:640px;}
   .opdx-card::before{display:none;}
+
+  /* Document seal watermark (prints only — not clinic logo) */
+  .print-sheet.opdx-card,
+  .print-sheet{
+    position:relative !important;
+    overflow:visible !important;
+  }
+  .opdx-card{
+    overflow:visible !important;
+  }
+  .print-sheet.opdx-card::after,
+  .print-sheet::after{
+    content:"" !important;
+    display:block !important;
+    position:absolute !important;
+    left:50% !important;
+    top:50% !important;
+    transform:translate(-50%,-50%) !important;
+    width:min(78%, 380px) !important;
+    height:auto !important;
+    aspect-ratio:240/260 !important;
+    background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%20240%20260%22%20fill%3D%22none%22%3E%20%20%3Ccircle%20cx%3D%22120%22%20cy%3D%22110%22%20r%3D%2292%22%20stroke%3D%22%238B939E%22%20stroke-width%3D%222.5%22/%3E%20%20%3Ccircle%20cx%3D%22120%22%20cy%3D%22110%22%20r%3D%2284%22%20stroke%3D%22%238B939E%22%20stroke-width%3D%221.5%22/%3E%20%20%3Ccircle%20cx%3D%22120%22%20cy%3D%22110%22%20r%3D%2272%22%20stroke%3D%22%23A0A8B0%22%20stroke-width%3D%221%22/%3E%20%20%3Ccircle%20cx%3D%2242%22%20cy%3D%22110%22%20r%3D%222.2%22%20fill%3D%22%238B939E%22/%3E%20%20%3Ccircle%20cx%3D%22198%22%20cy%3D%22110%22%20r%3D%222.2%22%20fill%3D%22%238B939E%22/%3E%20%20%3C%21--%20top%20cross%20--%3E%20%20%3Cpath%20d%3D%22M120%2028v14M113%2035h14%22%20stroke%3D%22%238B939E%22%20stroke-width%3D%223.2%22%20stroke-linecap%3D%22round%22/%3E%20%20%3Cpath%20d%3D%22M108%2036c4-8%2020-8%2024%200%22%20stroke%3D%22%238B939E%22%20stroke-width%3D%221.6%22%20fill%3D%22none%22/%3E%20%20%3C%21--%20main%20cross%20--%3E%20%20%3Crect%20x%3D%22105%22%20y%3D%2262%22%20width%3D%2230%22%20height%3D%2270%22%20rx%3D%224%22%20fill%3D%22%238B939E%22/%3E%20%20%3Crect%20x%3D%2285%22%20y%3D%2282%22%20width%3D%2270%22%20height%3D%2230%22%20rx%3D%224%22%20fill%3D%22%238B939E%22/%3E%20%20%3C%21--%20laurels%20--%3E%20%20%3Cpath%20d%3D%22M88%20145c-10-14-12-28-8-40%22%20stroke%3D%22%238B939E%22%20stroke-width%3D%221.8%22%20fill%3D%22none%22/%3E%20%20%3Cpath%20d%3D%22M82%20118l-7-3M84%20128l-8%200M86%20136l-7%203M90%20142l-6%204%22%20stroke%3D%22%238B939E%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22/%3E%20%20%3Cpath%20d%3D%22M152%20145c10-14%2012-28%208-40%22%20stroke%3D%22%238B939E%22%20stroke-width%3D%221.8%22%20fill%3D%22none%22/%3E%20%20%3Cpath%20d%3D%22M158%20118l7-3M156%20128l8%200M154%20136l7%203M150%20142l6%204%22%20stroke%3D%22%238B939E%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22/%3E%20%20%3C%21--%20ribbon%20--%3E%20%20%3Cpath%20d%3D%22M38%20175h164l-8%2022H46z%22%20fill%3D%22%238B939E%22%20opacity%3D%220.25%22/%3E%20%20%3Cpath%20d%3D%22M38%20175h164l-8%2022H46z%22%20stroke%3D%22%238B939E%22%20stroke-width%3D%221.4%22%20fill%3D%22none%22/%3E%20%20%3Cpath%20d%3D%22M38%20175l-12%208v14l12-6M202%20175l12%208v14l-12-6%22%20stroke%3D%22%238B939E%22%20stroke-width%3D%221.4%22%20fill%3D%22%23C5CAD0%22/%3E%20%20%3Ctext%20x%3D%22120%22%20y%3D%22191%22%20text-anchor%3D%22middle%22%20font-family%3D%22Georgia%2CTimes%20New%20Roman%2Cserif%22%20font-size%3D%229.5%22%20font-weight%3D%22700%22%20fill%3D%22%236B7280%22%20letter-spacing%3D%220.5%22%3EMALE%20MADESHWARA%20CLINIC%3C/text%3E%20%20%3Cpath%20d%3D%22M100%20210h40%22%20stroke%3D%22%238B939E%22%20stroke-width%3D%221%22/%3E%20%20%3Ccircle%20cx%3D%22120%22%20cy%3D%22218%22%20r%3D%222%22%20fill%3D%22%238B939E%22/%3E%3C/svg%3E") !important;
+    background-repeat:no-repeat !important;
+    background-position:center !important;
+    background-size:contain !important;
+    opacity:0.18 !important;
+    pointer-events:none !important;
+    z-index:0 !important;
+  }
+  .print-sheet .opdx-inner,
+  .print-sheet > *{
+    position:relative;
+    z-index:1;
+  }
+  @media print{
+    .print-sheet.opdx-card::after,
+    .print-sheet::after{
+      opacity:0.16 !important;
+      -webkit-print-color-adjust:exact !important;
+      print-color-adjust:exact !important;
+    }
+  }
+
   .opdx-inner{padding:0;}
   .opdx-head{
     display:flex;align-items:flex-start;justify-content:space-between;gap:14px;
@@ -939,7 +982,7 @@
       box-shadow:none !important;border-radius:0 !important;overflow:visible !important;
       max-width:none !important;page-break-after:avoid;page-break-inside:avoid;
     }
-    .print-sheet.print-active::before{display:none !important;}
+    .print-sheet.print-active::before{display:none !important;} /* watermark uses ::after — keep visible */
     @page{margin:10mm;}
   }
 
@@ -1429,6 +1472,8 @@ function defaultData(){
     ancRegister: [], // {id, patientId, lmp, edd, gravida, para, risk, notes, visits:[]}
     referralDirectory: [], // {id, name, phone, address, notes}
     adviceLibrary: [], // {id, title, text}
+    favouriteComplaints: [], // strings
+    favouriteDiagnoses: [], // strings
     lastPrinted: null // {patientId, visitId, at}
   };
 }
@@ -2000,6 +2045,32 @@ function go(route, params){
     if(state.routeParams.editVisitId && state.routeParams.patientId){
       const p = state.data.patients.find(p=>p.id===state.routeParams.patientId);
       existingVisit = p ? (p.visits||[]).find(v=>v.id===state.routeParams.editVisitId) : null;
+    }
+    // Duplicate-visit guard: same patient already has a visit today
+    if(!existingVisit && state.routeParams.patientId && !state.routeParams.forceNew){
+      const p0 = state.data.patients.find(p=>p.id===state.routeParams.patientId);
+      const today = todayStr();
+      const todays = (p0 && p0.visits||[]).filter(v=>(v.date||'')===today);
+      if(todays.length){
+        const waiting = todays.find(v=>visitStatus(v)==='waiting');
+        const msg = waiting
+          ? ('This patient already has a waiting visit today. Open that visit instead of creating another?')
+          : ('This patient already has a visit recorded today. Create another OPD anyway?');
+        if(waiting){
+          if(confirm(msg)){
+            state.routeParams.editVisitId = waiting.id;
+            existingVisit = waiting;
+          } else {
+            state.route = 'patient';
+            state.routeParams = {patientId: p0.id};
+            return;
+          }
+        } else if(!confirm(msg)){
+          state.route = 'patient';
+          state.routeParams = {patientId: p0.id};
+          return;
+        }
+      }
     }
     initDraftVisit(state.routeParams.patientId || null, existingVisit);
     if(!existingVisit) restoreVisitDraftIfAny();
@@ -4152,6 +4223,7 @@ function initDraftVisit(patientId, existingVisit){
       notifiableReported: !!existingVisit.notifiableReported,
       followUpDate: existingVisit.followUpDate||'',
       assignedDoctor: existingVisit.assignedDoctor||'',
+      handoffNote: existingVisit.handoffNote||'',
       referredTo: existingVisit.referredTo||'', referralReason: existingVisit.referralReason||'',
       attachments: (existingVisit.attachments||[]).map(a=>({...a})),
         prescriptions: (existingVisit.prescriptions && existingVisit.prescriptions.length)
@@ -4168,7 +4240,7 @@ function initDraftVisit(patientId, existingVisit){
       vitals: {bp:'',pulse:'',temp:'',weight:'',height:''},
       complaints:'', systemicExam:{cvs:'',rs:'',pa:'',cns:''}, diagnosis:'', notes:'',
       notifiable:false, notifiableDisease:'', notifiableReported:false,
-      followUpDate:'', assignedDoctor:'',
+      followUpDate:'', assignedDoctor:'', handoffNote:'',
       referredTo:'', referralReason:'',
       attachments: [],
       prescriptions: [{medicine:'',dosage:'',amountEach:'',frequency:'',duration:'',instructions:''}],
@@ -4269,6 +4341,63 @@ function autosaveVisitDraft(){
 function clearVisitDraftStorage(){
   try{ localStorage.removeItem(VISIT_DRAFT_KEY); } catch(e){}
 }
+
+
+function uploadPatientPhoto(patientId, file){
+  if(!file || !patientId) return;
+  if(file.size > 900000){ alert('Photo too large — please use under ~800 KB.'); return; }
+  const reader = new FileReader();
+  reader.onload = async ()=>{
+    const p = state.data.patients.find(x=>x.id===patientId);
+    if(!p) return;
+    p.photoDataUrl = reader.result;
+    logAudit('Patient photo updated', p.id+' '+p.name);
+    await saveData();
+    render();
+  };
+  reader.readAsDataURL(file);
+}
+function removePatientPhoto(patientId){
+  const p = state.data.patients.find(x=>x.id===patientId);
+  if(!p || !p.photoDataUrl) return;
+  if(!confirm('Remove patient photo?')) return;
+  delete p.photoDataUrl;
+  logAudit('Patient photo removed', p.id);
+  saveData().then(()=>render());
+}
+
+function continueFromLastVisit(patientId){
+  const p = state.data.patients.find(x=>x.id===patientId);
+  if(!p){ alert('Patient not found.'); return; }
+  const visits = (p.visits||[]).slice().sort((a,b)=>(b.date+b.id).localeCompare(a.date+a.id));
+  const last = visits.find(v => visitStatus(v)!=='waiting') || visits[0];
+  if(!last){
+    go('newVisit',{patientId, forceNew:true});
+    return;
+  }
+  go('newVisit',{patientId, forceNew:true});
+  // After go() inits blank draft, copy useful fields from last completed visit
+  const dv = state.draftVisit;
+  if(!dv) return;
+  dv.complaints = last.complaints || '';
+  dv.diagnosis = last.diagnosis || '';
+  dv.notes = last.notes || '';
+  dv.systemicExam = {cvs:'',rs:'',pa:'',cns:'', ...(last.systemicExam||{})};
+  dv.prescriptions = (last.prescriptions||[]).map(rx=>({
+    medicine: rx.medicine||'', dosage: rx.dosage||'', amountEach: rx.amountEach||'',
+    frequency: rx.frequency||'', duration: rx.duration||'', instructions: rx.instructions||'',
+    qty: rx.qty||''
+  }));
+  if(!dv.prescriptions.length) dv.prescriptions = [{medicine:'',dosage:'',amountEach:'',frequency:'',duration:'',instructions:''}];
+  dv.investigations = (last.investigations||[]).slice();
+  dv.advice = last.advice || '';
+  dv.followUpDate = '';
+  dv.doctorName = state.session.staffName || last.doctorName || '';
+  state.ui = state.ui || {};
+  state.ui.continuedFromVisitId = last.id;
+  render();
+}
+
 function restoreVisitDraftIfAny(){
   if(!can('clinicalVisit')) return;
   let raw;
@@ -4436,6 +4565,8 @@ async function saveVisit(){
     dv.complaints = val('v-complaints');
     dv.systemicExam = {cvs:val('v-se-cvs')||'', rs:val('v-se-rs')||'', pa:val('v-se-pa')||'', cns:val('v-se-cns')||''};
     dv.diagnosis = val('v-diagnosis');
+    if(dv.diagnosis) addFavourite('diagnoses', dv.diagnosis.split(/[,\n]/)[0].trim());
+    if(dv.complaints){ const c0=dv.complaints.split(/[,\n]/)[0].trim(); if(c0) addFavourite('complaints', c0); }
     dv.notes = val('v-notes');
     const nf = document.getElementById('v-notifiable');
     dv.notifiable = !!(nf && nf.checked);
@@ -4443,6 +4574,7 @@ async function saveVisit(){
     // keep reported flag if already set on existing visit
     if(!dv.notifiable) dv.notifiableReported = false;
     dv.followUpDate = val('v-followup');
+    if(document.getElementById('v-handoff')) dv.handoffNote = val('v-handoff');
     dv.referredTo = val('v-referred-to');
     dv.referralReason = val('v-referral-reason');
     dv.vitals.bp = val('v-bp');
@@ -4626,7 +4758,8 @@ async function saveVisit(){
       complaints: dv.complaints, systemicExam: dv.systemicExam, diagnosis: dv.diagnosis, notes: dv.notes,
       notifiable: !!dv.notifiable, notifiableDisease: dv.notifiable ? (dv.notifiableDisease||'') : '',
       notifiableReported: false,
-      followUpDate: dv.followUpDate, assignedDoctor: dv.assignedDoctor||'',
+      followUpDate: dv.followUpDate,
+      handoffNote: dv.handoffNote || '', assignedDoctor: dv.assignedDoctor||'',
       referredTo: dv.referredTo||'', referralReason: dv.referralReason||'',
       prescriptions, investigations, status,
       tokenStatus: status==='completed' ? 'done' : 'waiting',
@@ -4727,7 +4860,7 @@ function saveSheetAsPdf(id){
     <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Public+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>${styles}
       body{background:#fff;margin:0;padding:12px;font-family:'Public Sans',sans-serif;color:#152033;}
-      .print-sheet{display:block !important;box-shadow:none !important;border:1px solid #C9D3DE !important;max-width:640px;margin:0 auto;}
+      .print-sheet{display:block !important;box-shadow:none !important;border:1px solid #C9D3DE !important;max-width:640px;margin:0 auto;} .print-sheet{position:relative;} .print-sheet::after{content:"";position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:75%;aspect-ratio:240/260;background:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20viewBox%3D%220%200%20240%20260%22%20fill%3D%22none%22%3E%20%20%3Ccircle%20cx%3D%22120%22%20cy%3D%22110%22%20r%3D%2292%22%20stroke%3D%22%238B939E%22%20stroke-width%3D%222.5%22/%3E%20%20%3Ccircle%20cx%3D%22120%22%20cy%3D%22110%22%20r%3D%2284%22%20stroke%3D%22%238B939E%22%20stroke-width%3D%221.5%22/%3E%20%20%3Ccircle%20cx%3D%22120%22%20cy%3D%22110%22%20r%3D%2272%22%20stroke%3D%22%23A0A8B0%22%20stroke-width%3D%221%22/%3E%20%20%3Ccircle%20cx%3D%2242%22%20cy%3D%22110%22%20r%3D%222.2%22%20fill%3D%22%238B939E%22/%3E%20%20%3Ccircle%20cx%3D%22198%22%20cy%3D%22110%22%20r%3D%222.2%22%20fill%3D%22%238B939E%22/%3E%20%20%3C%21--%20top%20cross%20--%3E%20%20%3Cpath%20d%3D%22M120%2028v14M113%2035h14%22%20stroke%3D%22%238B939E%22%20stroke-width%3D%223.2%22%20stroke-linecap%3D%22round%22/%3E%20%20%3Cpath%20d%3D%22M108%2036c4-8%2020-8%2024%200%22%20stroke%3D%22%238B939E%22%20stroke-width%3D%221.6%22%20fill%3D%22none%22/%3E%20%20%3C%21--%20main%20cross%20--%3E%20%20%3Crect%20x%3D%22105%22%20y%3D%2262%22%20width%3D%2230%22%20height%3D%2270%22%20rx%3D%224%22%20fill%3D%22%238B939E%22/%3E%20%20%3Crect%20x%3D%2285%22%20y%3D%2282%22%20width%3D%2270%22%20height%3D%2230%22%20rx%3D%224%22%20fill%3D%22%238B939E%22/%3E%20%20%3C%21--%20laurels%20--%3E%20%20%3Cpath%20d%3D%22M88%20145c-10-14-12-28-8-40%22%20stroke%3D%22%238B939E%22%20stroke-width%3D%221.8%22%20fill%3D%22none%22/%3E%20%20%3Cpath%20d%3D%22M82%20118l-7-3M84%20128l-8%200M86%20136l-7%203M90%20142l-6%204%22%20stroke%3D%22%238B939E%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22/%3E%20%20%3Cpath%20d%3D%22M152%20145c10-14%2012-28%208-40%22%20stroke%3D%22%238B939E%22%20stroke-width%3D%221.8%22%20fill%3D%22none%22/%3E%20%20%3Cpath%20d%3D%22M158%20118l7-3M156%20128l8%200M154%20136l7%203M150%20142l6%204%22%20stroke%3D%22%238B939E%22%20stroke-width%3D%221.5%22%20stroke-linecap%3D%22round%22/%3E%20%20%3C%21--%20ribbon%20--%3E%20%20%3Cpath%20d%3D%22M38%20175h164l-8%2022H46z%22%20fill%3D%22%238B939E%22%20opacity%3D%220.25%22/%3E%20%20%3Cpath%20d%3D%22M38%20175h164l-8%2022H46z%22%20stroke%3D%22%238B939E%22%20stroke-width%3D%221.4%22%20fill%3D%22none%22/%3E%20%20%3Cpath%20d%3D%22M38%20175l-12%208v14l12-6M202%20175l12%208v14l-12-6%22%20stroke%3D%22%238B939E%22%20stroke-width%3D%221.4%22%20fill%3D%22%23C5CAD0%22/%3E%20%20%3Ctext%20x%3D%22120%22%20y%3D%22191%22%20text-anchor%3D%22middle%22%20font-family%3D%22Georgia%2CTimes%20New%20Roman%2Cserif%22%20font-size%3D%229.5%22%20font-weight%3D%22700%22%20fill%3D%22%236B7280%22%20letter-spacing%3D%220.5%22%3EMALE%20MADESHWARA%20CLINIC%3C/text%3E%20%20%3Cpath%20d%3D%22M100%20210h40%22%20stroke%3D%22%238B939E%22%20stroke-width%3D%221%22/%3E%20%20%3Ccircle%20cx%3D%22120%22%20cy%3D%22218%22%20r%3D%222%22%20fill%3D%22%238B939E%22/%3E%3C/svg%3E") center/contain no-repeat;opacity:0.16;pointer-events:none;z-index:0;} .print-sheet>*{position:relative;z-index:1;}
       .print-sheet *{visibility:visible !important;}
       @media print{body{padding:0;} .print-sheet{border:none !important;}}
     </style></head><body>${el.outerHTML}
@@ -5809,6 +5942,7 @@ function routeContent(){
     case 'auditLog': return auditLogView();
     case 'expenses': return expensesView();
     case 'stock': return stockView();
+    case 'missedFollowUps': return missedFollowUpsView();
     case 'roster': return rosterView();
     case 'recall': return recallView();
     case 'anc': return ancView();
@@ -6207,7 +6341,21 @@ function dashboardView(){
         </div>
       </div>
 
-      <div class="dash-stat-row">
+      
+    ${(()=>{
+      if(!can('stock')) return '';
+      const today = todayStr();
+      const in30 = (()=>{ const d=new Date(); d.setDate(d.getDate()+30); return d.toISOString().slice(0,10); })();
+      const stock = state.data.drugStock||[];
+      const low = stock.filter(s=>(parseFloat(s.lowAt)||0)>0 && (parseFloat(s.quantity)||0)<=(parseFloat(s.lowAt)||0));
+      const exp = stock.filter(s=>s.expiryDate && s.expiryDate<=in30);
+      if(!low.length && !exp.length) return '';
+      return `<div class="card" style="margin-bottom:14px;padding:12px 16px;border-color:var(--accent);background:var(--accent-tint);cursor:pointer;" onclick="go('stock')">
+        <strong>Stock alerts</strong>
+        <span class="muted" style="margin-left:8px;">${low.length? low.length+' low':''}${low.length&&exp.length?' · ':''}${exp.length? exp.length+' expiring ≤30d':''} — tap to open</span>
+      </div>`;
+    })()}
+    <div class="dash-stat-row">
         <button type="button" class="dash-stat dash-stat-btn" onclick="go('todayVisits')">
           <div class="dash-stat-icon teal" aria-hidden="true">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
@@ -6285,6 +6433,50 @@ function collectFollowUpsDue(){
   list.sort((a,b)=> a.visit.followUpDate.localeCompare(b.visit.followUpDate));
   return list;
 }
+function collectMissedFollowUps(){
+  const today = todayStr();
+  const list = [];
+  state.data.patients.forEach(p=>{
+    const visits = (p.visits||[]).slice().sort((a,b)=>(a.date+a.id).localeCompare(b.date+b.id));
+    visits.forEach(v=>{
+      if(!v.followUpDate || v.followUpDate >= today) return;
+      // Missed = follow-up date passed and no later visit on/after that date
+      const cameBack = visits.some(later => later.id!==v.id && later.date >= v.followUpDate);
+      if(!cameBack) list.push({patient:p, visit:v});
+    });
+  });
+  list.sort((a,b)=> a.visit.followUpDate.localeCompare(b.visit.followUpDate));
+  return list;
+}
+function missedFollowUpsView(){
+  const list = collectMissedFollowUps();
+  const rows = list.map(({patient,visit})=>`
+    <tr class="clickable" onclick="go('patient',{patientId:'${patient.id}'})">
+      <td>${fmtDate(visit.followUpDate)} <span class="pill" style="background:var(--danger-tint);color:var(--danger);">Missed</span></td>
+      <td><strong>${esc(patient.name)}</strong><div class="faint">${esc(patient.id)}</div></td>
+      <td>${esc(opdAgeDisplay(patient))} · ${esc(patient.sex||'')}</td>
+      <td>${esc(patient.phone||'—')}</td>
+      <td>${esc(visit.diagnosis||'—')}</td>
+      <td>
+        <button class="btn btn-sm btn-accent" onclick="event.stopPropagation();go('newVisit',{patientId:'${patient.id}'})">Start OPD</button>
+        ${patient.phone?`<button class="btn btn-sm wa-btn" onclick="event.stopPropagation();shareWhatsApp(${jsAttr(patient.phone)}, 'Reminder: follow-up was due on ${fmtDate(visit.followUpDate)} at ${(state.data.clinicInfo||{}).name||'our clinic'}. Please visit.')">Remind</button>`:''}
+      </td>
+    </tr>`).join('');
+  return `
+    <div class="page-head">
+      <div><h1>Missed follow-ups</h1><p class="muted">${list.length} patient${list.length===1?'':'s'} overdue without a return visit</p></div>
+      <div class="row" style="gap:8px;">
+        <button class="btn btn-ghost" onclick="go('followUps')">Due follow-ups</button>
+        <button class="btn btn-ghost" onclick="go('dashboard')">← Home</button>
+      </div>
+    </div>
+    <div class="card">
+      ${list.length
+        ? `<div style="overflow-x:auto;"><table><thead><tr><th>Was due</th><th>Patient</th><th>Age / Sex</th><th>Phone</th><th>Last diagnosis</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>`
+        : `<div class="dash-empty">No missed follow-ups</div>`}
+    </div>`;
+}
+
 function todayVisitsView(){
   const list = collectTodaysVisits();
   const rows = list.map(({patient,visit})=>{
@@ -6328,7 +6520,10 @@ function followUpsView(){
   return `
     <div class="page-head">
       <div><h1>Follow-ups due</h1><p class="muted">${list.length} patient${list.length===1?'':'s'}</p></div>
-      <button class="btn btn-ghost" onclick="go('dashboard')">← Home</button>
+      <div class="row" style="gap:8px;">
+        <button class="btn" onclick="go('missedFollowUps')">Missed follow-ups</button>
+        <button class="btn btn-ghost" onclick="go('dashboard')">← Home</button>
+      </div>
     </div>
     <div class="card">
       ${list.length
@@ -6746,6 +6941,14 @@ function patientView(patientId){
       <div class="field"><label>Emergency contact name</label><input id="ep-emergency-name" value="${esc(p.emergencyContactName||'')}"></div>
       <div class="field"><label>Emergency contact phone</label><input id="ep-emergency-phone" value="${esc(p.emergencyContactPhone||'')}"></div>
     </div>
+    <div class="field"><label>Patient photo (optional)</label>
+      <div class="row" style="align-items:center;gap:10px;flex-wrap:wrap;">
+        ${p.photoDataUrl?`<img src="${p.photoDataUrl}" alt="" style="width:56px;height:56px;border-radius:10px;object-fit:cover;">`:''}
+        <input type="file" id="ep-photo" accept="image/*" style="display:none;" onchange="uploadPatientPhoto('${p.id}', this.files[0])">
+        <button type="button" class="btn btn-sm" onclick="document.getElementById('ep-photo').click()">Upload photo</button>
+        ${p.photoDataUrl?`<button type="button" class="btn btn-ghost btn-sm" onclick="removePatientPhoto('${p.id}')">Remove</button>`:''}
+      </div>
+    </div>
     <div class="field"><label>Aadhaar number (optional)</label><input id="ep-aadhaar" type="text" inputmode="numeric" maxlength="12" value="${esc(p.aadhaar||'')}" placeholder="12-digit number — leave blank if not needed">
       <div class="faint" style="margin-top:4px;">Sensitive personal data — shown masked (last 4 digits) outside this edit form.</div></div>
     ${can('viewClinical') ? `
@@ -6811,7 +7014,7 @@ function patientView(patientId){
       <td>${can('viewClinical') ? (esc(v.diagnosis)||'<span class="faint">—</span>') : '<span class="faint">—</span>'}</td>
       <td>${esc(v.doctorName)||'<span class="faint">—</span>'}</td>
       <td>${st==='waiting'
-        ? `<span class="pill" style="background:var(--accent-tint);color:var(--accent);">Waiting${canContinue?' — tap to continue':''}</span>`
+        ? `<span class="pill" style="background:var(--accent-tint);color:var(--accent);">Waiting${canContinue?' — tap to continue':''}</span>${v.handoffNote&&can('viewClinical')?`<div class="faint" style="margin-top:4px;">Note: ${esc(v.handoffNote)}</div>`:''}`
         : '<span class="pill">Completed</span>'}
         ${v.referredTo ? `<span class="pill" title="Referred to ${esc(v.referredTo)}${v.referralReason?' — '+esc(v.referralReason):''}" style="margin-left:4px;">↗ Referred</span>` : ''}
         ${v.notifiable ? `<span class="pill" style="margin-left:4px;background:var(--accent-tint);color:var(--accent-dark);" title="${esc(v.notifiableDisease||'Notifiable')}">Notifiable${v.notifiableReported?' ✓':''}</span>` : ''}</td>
@@ -6844,9 +7047,13 @@ function patientView(patientId){
   const showClinical = can('viewClinical');
   return `
     <div class="page-head">
-      <div><h1>${esc(p.name)} <span class="pill">${p.id}</span></h1></div>
+      <div><h1 style="display:flex;align-items:center;gap:12px;">
+        ${p.photoDataUrl?`<img src="${p.photoDataUrl}" alt="" style="width:52px;height:52px;border-radius:50%;object-fit:cover;border:2px solid var(--line);">`:`<span style="width:52px;height:52px;border-radius:50%;background:var(--primary-tint);display:inline-flex;align-items:center;justify-content:center;font-weight:700;color:var(--primary);">${esc((p.name||'?')[0])}</span>`}
+        <span>${esc(p.name)} <span class="pill">${p.id}</span></span>
+      </h1></div>
       <div class="row" style="gap:8px;flex-wrap:wrap;align-items:center;">
         <button class="btn btn-accent" onclick="go('newVisit',{patientId:'${p.id}'})">${can('clinicalVisit')?'+ New OPD Visit':'+ Check in'}</button>
+        ${can('clinicalVisit') && (p.visits||[]).length?`<button class="btn" type="button" onclick="continueFromLastVisit('${p.id}')">Continue last visit</button>`:''}
         ${can('certificates')?`<button class="btn" onclick="state.certPatientId='${p.id}';state.certType='sick';go('certificates')">Certificate</button>`:''}
         ${p.phone?`<button class="btn wa-btn" onclick="shareWhatsApp(${jsAttr(p.phone)}, patientWhatsAppText(state.data.patients.find(x=>x.id===${jsAttr(p.id)})))">${t('WhatsApp')}</button>`:''}
         <button class="btn btn-ghost btn-sm" type="button" onclick="copyPatientLink('${p.id}')">Copy link</button>
@@ -9356,6 +9563,46 @@ function dueListPrintHTML(){
     </div>`;
 }
 
+
+function applyFavChip(inputId, text){
+  const el = document.getElementById(inputId);
+  if(!el) return;
+  const cur = el.value.trim();
+  if(!cur) el.value = text;
+  else if(!cur.toLowerCase().includes(String(text).toLowerCase())) el.value = cur + (cur.endsWith(',') ? ' ' : ', ') + text;
+  el.dispatchEvent(new Event('input', {bubbles:true}));
+}
+function addFavourite(kind, text){
+  text = String(text||'').trim();
+  if(!text) return;
+  const key = kind==='complaints' ? 'favouriteComplaints' : 'favouriteDiagnoses';
+  if(!state.data[key]) state.data[key] = [];
+  if(!state.data[key].some(x=>x.toLowerCase()===text.toLowerCase())){
+    state.data[key].unshift(text);
+    state.data[key] = state.data[key].slice(0,30);
+    saveData();
+  }
+}
+function favChipsHTML(kind, inputId){
+  const key = kind==='complaints' ? 'favouriteComplaints' : 'favouriteDiagnoses';
+  const list = (state.data[key]||[]).slice();
+  const recent = [];
+  (state.data.patients||[]).forEach(p=>{
+    (p.visits||[]).slice(-2).forEach(v=>{
+      const val = kind==='complaints' ? (v.complaints||'') : (v.diagnosis||'');
+      String(val).split(/[,\n]/).map(s=>s.trim()).filter(s=>s.length>1).forEach(s=>{
+        if(!list.some(x=>x.toLowerCase()===s.toLowerCase()) && !recent.some(x=>x.toLowerCase()===s.toLowerCase()))
+          recent.push(s);
+      });
+    });
+  });
+  const chips = list.concat(recent).slice(0,16);
+  if(!chips.length) return '';
+  return `<div style="display:flex;flex-wrap:wrap;gap:6px;margin:4px 0 8px;">
+    ${chips.map(c=>`<button type="button" class="btn btn-sm btn-ghost" style="padding:3px 10px;border-radius:999px;background:var(--primary-tint);font-size:12px;"
+      onclick='applyFavChip(${JSON.stringify(inputId)}, ${JSON.stringify(c)})'>${esc(c)}</button>`).join('')}
+  </div>`;
+}
 function newVisitView(){
   const dv = state.draftVisit;
   let patientBlock;
@@ -9496,6 +9743,7 @@ function newVisitView(){
     <div class="visit-section">
       <div class="visit-section-title">3 · Clinical notes</div>
       <div class="field"><label>Chief complaints ${dictationBtn('v-complaints')}</label>
+          ${can('clinicalVisit')?favChipsHTML('complaints','v-complaints'):''}
         <textarea id="v-complaints" oninput="onComplaintsInput(this)" placeholder="">${esc(dv.complaints)}</textarea>
         <div class="chip-row" id="complaints-chips">${chipRowHTML(chipsFor(dv.complaints, COMPLAINT_TERMS), 'insertComplaintChip')}</div>
       </div>
@@ -9513,9 +9761,12 @@ function newVisitView(){
         </div>
       </div>
       <div class="field"><label>Diagnosis ${dictationBtn('v-diagnosis')}</label>
+          ${can('clinicalVisit')?favChipsHTML('diagnoses','v-diagnosis'):''}
         <input id="v-diagnosis" value="${esc(dv.diagnosis)}" oninput="onDiagnosisInput(this)" placeholder="">
         <div class="chip-row" id="diagnosis-chips">${chipRowHTML(chipsFor(dv.diagnosis, DIAGNOSIS_TERMS), 'insertDiagnosisChip')}</div>
       </div>
+      <div class="field"><label>Handoff note <span class="faint">(staff only — not printed)</span></label>
+        <input id="v-handoff" placeholder="e.g. Labs pending, review growth chart" value="${esc(dv.handoffNote||'')}"></div>
       <div class="field" style="margin-top:8px;">
         <label style="display:flex;align-items:center;gap:8px;font-weight:600;">
           <input type="checkbox" id="v-notifiable" ${dv.notifiable?'checked':''} onchange="const b=document.getElementById('v-notifiable-box'); if(b) b.style.display=this.checked?'':'none';">
